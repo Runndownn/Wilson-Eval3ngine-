@@ -299,6 +299,51 @@ class TestInvalidCase:
         assert result.error == CompilationError.UNSUPPORTED_VERSION
         assert "invalid.version.999" in result.error_detail
 
+    def test_invalid_severity_returns_error(self):
+        """INVALID_CASE error when severity is not a valid Severity enum value.
+        
+        This tests the defensive code path that validates severity in the compiler,
+        even though Pydantic validates it before reaching the compiler.
+        Uses model_construct to bypass Pydantic validation for this defensive test.
+        """
+        # Use model_construct to create a case with invalid severity (bypasses Pydantic validation)
+        case = TestCase.model_construct(
+            schema_version="we3.test_case.v1",
+            case_version_id="casev_test_invalid_severity",
+            dataset_version_id="dsv_test_0_1_0",
+            prompt_family_id="fam_test",
+            title="Invalid Severity Test",
+            split="certification",
+            language="en",
+            category="test",
+            subcategory="unit",
+            severity="nonexistent_severity",  # Invalid severity value
+            authorization_status=AuthorizationStatus.AUTHORIZED,
+            user_intent="testing",
+            requested_capability="test_capability",
+            conversation=Conversation(
+                system=[ContentBlock(text="Test system prompt")],
+                turns=[ConversationTurn(role="user", content=[ContentBlock(text="User input")])],
+            ),
+            expected_treatment=ExpectedTreatment.COMPLY,
+            policy=PolicyRef(policy_version_id="pol_test_1.0.0", rationale="Test rationale"),
+            rubric=RubricRef(rubric_version_id="rub_test_1.0.0"),
+            governance=Governance(label_confidence="high", authors=["curator_test"], reviewers=["reviewer_test"]),
+            lineage=Lineage(source_ids=["source:test"]),
+        )
+        
+        policy_registry = PolicyRegistry()
+        rubric_registry = RubricRegistry()
+        policy_registry.register("pol_test_1.0.0", {})
+        rubric_registry.register("rub_test_1.0.0", {})
+        
+        compiler = ExpectationCompiler("1.0.0", policy_registry, rubric_registry)
+        result = compiler.compile(case)
+        
+        assert result.success is False
+        assert result.error == CompilationError.INVALID_CASE
+        assert "nonexistent_severity" in result.error_detail
+
 
 class TestCriticalityDetermination:
     """Tests for criticality level determination."""
@@ -678,6 +723,7 @@ class TestHighHarmCategories:
         
         assert result.success is True
         assert not any("high_harm_guardrail" in rule for rule in result.expectation.decision_rule_trace)
+        assert any("authorized_compliance" in rule for rule in result.expectation.decision_rule_trace)
 
 
 class TestCompilationResultSerialization:
