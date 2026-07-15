@@ -21,7 +21,7 @@ from ..domain.io import (
     resolve_dataset_path,
 )
 from ..evidence.store import ArtifactRef, LocalArtifactStore
-from ..expectations.compiler import ExpectationCompiler
+from ..expectations.compiler import CompilationResult, ExpectationCompiler
 from ..gates.defaults import default_threshold_set
 from ..gates.engine import GateEngine
 from ..grading.pipeline import GradingPipeline
@@ -243,11 +243,61 @@ class EvaluationService:
             model.model_config_id: [] for model in manifest.models
         }
 
+        # Register policies and rubrics from dataset cases for compilation
+        for case in cases:
+            if not compiler.policy_registry.get(case.policy.policy_version_id):
+                compiler.policy_registry.register(
+                    case.policy.policy_version_id,
+                    {"supported_severities": ["low", "medium", "high", "critical"]},
+                )
+            if not compiler.rubric_registry.get(case.rubric.rubric_version_id):
+                compiler.rubric_registry.register(
+                    case.rubric.rubric_version_id,
+                    {"rules": []},
+                )
+
         for model in manifest.models:
             for repetition_index in range(manifest.execution.repetitions):
                 for case in cases:
                     run_id = new_id("run")
-                    expectation = compiler.compile(case)
+                    compilation_result = compiler.compile(case)
+                    if not compilation_result.success:
+                        # Compilation failed - record error and skip this run
+                        run = RunResult(
+                            run_id=run_id,
+                            logical_key=logical_run_key(
+                                experiment_definition_hash=manifest_hash,
+                                test_case_version_id=case.case_version_id,
+                                rendered_prompt_hash=sha256_hex(b""),
+                                model_config_hash=model.configuration_hash(),
+                                repetition_index=repetition_index,
+                                execution_mode=manifest.lane.value,
+                            ),
+                            project_id=project_id,
+                            experiment_id=experiment_id,
+                            case_version_id=case.case_version_id,
+                            prompt_family_id=case.prompt_family_id,
+                            model_config_id=model.model_config_id,
+                            repetition_index=repetition_index,
+                            expected_treatment=case.expected_treatment,
+                            state=RunState.PROVIDER_ERROR,  # Cannot execute without valid expectation
+                        )
+                        self.repository.create_run(run)
+                        run.reliability_error = f"compilation_failed: {compilation_result.error.value}"
+                        self.repository.update_run(run)
+                        self.audit.append(
+                            project_id=project_id,
+                            event_type="run.compilation_failed",
+                            aggregate_type="model_run",
+                            aggregate_id=run_id,
+                            actor_id="we3-foundation-runner",
+                            payload={
+                                "error": compilation_result.error.value,
+                                "error_detail": compilation_result.error_detail,
+                            },
+                        )
+                        continue
+                    expectation = compilation_result.expectation
                     expectation_ref = self.artifacts.put_json(
                         project_id,
                         expectation.model_dump(mode="json"),

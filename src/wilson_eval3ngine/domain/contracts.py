@@ -286,6 +286,8 @@ class ExpectationRecord(ContractModel):
     rubric_version_id: str
     rule_version: str
     source_case_hash: str
+    criticality: str = Field(default="medium", description="high/medium/low")
+    decision_rule_trace: list[str] = Field(default_factory=list, description="Ordered rules applied during compilation")
     compiled_at: datetime = Field(default_factory=utc_now)
 
 
