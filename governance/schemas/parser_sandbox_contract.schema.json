@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wilson-eval3ngine.org/schemas/parser_sandbox_contract.v1.schema.json",
+  "title": "Parser Sandbox Contract",
+  "description": "Schema for parser sandbox isolation controls and execution safety",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "string", "const": "parser_sandbox_contract.v1" },
+    "parser_id": { "type": "string", "minLength": 1 },
+    "execution_mode": { "$ref": "#/$defs/ExecutionMode" },
+    "isolation_controls": {
+      "type": "object",
+      "properties": {
+        "non_root": { "type": "boolean" },
+        "no_network": { "type": "boolean" },
+        "read_only_input": { "type": "boolean" },
+        "isolated_temp_storage": { "type": "boolean" },
+        "no_ambient_credentials": { "type": "boolean" },
+        "linux_capabilities_removed": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "resource_limits": {
+      "type": "object",
+      "properties": {
+        "cpu_time_seconds": { "type": ["integer", "null"] },
+        "wall_time_seconds": { "type": ["integer", "null"] },
+        "memory_bytes": { "type": ["integer", "null"] },
+        "max_processes": { "type": ["integer", "null"] },
+        "max_open_files": { "type": ["integer", "null"] }
+      }
+    },
+    "result_envelope_required": { "type": "boolean" },
+    "result_envelope_schema": { "type": "string" },
+    "quarantine_rules": {
+      "type": "array",
+      "items": { "type": "object" }
+    }
+  },
+  "required": ["schema_version", "parser_id", "execution_mode", "isolation_controls"],
+  "$defs": {
+    "ExecutionMode": {
+      "type": "string",
+      "enum": ["sandbox", "direct", "disabled"]
+    }
+  }
+}

@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wilson-eval3ngine.org/schemas/normalized_document_contract.v1.schema.json",
+  "title": "Normalized Document Contract",
+  "description": "Schema for evidence-preserving normalized document output from adapter pipeline",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "string", "const": "normalized_document_contract.v1" },
+    "object_id": { "type": "string" },
+    "source_family": { "$ref": "#/$defs/SourceFamily" },
+    "source_uri": { "type": "string" },
+    "raw_hash": { "type": "string" },
+    "raw_size_bytes": { "type": "integer", "minimum": 0 },
+    "derived_hash": { "type": "string" },
+    "derived_size_bytes": { "type": "integer", "minimum": 0 },
+    "adapter_id": { "type": "string" },
+    "adapter_version": { "type": "string" },
+    "normalization_version": { "type": "string" },
+    "produced_at": { "type": "string", "format": "date-time" },
+    "categories": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/NormalizedCategory" }
+    },
+    "selectors": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/NormalizedSelector" }
+    },
+    "quarantine": { "type": "object" },
+    "validation": {
+      "type": "object",
+      "properties": {
+        "schema_valid": { "type": "boolean" },
+        "output_valid": { "type": "boolean" },
+        "size_within_limit": { "type": "boolean" },
+        "encoding_valid": { "type": "boolean" }
+      }
+    }
+  },
+  "required": ["schema_version", "source_family", "source_uri", "raw_hash", "raw_size_bytes", "adapter_id", "adapter_version"],
+  "$defs": {
+    "SourceFamily": {
+      "type": "string",
+      "enum": [
+        "text-markdown",
+        "text-structured",
+        "pdf",
+        "image-raster",
+        "image-vector",
+        "archive-zip",
+        "archive-tar",
+        "binary-unknown",
+        "polyglot"
+      ]
+    },
+    "QuarantineReason": {
+      "type": "string",
+      "enum": [
+        "unsupported_format",
+        "media_mismatch",
+        "opaque_encrypted",
+        "parse_failed",
+        "output_exceeds_limit",
+        "active_content"
+      ]
+    },
+    "SelectorKind": {
+      "type": "string",
+      "enum": ["textual", "spatial", "virtual"]
+    },
+    "CategoryType": {
+      "type": "string",
+      "enum": [
+        "metadata",
+        "headings",
+        "prose",
+        "code",
+        "tool_references",
+        "procedures",
+        "facts_claims",
+        "questions_answers",
+        "warnings",
+        "credentials_or_flags",
+        "applications",
+        "links",
+        "opaque_regions"
+      ]
+    },
+    "NormalizedSelector": {
+      "type": "object",
+      "required": ["kind", "confidence", "locator"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/SelectorKind" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "locator": { "type": "string", "minLength": 1 },
+        "source_fingerprint": { "type": "string" }
+      }
+    },
+    "NormalizedCategory": {
+      "type": "object",
+      "required": ["category", "content"],
+      "properties": {
+        "category": { "$ref": "#/$defs/CategoryType" },
+        "content": { "type": "string" },
+        "selectors": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/NormalizedSelector" }
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}

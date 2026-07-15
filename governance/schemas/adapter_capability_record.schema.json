@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wilson-eval3ngine.org/schemas/adapter_capability_record.v1.schema.json",
+  "title": "Adapter Capability Record",
+  "description": "Schema for adapter registry capability records",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "string", "const": "adapter_capability_record.v1" },
+    "adapter_id": { "type": "string", "pattern": "^adapter:[a-z][a-z0-9-]{0,62}$" },
+    "adapter_version": { "type": "string", "pattern": "^v\\d+\\.\\d+\\.\\d+$" },
+    "accepted_media_types": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "magic_signatures": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "schema_versions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "max_input_bytes": { "type": "integer", "minimum": 0 },
+    "max_output_bytes": { "type": "integer", "minimum": 0 },
+    "archive_rules": { "type": "object" },
+    "determinism_guaranteed": { "type": "boolean" },
+    "selector_support": { "type": "boolean" },
+    "fallback_adapter_id": { "type": "string" },
+    "sandbox_profile": { "type": "string", "minLength": 1 },
+    "resource_limits": { "type": "object" }
+  },
+  "required": ["schema_version", "adapter_id", "adapter_version", "accepted_media_types", "max_input_bytes", "max_output_bytes", "sandbox_profile"]
+}

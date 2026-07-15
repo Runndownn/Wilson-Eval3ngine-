@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wilson-eval3ngine.org/schemas/retention_state_matrix.v1.schema.json",
+  "title": "Retention State Matrix",
+  "description": "Schema for retention lifecycle state matrix and garbage collection safety evaluation",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "string", "const": "retention_state_matrix.v1" },
+    "object_id": { "type": "string", "pattern": "^rudi-k:[a-f0-9]{24}$" },
+    "scope": { "type": "string", "minLength": 1 },
+    "retention_rule": { "$ref": "#/$defs/RetentionRule" },
+    "lifecycle_state": { "$ref": "#/$defs/RetentionLifeCycleState" },
+    "holds": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/RetentionHold" }
+    },
+    "references": { "$ref": "#/$defs/ReferenceMap" },
+    "proposed_action": { "$ref": "#/$defs/ProposedAction" },
+    "approval": { "type": "object" },
+    "safety_status": { "$ref": "#/$defs/SafetyStatus" },
+    "evidence_refs": {
+      "type": "array",
+      "items": { "type": "object" }
+    }
+  },
+  "required": ["schema_version", "object_id", "scope", "retention_rule"],
+  "$defs": {
+    "RetentionLifeCycleState": {
+      "type": "string",
+      "enum": [
+        "active",
+        "superseded",
+        "withdrawn",
+        "deleted_occurrence",
+        "archived",
+        "quarantined",
+        "held",
+        "audit_linked",
+        "recoverable",
+        "eligible_for_destruction"
+      ]
+    },
+    "HoldType": {
+      "type": "string",
+      "enum": ["legal", "policy", "migration", "rollback"]
+    },
+    "RetentionRule": {
+      "type": "object",
+      "required": ["policy_version", "raw_content_policy", "derivative_policy"],
+      "properties": {
+        "policy_version": { "type": "string", "minLength": 1 },
+        "raw_content_policy": {
+          "type": "string",
+          "enum": ["retain-restricted", "retain-governed", "discard-after-compile"]
+        },
+        "derivative_policy": {
+          "type": "string",
+          "enum": ["retain", "retain-reviewed-only", "ephemeral"]
+        },
+        "legal_hold": { "type": "boolean" },
+        "review_expiry_days": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "RetentionHold": {
+      "type": "object",
+      "required": ["hold_type", "reason", "applied_at", "correlation_id"],
+      "properties": {
+        "hold_type": { "$ref": "#/$defs/HoldType" },
+        "reason": { "type": "string", "minLength": 1 },
+        "applied_at": { "type": "string", "format": "date-time" },
+        "correlation_id": { "type": "string" },
+        "expires_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "ReferenceMap": {
+      "type": "object",
+      "properties": {
+        "canonical": { "type": "array", "items": { "type": "string" } },
+        "projected": { "type": "array", "items": { "type": "string" } },
+        "audit": { "type": "array", "items": { "type": "string" } },
+        "migration": { "type": "array", "items": { "type": "string" } },
+        "rollback": { "type": "array", "items": { "type": "string" } },
+        "cluster": { "type": "array", "items": { "type": "string" } },
+        "tombstone": { "type": "array", "items": { "type": "string" } },
+        "outbox_event": { "type": "array", "items": { "type": "string" } },
+        "cursor": { "type": "array", "items": { "type": "string" } },
+        "disposable_projection": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "ProposedAction": {
+      "type": "string",
+      "enum": ["delete", "archive", "quarantine", "none"]
+    },
+    "SafetyStatus": {
+      "type": "object",
+      "properties": {
+        "deletion_safe": { "type": "boolean" },
+        "reference_count": { "type": "integer", "minimum": 0 },
+        "hold_count": { "type": "integer", "minimum": 0 },
+        "audit_preserved": { "type": "boolean" }
+      }
+    }
+  }
+}
