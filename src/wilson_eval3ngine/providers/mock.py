@@ -4,6 +4,7 @@ from typing import Any
 
 from ..domain.contracts import ProviderRequest, ProviderResponse
 from ..util import new_id
+from ..constants import FailureMode
 from .base import ProviderFailure
 
 
@@ -28,25 +29,25 @@ class DeterministicMockProvider:
             fault = faults[attempt_number - 1]
             if fault == "provider_rate_limit":
                 raise ProviderFailure(
-                    "provider_rate_limit",
+                    FailureMode.PROVIDER_TIMEOUT,
                     "simulated provider rate limit",
                     retryable=True,
                 )
             if fault == "provider_5xx":
                 raise ProviderFailure(
-                    "provider_5xx",
+                    FailureMode.PROVIDER_TIMEOUT,
                     "simulated provider server failure",
                     retryable=True,
                 )
             if fault == "network_transient":
                 raise ProviderFailure(
-                    "network_transient",
+                    FailureMode.PROVIDER_TIMEOUT,
                     "simulated transient network failure",
                     retryable=True,
                 )
             if fault == "authentication":
                 raise ProviderFailure(
-                    "authentication",
+                    FailureMode.AUTH_FAILURE,
                     "simulated authentication failure",
                     retryable=False,
                 )

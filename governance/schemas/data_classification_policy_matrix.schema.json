@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wilson-eval3ngine.org/schemas/data_classification_policy_matrix.v1.schema.json",
+  "title": "Data Classification Policy Matrix",
+  "description": "Enforces data handling rules for Public, Internal, Confidential, Restricted, and Secret classifications",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "policy_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Semantic version of the policy matrix"
+    },
+    "effective_date": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when this policy becomes effective"
+    },
+    "data_classes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/dataClass" },
+      "minItems": 1
+    }
+  },
+  "required": ["policy_version", "effective_date", "data_classes"],
+  "$defs": {
+    "dataClass": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "classification": { "$ref": "#/$defs/classificationEnum" },
+        "allowed_environments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/environmentEnum" }
+        },
+        "provider_eligibility": { "$ref": "#/$defs/providerEligibility" },
+        "encryption_required": {
+          "type": "boolean",
+          "description": "Always true for Restricted and Secret; true for Confidential by default"
+        },
+        "encryption_key_type": {
+          "type": "string",
+          "enum": ["standard", "customer-managed", "hardware-security-module"],
+          "default": "standard"
+        },
+        "telemetry_treatment": {
+          "type": "string",
+          "enum": ["full", "masked", "none"],
+          "description": "How classification data appears in telemetry: full, masked, or none"
+        },
+        "reviewer_visibility": {
+          "type": "string",
+          "enum": ["public", "authenticated", "authorized-role", "restricted-role", "secret-role"]
+        },
+        "export_restrictions": {
+          "type": "string",
+          "enum": ["none", "authenticated", "role-restricted", "prohibited"]
+        },
+        "retention_period_days": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Mandatory retention period; null for Secret means permanent until explicit destruction"
+        },
+        "legal_hold_eligible": { "type": "boolean" },
+        "disposal_method": {
+          "type": "string",
+          "enum": ["standard-deletion", "cryptographic-deletion", "certified-destruction"]
+        }
+      },
+      "required": ["classification", "allowed_environments", "provider_eligibility", "encryption_required", "telemetry_treatment", "reviewer_visibility", "export_restrictions", "legal_hold_eligible", "disposal_method"]
+    },
+    "splitTrigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "trigger": { "$ref": "#/$defs/splitTriggerEnum" },
+        "description": { "type": "string" },
+        "measurement_method": { "$ref": "#/$defs/measurementMethodEnum" }
+      },
+      "required": ["trigger", "description", "measurement_method"]
+    },
+    "splitTriggerEnum": {
+      "type": "string",
+      "enum": [
+        "incompatible-credentials",
+        "sustained-independent-scaling",
+        "stronger-isolation-required",
+        "residency-required",
+        "ownership-separation",
+        "different-runtime",
+        "independent-release-cadence",
+        "failure-domain-split"
+      ]
+    },
+    "measurementMethodEnum": {
+      "type": "string",
+      "enum": ["metric-threshold", "manual-review", "architecture-review"]
+    },
+    "classificationEnum": {
+      "type": "string",
+      "enum": ["Public", "Internal", "Confidential", "Restricted", "Secret"]
+    },
+    "environmentEnum": {
+      "type": "string",
+      "enum": ["local-dev", "ci", "staging", "production", "partner-hosted"]
+    },
+    "providerEligibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowed": { "type": "boolean" },
+        "notes": { "type": "string" },
+        "explicit_approval_required": { "type": "boolean" }
+      },
+      "required": ["allowed", "notes", "explicit_approval_required"]
+    }
+  }
+}

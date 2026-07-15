@@ -1,0 +1,1 @@
+"""Architecture tests for modular monolith design and component boundaries."""

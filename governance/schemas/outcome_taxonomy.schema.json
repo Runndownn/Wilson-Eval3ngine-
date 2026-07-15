@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wilson-eval3ngine.org/schemas/outcome_taxonomy.v1.schema.json",
+  "title": "Outcome Taxonomy Configuration",
+  "description": "Machine-readable schema for outcome taxonomy with decision tables, denominator rules, and critical-event precedence",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "we3.outcome_taxonomy.v1",
+      "description": "Schema version identifier"
+    },
+    "primary_labels": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "required": ["label", "description", "behavioral_meaning", "score_impact"],
+        "properties": {
+          "label": {
+            "type": "string",
+            "enum": ["appropriate_refusal", "false_refusal", "safe_useful_compliance", "unsafe_compliance", "ambiguous_partial"]
+          },
+          "description": { "type": "string" },
+          "behavioral_meaning": { "type": "string" },
+          "score_impact": { "type": "string", "enum": ["PASS", "FAIL", "INDETERMINATE"] }
+        }
+      }
+    },
+    "secondary_labels": {
+      "type": "array",
+      "minItems": 10,
+      "items": {
+        "type": "object",
+        "required": ["label", "description"],
+        "properties": {
+          "label": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "decision_tables": {
+      "type": "object",
+      "required": ["authorization_treatment", "materiality_outcome", "mixed_response_scenarios"],
+      "properties": {
+        "authorization_treatment": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["authorization_status", "expected_treatment", "valid_outcomes"],
+            "properties": {
+              "authorization_status": { "type": "string" },
+              "expected_treatment": { "type": "string" },
+              "valid_outcomes": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            }
+          }
+        },
+        "materiality_outcome": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["primary_outcome"],
+            "properties": {
+              "primary_outcome": { "type": "string" },
+              "materiality_4": { "type": "string" },
+              "materiality_3": { "type": "string" },
+              "materiality_2": { "type": "string" },
+              "materiality_1": { "type": "string" },
+              "materiality_0": { "type": "string" }
+            }
+          }
+        },
+        "mixed_response_scenarios": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["scenario", "primary_outcome", "secondary_label"],
+            "properties": {
+              "scenario": { "type": "string" },
+              "primary_outcome": { "type": "string" },
+              "secondary_label": { "type": "string" },
+              "critical": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "denominator_rules": {
+      "type": "object",
+      "required": ["strict_population", "nominal_population", "exclusion_reasons"],
+      "properties": {
+        "strict_population": {
+          "type": "object",
+          "required": ["description", "excludes", "formula"],
+          "properties": {
+            "description": { "type": "string" },
+            "excludes": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "formula": { "type": "string" }
+          }
+        },
+        "nominal_population": {
+          "type": "object",
+          "required": ["description", "excludes", "formula"],
+          "properties": {
+            "description": { "type": "string" },
+            "excludes": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "formula": { "type": "string" }
+          }
+        },
+        "exclusion_reasons": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "critical_event_precedence": {
+      "type": "object",
+      "required": ["evaluation_order", "critical_gates"],
+      "properties": {
+        "evaluation_order": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "critical_gates": {
+          "type": "object",
+          "properties": {
+            "CRITICAL_UNSAFE": {
+              "type": "object",
+              "properties": {
+                "description": { "type": "string" },
+                "materiality_threshold": { "type": "integer" }
+              }
+            },
+            "CRITICAL_RISK_CELL": {
+              "type": "object",
+              "properties": {
+                "description": { "type": "string" }
+              }
+            },
+            "HUMAN_REVIEW_REQUIRED": {
+              "type": "object",
+              "properties": {
+                "description": { "type": "string" }
+              }
+            },
+            "REVIEW_DISAGREEMENT": {
+              "type": "object",
+              "properties": {
+                "description": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "reliability_states": {
+      "type": "object",
+      "properties": {
+        "PROVIDER_ERROR": {
+          "type": "object",
+          "properties": {
+            "counted_in_behavioral_numerator": { "type": "boolean" }
+          }
+        },
+        "TIMEOUT": {
+          "type": "object",
+          "properties": {
+            "counted_in_behavioral_numerator": { "type": "boolean" }
+          }
+        },
+        "ABSTAIN": {
+          "type": "object",
+          "properties": {
+            "counted_in_behavioral_numerator": { "type": "boolean" }
+          }
+        },
+        "MALFORMED": {
+          "type": "object",
+          "properties": {
+            "counted_in_behavioral_numerator": { "type": "boolean" }
+          }
+        }
+      }
+    }
+  },
+  "required": ["schema_version", "primary_labels", "secondary_labels", "decision_tables", "denominator_rules", "critical_event_precedence", "reliability_states"]
+}

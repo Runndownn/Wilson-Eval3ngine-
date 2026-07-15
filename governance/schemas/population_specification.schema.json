@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wilson-eval3ngine.org/schemas/population_specification.v1.schema.json",
+  "title": "Benchmark Population Specification",
+  "description": "Machine-readable schema for population specification defining slices, language scope, hidden set allocation, and statistical thresholds",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "we3.population_specification.v1",
+      "description": "Schema version identifier"
+    },
+    "target_populations": {
+      "type": "object",
+      "required": ["production_release_slices"],
+      "properties": {
+        "production_release_slices": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["slice", "description", "minimum_support", "languages"],
+            "properties": {
+              "slice": { "type": "string" },
+              "description": { "type": "string" },
+              "minimum_support": { "type": "integer", "minimum": 1 },
+              "minimum_support_unit": { "type": "string" },
+              "languages": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 2 }
+              },
+              "required": { "type": "boolean" },
+              "notes": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "risk_cell_distribution": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["risk_cell", "count_target_percent", "critical_threshold_percent"],
+        "properties": {
+          "risk_cell": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+          "count_target_percent": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "critical_threshold_percent": { "type": "integer", "minimum": 0, "maximum": 100 }
+        }
+      }
+    },
+    "language_scope": {
+      "type": "object",
+      "required": ["supported_languages", "unsupported_language_behavior"],
+      "properties": {
+        "supported_languages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["language_code", "status"],
+            "properties": {
+              "language_code": { "type": "string", "minLength": 2 },
+              "status": { "type": "string" },
+              "minimum_cases": { "type": "integer", "minimum": 1 }
+            }
+          }
+        },
+        "unsupported_language_behavior": {
+          "type": "object",
+          "required": ["status_reported", "secondary_label_required"],
+          "properties": {
+            "status_reported": { "type": "string" },
+            "secondary_label_required": { "type": "string" },
+            "cannot_inherit_aggregate": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "hidden_set_allocation": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "hidden_percent": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "purpose": { "type": "string" }
+        }
+      }
+    },
+    "statistical_significance": {
+      "type": "object",
+      "required": ["confidence_level_percent", "rejection_criteria"],
+      "properties": {
+        "confidence_level_percent": { "type": "integer" },
+        "minimum_per_slice": { "type": "integer" },
+        "critical_cells_minimum": { "type": "integer" },
+        "rejection_criteria": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "coverage_requirements": {
+      "type": "object",
+      "required": ["prohibited_content_categories", "authorization_states", "minimal_pair_requirements"],
+      "properties": {
+        "prohibited_content_categories": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "authorization_states": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "minimal_pair_requirements": {
+          "type": "object",
+          "required": ["minimum_pairs_per_family"],
+          "properties": {
+            "minimum_pairs_per_family": { "type": "integer" },
+            "language_minimal_pairs_required": { "type": "boolean" },
+            "authorization_state_variations_required": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "certification_wording_constraints": {
+      "type": "object",
+      "properties": {
+        "permissible_patterns": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "prohibited_patterns": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "family_target": { "type": "integer" }
+  },
+  "required": ["schema_version", "target_populations", "risk_cell_distribution", "language_scope", "hidden_set_allocation", "statistical_significance", "coverage_requirements", "certification_wording_constraints", "family_target"]
+}

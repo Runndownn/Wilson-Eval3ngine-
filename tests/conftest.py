@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -19,3 +19,15 @@ def repo_root() -> Path:
 @pytest.fixture
 def foundation_manifest(repo_root: Path) -> Path:
     return repo_root / "examples" / "experiments" / "foundation.yaml"
+
+
+@pytest.fixture
+def governance_path(repo_root):
+    """Return path to governance directory."""
+    return repo_root / "governance"
+
+
+@pytest.fixture
+def compliance_path(governance_path):
+    """Return path to compliance directory."""
+    return governance_path / "compliance"

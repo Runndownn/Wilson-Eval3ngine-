@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wilson-eval3ngine.org/schemas/schema_registry_index.v1.schema.json",
+  "title": "Schema Registry Index",
+  "description": "Machine-readable schema for schema registry index with security parser requirements",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "registry_version": { "type": "string" },
+    "schemas": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["schema_name", "version", "schema_path", "schema_hash", "owner", "lifecycle_state", "producers", "consumers", "critical_fields"],
+        "properties": {
+          "schema_name": { "type": "string" },
+          "version": { "type": "string" },
+          "schema_path": { "type": "string" },
+          "schema_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+          "owner": { "type": "string" },
+          "lifecycle_state": { "type": "string", "enum": ["active", "deprecated", "retired"] },
+          "producers": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "consumers": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "critical_fields": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "compatibility_policy": {
+      "type": "object",
+      "required": ["additive_optional_fields", "removed_fields", "renamed_fields", "score_affecting_changes"],
+      "properties": {
+        "additive_optional_fields": { "type": "string" },
+        "removed_fields": { "type": "string" },
+        "renamed_fields": { "type": "string" },
+        "score_affecting_changes": { "type": "string" }
+      }
+    },
+    "canonical_serialization": {
+      "type": "object",
+      "required": ["encoding", "key_ordering", "numeric_representation", "timestamp_format", "identifier_format"],
+      "properties": {
+        "encoding": { "type": "string", "const": "UTF-8" },
+        "key_ordering": { "type": "string", "const": "alphabetical" },
+        "numeric_representation": { "type": "string" },
+        "timestamp_format": { "type": "string", "const": "ISO_8601_with_offset" },
+        "identifier_format": { "type": "string" }
+      }
+    },
+    "security_parsers": {
+      "type": "object",
+      "properties": {
+        "reject_duplicate_keys": { "type": "boolean" },
+        "reject_invalid_unicode": { "type": "boolean" },
+        "reject_non_finite_numbers": { "type": "boolean" },
+        "reject_unsafe_yaml_tags": { "type": "boolean" },
+        "reject_excessive_nesting": { "type": "boolean" },
+        "reject_oversized_scalars": { "type": "boolean" },
+        "max_nesting_depth": { "type": "integer" },
+        "max_scalar_bytes": { "type": "integer" },
+        "yaml_safe_constructors_only": { "type": "boolean" }
+      }
+    }
+  },
+  "required": ["registry_version", "schemas", "compatibility_policy", "canonical_serialization", "security_parsers"]
+}

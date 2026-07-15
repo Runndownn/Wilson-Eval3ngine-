@@ -7,6 +7,7 @@ from sqlalchemy import text
 
 from .database import Database
 from ..util import utc_now
+from ..constants import StateTimeouts
 
 
 _POSTGRES_LEASE_SQL = text(
@@ -49,7 +50,7 @@ class DurableJobQueue:
         self,
         *,
         worker_id: str,
-        lease_seconds: int = 60,
+        lease_seconds: int = StateTimeouts.LEASE_TIMEOUT,
     ) -> dict[str, Any] | None:
         if self.database.engine.dialect.name != "postgresql":
             raise RuntimeError("durable SKIP LOCKED leasing requires PostgreSQL")

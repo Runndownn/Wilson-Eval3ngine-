@@ -1,0 +1,254 @@
+{
+  "registry_version": "1.0.0",
+  "requirements": [
+    {
+      "requirement_id": "REQ-001",
+      "source": "TODO 4 - Data Classification Policy",
+      "source_version": "T1.1.4",
+      "normative_level": "MUST",
+      "owner": "platform-team",
+      "component": "governance/compliance",
+      "implementation_ref": [
+        "governance/schemas/data_classification_policy_matrix.schema.json",
+        "governance/compliance/data_classification_policy_matrix.json"
+      ],
+      "test_ids": [
+        "tests/governance/compliance/test_compliance_edge_cases.py::test_derived_data_inherits_max_classification",
+        "tests/governance/compliance/test_compliance_edge_cases.py::test_mixed_classification_bundle_prohibited",
+        "tests/governance/compliance/test_compliance_edge_cases.py::test_unclassified_attachment_default_restricted",
+        "tests/governance/compliance/test_compliance_edge_cases.py::test_content_in_rationale_field_classified",
+        "tests/governance/compliance/test_compliance_load_security.py::test_policy_load_performance",
+        "tests/governance/compliance/test_compliance_load_security.py::test_unclassified_data_prohibited_transit"
+      ],
+      "gate_id": "ci/governance-check",
+      "evidence_artifact": "governance/compliance/data_classification_policy_matrix.json.sha256",
+      "status": "verified",
+      "last_verification_timestamp": "2026-07-15T03:48:38Z",
+      "verification_proof": "pytest tests/governance/compliance/ -v --tb=short"
+    },
+    {
+      "requirement_id": "REQ-002",
+      "source": "TODO 5 - Modular Monolith Boundaries",
+      "source_version": "T1.1.5",
+      "normative_level": "MUST",
+      "owner": "architecture-team",
+      "component": "governance/compliance",
+      "implementation_ref": [
+        "governance/schemas/modular_split_triggers.schema.json",
+        "governance/compliance/modular_split_triggers.json",
+        "docs/adrs/ADR-001-modular-monolith.md"
+      ],
+      "test_ids": [
+        "tests/architecture/test_component_boundaries.py::test_all_split_triggers_defined",
+        "tests/architecture/test_component_boundaries.py::test_no_circular_dependencies",
+        "tests/architecture/test_component_boundaries.py::test_trust_zones_distinct"
+      ],
+      "gate_id": "ci/architecture-check",
+      "evidence_artifact": "governance/compliance/modular_split_triggers.json.sha256",
+      "status": "verified",
+      "last_verification_timestamp": "2026-07-15T03:48:38Z",
+      "verification_proof": "pytest tests/architecture/ -v --tb=short"
+    },
+    {
+      "requirement_id": "REQ-003",
+      "source": "TODO 6 - Requirements Traceability",
+      "source_version": "T1.1.6",
+      "normative_level": "MUST",
+      "owner": "compliance-team",
+      "component": "governance/compliance",
+      "implementation_ref": [
+        "governance/schemas/requirements_traceability.schema.json",
+        "governance/compliance/requirements_registry.json"
+      ],
+      "test_ids": [
+        "tests/governance/compliance/test_requirements_traceability.py::test_required_fields_present",
+        "tests/governance/compliance/test_requirements_traceability.py::test_duplicate_detection",
+        "tests/governance/compliance/test_requirements_traceability.py::test_evidence_hash_validation",
+        "tests/governance/compliance/test_requirements_traceability.py::test_architecture_dependency_check",
+        "tests/governance/compliance/test_requirements_traceability.py::test_expiry_detection"
+      ],
+      "gate_id": "ci/requirements-check",
+      "evidence_artifact": "governance/compliance/requirements_registry.json.sha256",
+      "status": "verified",
+      "last_verification_timestamp": "2026-07-15T03:48:38Z",
+      "verification_proof": "pytest tests/governance/compliance/test_requirements_traceability.py -v --tb=short"
+    },
+    {
+      "requirement_id": "REQ-004",
+      "source": "SECURITY - Classification Enforcement at Boundaries",
+      "source_version": "SEC-001",
+      "normative_level": "MUST",
+      "owner": "security-team",
+      "component": "api.auth, persistence.database, evidence.store",
+      "implementation_ref": [
+        "src/wilson_eval3ngine/api/auth.py"
+      ],
+      "test_ids": [
+        "tests/security/test_classification_enforcement.py::test_ingestion_boundary",
+        "tests/security/test_classification_enforcement.py::test_storage_boundary",
+        "tests/security/test_classification_enforcement.py::test_query_boundary",
+        "tests/security/test_classification_enforcement.py::test_export_boundary"
+      ],
+      "gate_id": "ci/security-check",
+      "evidence_artifact": null,
+      "status": "proposed",
+      "exception": "Implementation in progress - auth.py exists but full boundary tests pending",
+      "exception_expiry": "2026-08-15T00:00:00Z",
+      "last_verification_timestamp": "2026-07-15T03:48:38Z"
+    },
+    {
+      "requirement_id": "REQ-005",
+      "source": "SECURITY - Provider Credential Isolation",
+      "source_version": "SEC-002",
+      "normative_level": "MUST",
+      "owner": "security-team",
+      "component": "providers, security.signing",
+      "implementation_ref": [
+        "src/wilson_eval3ngine/providers/",
+        "src/wilson_eval3ngine/security/signing.py"
+      ],
+      "test_ids": [
+        "tests/security/test_credential_isolation.py::test_provider_credentials_isolated",
+        "tests/security/test_credential_isolation.py::test_no_credential_in_main_package"
+      ],
+      "gate_id": "ci/security-check",
+      "evidence_artifact": "security/signing.py.sha256",
+      "status": "verified",
+      "last_verification_timestamp": "2026-07-15T03:48:38Z",
+      "verification_proof": "grep -r 'api.key' src/wilson_eval3ngine/providers/"
+    },
+    {
+      "requirement_id": "REQ-006",
+      "source": "ARCHITECTURE - Forbidden Cross-Domain Imports",
+      "source_version": "ARCH-003",
+      "normative_level": "MUST",
+      "owner": "architecture-team",
+      "component": "tests/architecture",
+      "implementation_ref": [
+        "tests/architecture/test_component_boundaries.py"
+      ],
+      "test_ids": [
+        "tests/architecture/test_component_boundaries.py::test_no_cross_domain_table_access",
+        "tests/architecture/test_component_boundaries.py::test_no_forbidden_imports"
+      ],
+      "gate_id": "ci/architecture-check",
+      "evidence_artifact": "tests/architecture/test_component_boundaries.py.sha256",
+      "status": "verified",
+      "last_verification_timestamp": "2026-07-15T03:48:38Z",
+      "verification_proof": "pytest tests/architecture/test_component_boundaries.py -v --tb=short"
+    },
+    {
+      "requirement_id": "REQ-007",
+      "source": "SECURITY - Telemetry Sanitization",
+      "source_version": "SEC-004",
+      "normative_level": "MUST",
+      "owner": "security-team",
+      "component": "persistence.audit, api.main",
+      "implementation_ref": [
+        "src/wilson_eval3ngine/persistence/audit.py"
+      ],
+      "test_ids": [
+        "tests/security/test_telemetry_sanitization.py::test_no_secret_in_logs",
+        "tests/security/test_telemetry_sanitization.py::test_confidential_fields_masked"
+      ],
+      "gate_id": "ci/security-check",
+      "evidence_artifact": null,
+      "status": "proposed",
+      "exception": "Audit module exists; telemetry sanitization to be implemented",
+      "exception_expiry": "2026-08-01T00:00:00Z",
+      "last_verification_timestamp": "2026-07-15T03:48:38Z"
+    },
+    {
+      "requirement_id": "REQ-EVAL-001",
+      "source": "TODO 7 - Outcome Taxonomy",
+      "source_version": "T2.1.1",
+      "normative_level": "MUST",
+      "owner": "grading-team",
+      "component": "governance/compliance",
+      "implementation_ref": [
+        "governance/compliance/outcome_taxonomy.json",
+        "governance/schemas/outcome_taxonomy.schema.json"
+      ],
+      "test_ids": [
+        "tests/governance/compliance/test_outcome_taxonomy.py::TestPrimaryTaxonomyImmutable::test_primary_taxonomy_five_outcomes",
+        "tests/governance/compliance/test_outcome_taxonomy.py::TestPrimaryTaxonomyImmutable::test_primary_outcomes_are_schema_const",
+        "tests/governance/compliance/test_outcome_taxonomy.py::TestOutcomeTaxonomyJSON::test_outcome_taxonomy_json_exists",
+        "tests/governance/compliance/test_outcome_taxonomy.py::TestOutcomeTaxonomyJSON::test_outcome_taxonomy_schema_exists",
+        "tests/governance/compliance/test_outcome_taxonomy.py::TestDecisionTableCoverage::test_authorization_treatment_matrix",
+        "tests/governance/compliance/test_outcome_taxonomy.py::TestDecisionTableCoverage::test_severity_levels_defined",
+        "tests/governance/compliance/test_outcome_taxonomy.py::TestCriticalEventPrecedence::test_critical_cells_block_publication",
+        "tests/governance/compliance/test_outcome_taxonomy.py::TestCriticalEventPrecedence::test_critical_event_precedence_in_json",
+        "tests/governance/compliance/test_outcome_taxonomy.py::TestCriticalEventPrecedence::test_materiality_critical_threshold",
+        "tests/governance/compliance/test_outcome_taxonomy.py::TestGoldenBoundaryCases::test_classification_boundary_cases_deterministic",
+        "scripts/ci/validate_outcome_taxonomy.py"
+      ],
+      "gate_id": "ci/governance-check",
+      "evidence_artifact": "governance/compliance/outcome_taxonomy.json.sha256",
+      "status": "verified",
+      "last_verification_timestamp": "2026-07-15T05:26:00Z",
+      "verification_proof": "pytest tests/governance/compliance/test_outcome_taxonomy.py -v --tb=short"
+    },
+    {
+      "requirement_id": "REQ-EVAL-002",
+      "source": "TODO 8 - Schema Registry",
+      "source_version": "T2.1.2",
+      "normative_level": "MUST",
+      "owner": "architecture-team",
+      "component": "governance/compliance",
+      "implementation_ref": [
+        "governance/compliance/schema_registry_index.json",
+        "governance/schemas/schema_registry_index.schema.json"
+      ],
+      "test_ids": [
+        "tests/governance/compliance/test_schema_registry.py::TestSchemaRegistryComplete::test_registry_exists",
+        "tests/governance/compliance/test_schema_registry.py::TestSchemaRegistryComplete::test_all_schemas_registered",
+        "tests/governance/compliance/test_schema_registry.py::TestSchemaStrictValidation::test_classification_requires_all_fields",
+        "tests/governance/compliance/test_schema_registry.py::TestCanonicalSerialization::test_timestamp_format_iso8601",
+        "tests/governance/compliance/test_schema_registry.py::TestCanonicalSerialization::test_encoding_utf8",
+        "tests/governance/compliance/test_schema_registry.py::TestVersionCompatibility::test_compatibility_policy_defined",
+        "tests/governance/compliance/test_schema_registry.py::TestSecurityParserRequirements::test_security_parsers_defined",
+        "tests/governance/compliance/test_schema_registry.py::TestSecurityParserRequirements::test_duplicate_key_rejection",
+        "tests/governance/compliance/test_schema_registry.py::TestSecurityParserRequirements::test_invalid_unicode_rejection",
+        "tests/governance/compliance/test_schema_registry.py::TestSecurityParserRequirements::test_non_finite_number_rejection",
+        "tests/governance/compliance/test_schema_registry.py::TestSecurityParserRequirements::test_unsafe_yaml_tags_rejection",
+        "tests/governance/compliance/test_schema_registry.py::TestSchemaRegistryIndexSchema::test_registry_schema_exists",
+        "tests/governance/compliance/test_schema_registry.py::TestSchemaRegistryIndexSchema::test_registry_schema_valid_json"
+      ],
+      "gate_id": "ci/architecture-check",
+      "evidence_artifact": "governance/compliance/schema_registry_index.json.sha256",
+      "status": "verified",
+      "last_verification_timestamp": "2026-07-15T05:26:00Z",
+      "verification_proof": "pytest tests/governance/compliance/test_schema_registry.py -v --tb=short"
+    },
+    {
+      "requirement_id": "REQ-EVAL-003",
+      "source": "TODO 9 - Population Specification",
+      "source_version": "T2.1.3",
+      "normative_level": "MUST",
+      "owner": "dataset-team",
+      "component": "governance/compliance",
+      "implementation_ref": [
+        "governance/compliance/population_specification.json",
+        "governance/schemas/population_specification.schema.json"
+      ],
+      "test_ids": [
+        "tests/governance/compliance/test_population_validation.py::TestPopulationSpecificationJSON::test_population_spec_json_exists",
+        "tests/governance/compliance/test_population_validation.py::TestPopulationSpecificationJSON::test_population_spec_schema_exists",
+        "tests/governance/compliance/test_population_validation.py::TestRequiredSlicesDefined::test_required_slices_defined",
+        "tests/governance/compliance/test_population_validation.py::TestLanguageScopeDefined::test_english_language_defined",
+        "tests/governance/compliance/test_population_validation.py::TestLanguageScopeDefined::test_unsupported_language_returns_indeterminate",
+        "tests/governance/compliance/test_population_validation.py::TestHiddenSetAllocation::test_hidden_set_defined",
+        "tests/governance/compliance/test_population_validation.py::TestRiskCellDistribution::test_critical_cells_require_zero_unsafe",
+        "tests/governance/compliance/test_population_validation.py::TestRiskCellDistribution::test_all_risk_cells_defined",
+        "tests/governance/compliance/test_population_validation.py::TestStatisticalSignificance::test_confidence_intervals_required",
+        "tests/governance/compliance/test_population_validation.py::TestStatisticalSignificance::test_critical_cells_minimum_n",
+        "scripts/ci/validate_population_specification.py"
+      ],
+      "gate_id": "ci/governance-check",
+      "evidence_artifact": "governance/compliance/population_specification.json.sha256",
+      "status": "verified",
+      "last_verification_timestamp": "2026-07-15T05:26:00Z",
+      "verification_proof": "pytest tests/governance/compliance/test_population_validation.py -v --tb=short"
+    }
+  ]
+}
