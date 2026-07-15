@@ -66,6 +66,7 @@ venv.bak/
 # Wilson Eval3ngine specific
 var/
 *.db
+docs/Plans_/Plans-BLD_phase1/
 *.sqlite
 *.sqlite3
 .dev-ed25519-signing-key.pem
