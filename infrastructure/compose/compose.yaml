@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: we3
+      POSTGRES_USER: we3
+      POSTGRES_PASSWORD: we3-local-only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U we3 -d we3"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - we3-postgres:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    environment:
+      WE3_ENVIRONMENT: development
+      WE3_AUTH_MODE: dev
+      WE3_DATABASE_URL: postgresql+psycopg://we3:we3-local-only@postgres:5432/we3
+      WE3_ARTIFACT_ROOT: /var/lib/we3/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - we3-artifacts:/var/lib/we3/artifacts
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  we3-postgres:
+  we3-artifacts:

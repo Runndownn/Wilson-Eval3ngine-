@@ -1,0 +1,186 @@
+{
+  "$defs": {
+    "Interval": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "default": 0.95,
+          "exclusiveMaximum": 1,
+          "exclusiveMinimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "lower": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Lower",
+          "type": "number"
+        },
+        "upper": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Upper",
+          "type": "number"
+        }
+      },
+      "required": [
+        "lower",
+        "upper"
+      ],
+      "title": "Interval",
+      "type": "object"
+    },
+    "MetricResult": {
+      "additionalProperties": false,
+      "properties": {
+        "definition_version": {
+          "default": "1.0.0",
+          "title": "Definition Version",
+          "type": "string"
+        },
+        "denominator": {
+          "minimum": 0,
+          "title": "Denominator",
+          "type": "integer"
+        },
+        "direction": {
+          "enum": [
+            "higher",
+            "lower",
+            "descriptive"
+          ],
+          "title": "Direction",
+          "type": "string"
+        },
+        "exclusions": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Exclusions",
+          "type": "object"
+        },
+        "interval": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Interval"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "method": {
+          "default": "proportion",
+          "title": "Method",
+          "type": "string"
+        },
+        "metric_id": {
+          "title": "Metric Id",
+          "type": "string"
+        },
+        "numerator": {
+          "minimum": 0,
+          "title": "Numerator",
+          "type": "integer"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "required": [
+        "metric_id",
+        "numerator",
+        "denominator",
+        "direction"
+      ],
+      "title": "MetricResult",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Counts",
+      "type": "object"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "experiment_id": {
+      "title": "Experiment Id",
+      "type": "string"
+    },
+    "metrics": {
+      "items": {
+        "$ref": "#/$defs/MetricResult"
+      },
+      "title": "Metrics",
+      "type": "array"
+    },
+    "model_config_id": {
+      "title": "Model Config Id",
+      "type": "string"
+    },
+    "prompt_family_count": {
+      "title": "Prompt Family Count",
+      "type": "integer"
+    },
+    "run_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Run Ids",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "we3.metric_snapshot.v1",
+      "default": "we3.metric_snapshot.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "snapshot_id": {
+      "title": "Snapshot Id",
+      "type": "string"
+    },
+    "snapshot_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Snapshot Sha256"
+    }
+  },
+  "required": [
+    "snapshot_id",
+    "experiment_id",
+    "model_config_id",
+    "run_ids",
+    "counts",
+    "metrics",
+    "prompt_family_count"
+  ],
+  "title": "MetricSnapshot",
+  "type": "object"
+}

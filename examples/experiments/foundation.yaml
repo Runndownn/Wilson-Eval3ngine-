@@ -1,0 +1,88 @@
+schema_version: we3.experiment.v1
+name: foundation-security-boundary-comparison
+project: model-safety
+lane: certification
+purpose: foundation_contract_and_metric_validation
+dataset:
+  dataset_id: ds_security_boundary
+  version: 0.1.0
+  split: certification
+  manifest_sha256: auto
+  local_path: ../datasets/security_boundary_0.1.0.yaml
+models:
+- model_config_id: mdl_mock_balanced
+  role: baseline
+  provider: mock
+  model: mock-balanced-v1
+  profile: balanced
+  parameters:
+    temperature: 0
+    max_output_tokens: 512
+- model_config_id: mdl_mock_over_refusal
+  role: candidate
+  provider: mock
+  model: mock-over-refusal-v1
+  profile: over_refuse
+  parameters:
+    temperature: 0
+    max_output_tokens: 512
+execution:
+  repetitions: 1
+  randomization:
+    case_order: seeded
+    seed: 20260714
+  concurrency:
+    global: 4
+    per_provider: 2
+  deadline_minutes: 30
+  response_cache: disabled
+  streaming: disabled
+retry_policy:
+  max_attempts: 4
+  initial_backoff_seconds: 2
+  maximum_backoff_seconds: 60
+  maximum_elapsed_seconds: 300
+  jitter: full
+  retryable_classes:
+  - provider_rate_limit
+  - provider_5xx
+  - network_transient
+graders:
+  expectation_rule_version: 1.0.0
+  deterministic_suite: deterministic-foundation-1.0.0
+  semantic_classifier: null
+  judges: []
+  fusion: fusion-foundation-1.0.0
+  review_policy: review-foundation-1.0.0
+metrics:
+  definitions:
+  - WE3-BEH-RR@1.0.0
+  - WE3-SAFE-AR@1.0.0
+  - WE3-SAFE-UCR@1.0.0
+  - WE3-HELP-FRR@1.0.0
+  - WE3-HELP-SCR@1.0.0
+  - WE3-BEH-AMR@1.0.0
+  - WE3-OPS-FAIL@1.0.0
+  statistical_plan: stats-foundation-1.0.0
+release:
+  threshold_set: release_standard_foundation@0.1.0
+  baseline_experiment_id: null
+  require_all_critical_reviews: true
+  require_signed_dossier: true
+  minimum_prompt_families: 30
+budgets:
+  provider_currency_hard: 10
+  grading_currency_hard: 5
+  human_review_tasks_hard: 20
+  storage_gib_hard: 1
+retention:
+  policy_id: restricted_eval_foundation_1.0.0
+  legal_hold: false
+outputs:
+- json
+- safe_html
+- release_dossier
+notifications:
+  on_warning: disabled
+  on_block: disabled
+  raw_content: forbidden

@@ -1,0 +1,415 @@
+{
+  "$defs": {
+    "AuthorizationStatus": {
+      "enum": [
+        "authorized",
+        "unverified",
+        "not_authorized",
+        "not_applicable"
+      ],
+      "title": "AuthorizationStatus",
+      "type": "string"
+    },
+    "ContentBlock": {
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "maxLength": 100000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "type": {
+          "const": "text",
+          "default": "text",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "ContentBlock",
+      "type": "object"
+    },
+    "Conversation": {
+      "additionalProperties": false,
+      "properties": {
+        "system": {
+          "items": {
+            "$ref": "#/$defs/ContentBlock"
+          },
+          "title": "System",
+          "type": "array"
+        },
+        "turns": {
+          "items": {
+            "$ref": "#/$defs/ConversationTurn"
+          },
+          "minItems": 1,
+          "title": "Turns",
+          "type": "array"
+        }
+      },
+      "required": [
+        "turns"
+      ],
+      "title": "Conversation",
+      "type": "object"
+    },
+    "ConversationTurn": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "items": {
+            "$ref": "#/$defs/ContentBlock"
+          },
+          "minItems": 1,
+          "title": "Content",
+          "type": "array"
+        },
+        "role": {
+          "enum": [
+            "system",
+            "user",
+            "assistant"
+          ],
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "content"
+      ],
+      "title": "ConversationTurn",
+      "type": "object"
+    },
+    "ExpectedTreatment": {
+      "enum": [
+        "comply",
+        "refuse",
+        "boundary"
+      ],
+      "title": "ExpectedTreatment",
+      "type": "string"
+    },
+    "Governance": {
+      "additionalProperties": false,
+      "properties": {
+        "adjudicator": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Adjudicator"
+        },
+        "authors": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Authors",
+          "type": "array"
+        },
+        "contamination_risk": {
+          "default": "low",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Contamination Risk",
+          "type": "string"
+        },
+        "deprecation_state": {
+          "default": "active",
+          "enum": [
+            "active",
+            "deprecated",
+            "retired"
+          ],
+          "title": "Deprecation State",
+          "type": "string"
+        },
+        "label_confidence": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ],
+          "title": "Label Confidence",
+          "type": "string"
+        },
+        "reviewers": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Reviewers",
+          "type": "array"
+        }
+      },
+      "required": [
+        "label_confidence",
+        "authors",
+        "reviewers"
+      ],
+      "title": "Governance",
+      "type": "object"
+    },
+    "Lineage": {
+      "additionalProperties": false,
+      "properties": {
+        "content_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Sha256"
+        },
+        "source_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Ids",
+          "type": "array"
+        }
+      },
+      "title": "Lineage",
+      "type": "object"
+    },
+    "PolicyRef": {
+      "additionalProperties": false,
+      "properties": {
+        "policy_version_id": {
+          "minLength": 1,
+          "title": "Policy Version Id",
+          "type": "string"
+        },
+        "rationale": {
+          "maxLength": 20000,
+          "minLength": 1,
+          "title": "Rationale",
+          "type": "string"
+        }
+      },
+      "required": [
+        "policy_version_id",
+        "rationale"
+      ],
+      "title": "PolicyRef",
+      "type": "object"
+    },
+    "PrimaryLabel": {
+      "enum": [
+        "appropriate_refusal",
+        "false_refusal",
+        "safe_useful_compliance",
+        "unsafe_compliance",
+        "ambiguous_partial"
+      ],
+      "title": "PrimaryLabel",
+      "type": "string"
+    },
+    "RubricRef": {
+      "additionalProperties": false,
+      "properties": {
+        "grader_instructions_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Grader Instructions Ref"
+        },
+        "rubric_version_id": {
+          "minLength": 1,
+          "title": "Rubric Version Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rubric_version_id"
+      ],
+      "title": "RubricRef",
+      "type": "object"
+    },
+    "Severity": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "title": "Severity",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "acceptable_alternatives": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Acceptable Alternatives",
+      "type": "array"
+    },
+    "authorization_status": {
+      "$ref": "#/$defs/AuthorizationStatus"
+    },
+    "case_version_id": {
+      "minLength": 1,
+      "title": "Case Version Id",
+      "type": "string"
+    },
+    "category": {
+      "minLength": 1,
+      "title": "Category",
+      "type": "string"
+    },
+    "conversation": {
+      "$ref": "#/$defs/Conversation"
+    },
+    "dataset_version_id": {
+      "minLength": 1,
+      "title": "Dataset Version Id",
+      "type": "string"
+    },
+    "expected_primary_outcomes": {
+      "items": {
+        "$ref": "#/$defs/PrimaryLabel"
+      },
+      "title": "Expected Primary Outcomes",
+      "type": "array"
+    },
+    "expected_treatment": {
+      "$ref": "#/$defs/ExpectedTreatment"
+    },
+    "governance": {
+      "$ref": "#/$defs/Governance"
+    },
+    "language": {
+      "default": "en",
+      "minLength": 2,
+      "title": "Language",
+      "type": "string"
+    },
+    "lineage": {
+      "$ref": "#/$defs/Lineage"
+    },
+    "materiality_floor": {
+      "default": 2,
+      "maximum": 4,
+      "minimum": 0,
+      "title": "Materiality Floor",
+      "type": "integer"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "minimum_usefulness": {
+      "default": 2,
+      "maximum": 4,
+      "minimum": 0,
+      "title": "Minimum Usefulness",
+      "type": "integer"
+    },
+    "policy": {
+      "$ref": "#/$defs/PolicyRef"
+    },
+    "prohibited_behavior": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Prohibited Behavior",
+      "type": "array"
+    },
+    "prompt_family_id": {
+      "minLength": 1,
+      "title": "Prompt Family Id",
+      "type": "string"
+    },
+    "requested_capability": {
+      "minLength": 1,
+      "title": "Requested Capability",
+      "type": "string"
+    },
+    "required_concepts": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Required Concepts",
+      "type": "array"
+    },
+    "rubric": {
+      "$ref": "#/$defs/RubricRef"
+    },
+    "schema_version": {
+      "const": "we3.test_case.v1",
+      "default": "we3.test_case.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "severity": {
+      "$ref": "#/$defs/Severity"
+    },
+    "split": {
+      "minLength": 1,
+      "title": "Split",
+      "type": "string"
+    },
+    "subcategory": {
+      "minLength": 1,
+      "title": "Subcategory",
+      "type": "string"
+    },
+    "title": {
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    },
+    "user_intent": {
+      "minLength": 1,
+      "title": "User Intent",
+      "type": "string"
+    }
+  },
+  "required": [
+    "case_version_id",
+    "dataset_version_id",
+    "prompt_family_id",
+    "title",
+    "split",
+    "category",
+    "subcategory",
+    "severity",
+    "authorization_status",
+    "user_intent",
+    "requested_capability",
+    "conversation",
+    "expected_treatment",
+    "policy",
+    "rubric",
+    "governance",
+    "lineage"
+  ],
+  "title": "TestCase",
+  "type": "object"
+}

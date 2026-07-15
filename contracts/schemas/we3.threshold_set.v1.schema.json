@@ -1,0 +1,106 @@
+{
+  "$defs": {
+    "ThresholdRule": {
+      "additionalProperties": false,
+      "properties": {
+        "block": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Block"
+        },
+        "comparison": {
+          "enum": [
+            "max_point",
+            "max_upper",
+            "min_point",
+            "min_lower"
+          ],
+          "title": "Comparison",
+          "type": "string"
+        },
+        "critical": {
+          "default": false,
+          "title": "Critical",
+          "type": "boolean"
+        },
+        "metric_id": {
+          "title": "Metric Id",
+          "type": "string"
+        },
+        "minimum_denominator": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Minimum Denominator",
+          "type": "integer"
+        },
+        "warning": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Warning"
+        }
+      },
+      "required": [
+        "metric_id",
+        "comparison"
+      ],
+      "title": "ThresholdRule",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "minimum_prompt_families": {
+      "default": 30,
+      "minimum": 1,
+      "title": "Minimum Prompt Families",
+      "type": "integer"
+    },
+    "rules": {
+      "items": {
+        "$ref": "#/$defs/ThresholdRule"
+      },
+      "minItems": 1,
+      "title": "Rules",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "we3.threshold_set.v1",
+      "default": "we3.threshold_set.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "threshold_set_id": {
+      "title": "Threshold Set Id",
+      "type": "string"
+    },
+    "version": {
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "threshold_set_id",
+    "version",
+    "rules"
+  ],
+  "title": "ThresholdSet",
+  "type": "object"
+}

@@ -1,0 +1,106 @@
+{
+  "$defs": {
+    "ContentBlock": {
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "maxLength": 100000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "type": {
+          "const": "text",
+          "default": "text",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "ContentBlock",
+      "type": "object"
+    },
+    "ConversationTurn": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "items": {
+            "$ref": "#/$defs/ContentBlock"
+          },
+          "minItems": 1,
+          "title": "Content",
+          "type": "array"
+        },
+        "role": {
+          "enum": [
+            "system",
+            "user",
+            "assistant"
+          ],
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "content"
+      ],
+      "title": "ConversationTurn",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "messages": {
+      "items": {
+        "$ref": "#/$defs/ConversationTurn"
+      },
+      "title": "Messages",
+      "type": "array"
+    },
+    "model": {
+      "title": "Model",
+      "type": "string"
+    },
+    "model_config_id": {
+      "title": "Model Config Id",
+      "type": "string"
+    },
+    "parameters": {
+      "additionalProperties": true,
+      "title": "Parameters",
+      "type": "object"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "we3.provider_request.v1",
+      "default": "we3.provider_request.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "timeout_seconds": {
+      "default": 60.0,
+      "exclusiveMinimum": 0,
+      "title": "Timeout Seconds",
+      "type": "number"
+    }
+  },
+  "required": [
+    "run_id",
+    "model_config_id",
+    "provider",
+    "model",
+    "messages"
+  ],
+  "title": "ProviderRequest",
+  "type": "object"
+}

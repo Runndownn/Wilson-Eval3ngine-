@@ -1,0 +1,501 @@
+{
+  "$defs": {
+    "BudgetConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "grading_currency_hard": {
+          "default": 50.0,
+          "minimum": 0,
+          "title": "Grading Currency Hard",
+          "type": "number"
+        },
+        "human_review_tasks_hard": {
+          "default": 100,
+          "minimum": 0,
+          "title": "Human Review Tasks Hard",
+          "type": "integer"
+        },
+        "provider_currency_hard": {
+          "default": 100.0,
+          "minimum": 0,
+          "title": "Provider Currency Hard",
+          "type": "number"
+        },
+        "storage_gib_hard": {
+          "default": 10.0,
+          "minimum": 0,
+          "title": "Storage Gib Hard",
+          "type": "number"
+        }
+      },
+      "title": "BudgetConfig",
+      "type": "object"
+    },
+    "ConcurrencyConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "global": {
+          "default": 8,
+          "maximum": 10000,
+          "minimum": 1,
+          "title": "Global",
+          "type": "integer"
+        },
+        "per_provider": {
+          "default": 4,
+          "maximum": 10000,
+          "minimum": 1,
+          "title": "Per Provider",
+          "type": "integer"
+        }
+      },
+      "title": "ConcurrencyConfig",
+      "type": "object"
+    },
+    "DatasetRef": {
+      "additionalProperties": false,
+      "properties": {
+        "dataset_id": {
+          "title": "Dataset Id",
+          "type": "string"
+        },
+        "local_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Local Path"
+        },
+        "manifest_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "const": "auto",
+              "type": "string"
+            }
+          ],
+          "default": "auto",
+          "title": "Manifest Sha256"
+        },
+        "split": {
+          "title": "Split",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "dataset_id",
+        "version",
+        "split"
+      ],
+      "title": "DatasetRef",
+      "type": "object"
+    },
+    "EvaluationLane": {
+      "enum": [
+        "certification",
+        "regression",
+        "exploration",
+        "monitoring"
+      ],
+      "title": "EvaluationLane",
+      "type": "string"
+    },
+    "ExecutionConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "concurrency": {
+          "$ref": "#/$defs/ConcurrencyConfig"
+        },
+        "deadline_minutes": {
+          "default": 60,
+          "maximum": 10080,
+          "minimum": 1,
+          "title": "Deadline Minutes",
+          "type": "integer"
+        },
+        "randomization": {
+          "$ref": "#/$defs/RandomizationConfig"
+        },
+        "repetitions": {
+          "default": 1,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Repetitions",
+          "type": "integer"
+        },
+        "response_cache": {
+          "default": "disabled",
+          "enum": [
+            "disabled",
+            "enabled"
+          ],
+          "title": "Response Cache",
+          "type": "string"
+        },
+        "streaming": {
+          "default": "disabled",
+          "enum": [
+            "assemble_and_store_chunks",
+            "disabled"
+          ],
+          "title": "Streaming",
+          "type": "string"
+        }
+      },
+      "title": "ExecutionConfig",
+      "type": "object"
+    },
+    "GraderConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "deterministic_suite": {
+          "title": "Deterministic Suite",
+          "type": "string"
+        },
+        "expectation_rule_version": {
+          "title": "Expectation Rule Version",
+          "type": "string"
+        },
+        "fusion": {
+          "title": "Fusion",
+          "type": "string"
+        },
+        "judges": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Judges",
+          "type": "array"
+        },
+        "review_policy": {
+          "title": "Review Policy",
+          "type": "string"
+        },
+        "semantic_classifier": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Semantic Classifier"
+        }
+      },
+      "required": [
+        "expectation_rule_version",
+        "deterministic_suite",
+        "fusion",
+        "review_policy"
+      ],
+      "title": "GraderConfig",
+      "type": "object"
+    },
+    "MetricConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "definitions": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Definitions",
+          "type": "array"
+        },
+        "statistical_plan": {
+          "title": "Statistical Plan",
+          "type": "string"
+        }
+      },
+      "required": [
+        "definitions",
+        "statistical_plan"
+      ],
+      "title": "MetricConfig",
+      "type": "object"
+    },
+    "ModelConfiguration": {
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "model_config_id": {
+          "title": "Model Config Id",
+          "type": "string"
+        },
+        "parameters": {
+          "additionalProperties": true,
+          "title": "Parameters",
+          "type": "object"
+        },
+        "profile": {
+          "default": "balanced",
+          "title": "Profile",
+          "type": "string"
+        },
+        "provider": {
+          "title": "Provider",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/ModelRole"
+        }
+      },
+      "required": [
+        "model_config_id",
+        "role",
+        "provider",
+        "model"
+      ],
+      "title": "ModelConfiguration",
+      "type": "object"
+    },
+    "ModelRole": {
+      "enum": [
+        "baseline",
+        "candidate",
+        "auxiliary"
+      ],
+      "title": "ModelRole",
+      "type": "string"
+    },
+    "RandomizationConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "case_order": {
+          "default": "seeded",
+          "enum": [
+            "seeded",
+            "fixed"
+          ],
+          "title": "Case Order",
+          "type": "string"
+        },
+        "seed": {
+          "default": 20260714,
+          "title": "Seed",
+          "type": "integer"
+        }
+      },
+      "title": "RandomizationConfig",
+      "type": "object"
+    },
+    "ReleaseConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "baseline_experiment_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baseline Experiment Id"
+        },
+        "minimum_prompt_families": {
+          "default": 30,
+          "minimum": 1,
+          "title": "Minimum Prompt Families",
+          "type": "integer"
+        },
+        "require_all_critical_reviews": {
+          "default": true,
+          "title": "Require All Critical Reviews",
+          "type": "boolean"
+        },
+        "require_signed_dossier": {
+          "default": true,
+          "title": "Require Signed Dossier",
+          "type": "boolean"
+        },
+        "threshold_set": {
+          "title": "Threshold Set",
+          "type": "string"
+        }
+      },
+      "required": [
+        "threshold_set"
+      ],
+      "title": "ReleaseConfig",
+      "type": "object"
+    },
+    "RetentionConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "legal_hold": {
+          "default": false,
+          "title": "Legal Hold",
+          "type": "boolean"
+        },
+        "policy_id": {
+          "title": "Policy Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "policy_id"
+      ],
+      "title": "RetentionConfig",
+      "type": "object"
+    },
+    "RetryPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "initial_backoff_seconds": {
+          "default": 2.0,
+          "minimum": 0,
+          "title": "Initial Backoff Seconds",
+          "type": "number"
+        },
+        "jitter": {
+          "default": "full",
+          "enum": [
+            "full",
+            "none"
+          ],
+          "title": "Jitter",
+          "type": "string"
+        },
+        "max_attempts": {
+          "default": 4,
+          "maximum": 10,
+          "minimum": 1,
+          "title": "Max Attempts",
+          "type": "integer"
+        },
+        "maximum_backoff_seconds": {
+          "default": 60.0,
+          "minimum": 0,
+          "title": "Maximum Backoff Seconds",
+          "type": "number"
+        },
+        "maximum_elapsed_seconds": {
+          "default": 300.0,
+          "minimum": 0,
+          "title": "Maximum Elapsed Seconds",
+          "type": "number"
+        },
+        "retryable_classes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Retryable Classes",
+          "type": "array"
+        }
+      },
+      "title": "RetryPolicy",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "budgets": {
+      "$ref": "#/$defs/BudgetConfig"
+    },
+    "dataset": {
+      "$ref": "#/$defs/DatasetRef"
+    },
+    "execution": {
+      "$ref": "#/$defs/ExecutionConfig"
+    },
+    "graders": {
+      "$ref": "#/$defs/GraderConfig"
+    },
+    "lane": {
+      "$ref": "#/$defs/EvaluationLane"
+    },
+    "metrics": {
+      "$ref": "#/$defs/MetricConfig"
+    },
+    "models": {
+      "items": {
+        "$ref": "#/$defs/ModelConfiguration"
+      },
+      "minItems": 1,
+      "title": "Models",
+      "type": "array"
+    },
+    "name": {
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "notifications": {
+      "additionalProperties": true,
+      "title": "Notifications",
+      "type": "object"
+    },
+    "outputs": {
+      "items": {
+        "enum": [
+          "json",
+          "jsonl",
+          "csv",
+          "parquet",
+          "safe_html",
+          "release_dossier"
+        ],
+        "type": "string"
+      },
+      "title": "Outputs",
+      "type": "array"
+    },
+    "project": {
+      "minLength": 1,
+      "title": "Project",
+      "type": "string"
+    },
+    "purpose": {
+      "minLength": 1,
+      "title": "Purpose",
+      "type": "string"
+    },
+    "release": {
+      "$ref": "#/$defs/ReleaseConfig"
+    },
+    "retention": {
+      "$ref": "#/$defs/RetentionConfig"
+    },
+    "retry_policy": {
+      "$ref": "#/$defs/RetryPolicy"
+    },
+    "schema_version": {
+      "const": "we3.experiment.v1",
+      "default": "we3.experiment.v1",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "project",
+    "lane",
+    "purpose",
+    "dataset",
+    "models",
+    "graders",
+    "metrics",
+    "release",
+    "retention"
+  ],
+  "title": "ExperimentManifest",
+  "type": "object"
+}
