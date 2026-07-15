@@ -1,0 +1,128 @@
+{
+  "registry_version": "1.0.0",
+  "schemas": [
+    {
+      "schema_name": "we3.classification",
+      "version": "v1",
+      "schema_path": "contracts/schemas/we3.classification.v1.schema.json",
+      "schema_hash": "sha256:computed_on_write",
+      "owner": "grading-team",
+      "lifecycle_state": "active",
+      "producers": ["grading/deterministic", "grading/pipeline"],
+      "consumers": ["metrics/engine", "reports/dossier", "gates/engine"],
+      "critical_fields": ["primary_label", "confidence", "evidence"]
+    },
+    {
+      "schema_name": "we3.test_case",
+      "version": "v1",
+      "schema_path": "contracts/schemas/we3.test_case.v1.schema.json",
+      "schema_hash": "sha256:computed_on_write",
+      "owner": "dataset-team",
+      "lifecycle_state": "active",
+      "producers": ["dataset.lifecycle", "expectations/compiler"],
+      "consumers": ["grading/pipeline", "evidence/store"],
+      "critical_fields": ["case_version_id", "expected_treatment", "severity", "policy"]
+    },
+    {
+      "schema_name": "we3.experiment",
+      "version": "v1",
+      "schema_path": "contracts/schemas/we3.experiment.v1.schema.json",
+      "schema_hash": "sha256:computed_on_write",
+      "owner": "execution-team",
+      "lifecycle_state": "active",
+      "producers": ["execution/scheduler"],
+      "consumers": ["execution/rendering", "expectations/compiler"],
+      "critical_fields": ["experiment_id", "dataset_version_id", "model_id"]
+    },
+    {
+      "schema_name": "we3.dataset",
+      "version": "v1",
+      "schema_path": "contracts/schemas/we3.dataset.v1.schema.json",
+      "schema_hash": "sha256:computed_on_write",
+      "owner": "dataset-team",
+      "lifecycle_state": "active",
+      "producers": ["dataset.lifecycle"],
+      "consumers": ["contracts/registry", "expectations/compiler"],
+      "critical_fields": ["dataset_version_id", "lifecycle_state", "split"]
+    },
+    {
+      "schema_name": "we3.metric_snapshot",
+      "version": "v1",
+      "schema_path": "contracts/schemas/we3.metric_snapshot.v1.schema.json",
+      "schema_hash": "sha256:computed_on_write",
+      "owner": "metrics-team",
+      "lifecycle_state": "active",
+      "producers": ["metrics/engine"],
+      "consumers": ["reports/dossier", "gates/engine"],
+      "critical_fields": ["snapshot_id", "experiment_id", "counts", "gates"]
+    },
+    {
+      "schema_name": "we3.gate_decision",
+      "version": "v1",
+      "schema_path": "contracts/schemas/we3.gate_decision.v1.schema.json",
+      "schema_hash": "sha256:computed_on_write",
+      "owner": "gates-team",
+      "lifecycle_state": "active",
+      "producers": ["gates/engine"],
+      "consumers": ["reports/dossier"],
+      "critical_fields": ["gate_id", "decision", "reason"]
+    },
+    {
+      "schema_name": "we3.provider_request",
+      "version": "v1",
+      "schema_path": "contracts/schemas/we3.provider_request.v1.schema.json",
+      "schema_hash": "sha256:computed_on_write",
+      "owner": "provider-team",
+      "lifecycle_state": "active",
+      "producers": ["execution/rendering"],
+      "consumers": ["providers/executor"],
+      "critical_fields": ["request_id", "experiment_id", "messages"]
+    },
+    {
+      "schema_name": "we3.provider_response",
+      "version": "v1",
+      "schema_path": "contracts/schemas/we3.provider_response.v1.schema.json",
+      "schema_hash": "sha256:computed_on_write",
+      "owner": "provider-team",
+      "lifecycle_state": "active",
+      "producers": ["providers/executor"],
+      "consumers": ["grading/pipeline", "evidence/store"],
+      "critical_fields": ["response_id", "request_id", "messages"]
+    },
+    {
+      "schema_name": "we3.threshold_set",
+      "version": "v1",
+      "schema_path": "contracts/schemas/we3.threshold_set.v1.schema.json",
+      "schema_hash": "sha256:computed_on_write",
+      "owner": "gates-team",
+      "lifecycle_state": "active",
+      "producers": ["gates/defaults"],
+      "consumers": ["gates/engine", "reports/dossier"],
+      "critical_fields": ["thresholds", "version"]
+    }
+  ],
+  "compatibility_policy": {
+    "additive_optional_fields": "minor_version",
+    "removed_fields": "major_version_required",
+    "renamed_fields": "major_version_required",
+    "score_affecting_changes": "major_version_required"
+  },
+  "canonical_serialization": {
+    "encoding": "UTF-8",
+    "key_ordering": "alphabetical",
+    "numeric_representation": "canonical_decimal",
+    "timestamp_format": "ISO_8601_with_offset",
+    "identifier_format": "kebab-case"
+  },
+  "security_parsers": {
+    "reject_duplicate_keys": true,
+    "reject_invalid_unicode": true,
+    "reject_non_finite_numbers": true,
+    "reject_unsafe_yaml_tags": true,
+    "reject_excessive_nesting": true,
+    "reject_oversized_scalars": true,
+    "max_nesting_depth": 128,
+    "max_scalar_bytes": 1048576,
+    "yaml_safe_constructors_only": true
+  }
+}

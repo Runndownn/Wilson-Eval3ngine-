@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wilson-eval3ngine.org/schemas/modular_split_triggers.v1.schema.json",
+  "title": "Modular Split Triggers",
+  "description": "Objective split triggers for modular-monolith domain boundaries",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "we3.modular_split_triggers.v1" },
+    "module_map": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/moduleEntry" }
+    },
+    "trust_zones": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/trustZone" }
+    },
+    "split_triggers": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/splitTrigger" }
+    }
+  },
+  "required": ["schema_version", "module_map", "trust_zones", "split_triggers"],
+  "$defs": {
+    "moduleEntry": {
+      "type": "object",
+      "required": ["module_id", "name", "domain", "entry_points", "allowed_imports"],
+      "properties": {
+        "module_id": { "type": "string", "pattern": "^[A-Z]+-[0-9]+$" },
+        "name": { "type": "string" },
+        "domain": { "type": "string" },
+        "entry_points": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "allowed_imports": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "data_ownership": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "transaction_boundaries": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "trustZone": {
+      "type": "object",
+      "required": ["zone_id", "modules", "credentials"],
+      "properties": {
+        "zone_id": { "type": "string" },
+        "modules": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "credentials": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "network_policy": { "type": "string" }
+      }
+    },
+    "splitTrigger": {
+      "type": "object",
+      "required": ["trigger", "description", "measurement_method", "migration_adr_required"],
+      "properties": {
+        "trigger": {
+          "type": "string",
+          "enum": [
+            "incompatible-credentials",
+            "sustained-independent-scaling",
+            "stronger-isolation-required",
+            "residency-required",
+            "ownership-separation",
+            "different-runtime",
+            "independent-release-cadence",
+            "failure-domain-split"
+          ]
+        },
+        "description": { "type": "string" },
+        "measurement_method": {
+          "type": "string",
+          "enum": ["metric-threshold", "manual-review", "architecture-review"]
+        },
+        "migration_adr_required": { "type": "boolean" },
+        "thresholds": { "type": "object" }
+      }
+    }
+  }
+}

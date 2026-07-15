@@ -1,0 +1,102 @@
+{
+  "policy_version": "1.0.0",
+  "effective_date": "2026-01-01T00:00:00Z",
+  "derived_data_policy": {
+    "max_reclassification": "source",
+    "inherited_classification": true,
+    "reasoning_required": true
+  },
+  "data_classes": [
+    {
+      "classification": "Public",
+      "allowed_environments": ["local-dev", "ci", "staging", "production", "partner-hosted"],
+      "provider_eligibility": {
+        "allowed": true,
+        "notes": "No restrictions on processing, storage, or transmission",
+        "explicit_approval_required": false
+      },
+      "encryption_required": false,
+      "encryption_key_type": "standard",
+      "telemetry_treatment": "full",
+      "reviewer_visibility": "public",
+      "export_restrictions": "none",
+      "retention_period_days": 365,
+      "legal_hold_eligible": true,
+      "disposal_method": "standard-deletion"
+    },
+    {
+      "classification": "Internal",
+      "allowed_environments": ["local-dev", "ci", "staging", "production"],
+      "provider_eligibility": {
+        "allowed": true,
+        "notes": "Provider must have appropriate contract; no customer-managed key required",
+        "explicit_approval_required": false
+      },
+      "encryption_required": false,
+      "telemetry_treatment": "full",
+      "reviewer_visibility": "authenticated",
+      "export_restrictions": "authenticated",
+      "retention_period_days": 730,
+      "legal_hold_eligible": true,
+      "disposal_method": "standard-deletion"
+    },
+    {
+      "classification": "Confidential",
+      "allowed_environments": ["local-dev", "ci", "staging", "production"],
+      "provider_eligibility": {
+        "allowed": true,
+        "notes": "Provider must have appropriate contract; customer-managed key required",
+        "explicit_approval_required": false
+      },
+      "encryption_required": true,
+      "encryption_key_type": "customer-managed",
+      "telemetry_treatment": "masked",
+      "reviewer_visibility": "authorized-role",
+      "export_restrictions": "role-restricted",
+      "retention_period_days": 1825,
+      "legal_hold_eligible": true,
+      "disposal_method": "cryptographic-deletion"
+    },
+    {
+      "classification": "Restricted",
+      "allowed_environments": ["local-dev", "ci", "staging", "production"],
+      "provider_eligibility": {
+        "allowed": false,
+        "notes": "Prohibited from hosted-provider processing until explicitly classified; default for unidentified data",
+        "explicit_approval_required": true
+      },
+      "encryption_required": true,
+      "encryption_key_type": "customer-managed",
+      "telemetry_treatment": "none",
+      "reviewer_visibility": "restricted-role",
+      "export_restrictions": "prohibited",
+      "retention_period_days": 1825,
+      "legal_hold_eligible": true,
+      "disposal_method": "cryptographic-deletion"
+    },
+    {
+      "classification": "Secret",
+      "allowed_environments": ["production"],
+      "provider_eligibility": {
+        "allowed": false,
+        "notes": "Prohibited from hosted-provider processing unless explicitly approved for specific security use cases",
+        "explicit_approval_required": true
+      },
+      "encryption_required": true,
+      "encryption_key_type": "hardware-security-module",
+      "telemetry_treatment": "none",
+      "reviewer_visibility": "secret-role",
+      "export_restrictions": "prohibited",
+      "retention_period_days": null,
+      "legal_hold_eligible": true,
+      "disposal_method": "certified-destruction"
+    }
+  ],
+  "precedence_rules": {
+    "legal_hold_over_deletion": "active legal hold must block deletion",
+    "backup_expiration_after_retention": "backups expire after retention period plus 30 days",
+    "cryptographic_deletion_verification": "verify deletion through key-destruction audit trail",
+    "incident_preservation": "incident response may override retention for evidence collection",
+    "immutable_certification": "certification evidence records are never deleted"
+  }
+}

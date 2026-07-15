@@ -1,0 +1,198 @@
+{
+  "schema_version": "we3.modular_split_triggers.v1",
+  "module_map": [
+    {
+      "module_id": "CONTRACT-001",
+      "name": "Contract",
+      "domain": "contract",
+      "entry_points": ["api.main", "api.contract_endpoints"],
+      "allowed_imports": [".domain.enums", ".domain.io", ".persistence.database"],
+      "data_ownership": ["contract.registry", "contract.versions"],
+      "transaction_boundaries": ["contract.create", "contract.update"]
+    },
+    {
+      "module_id": "DATASET-002",
+      "name": "Dataset",
+      "domain": "dataset",
+      "entry_points": ["api.main", "dataset.lifecycle"],
+      "allowed_imports": [".domain.enums", ".domain.io", ".evidence.store"],
+      "data_ownership": ["dataset.manifest", "dataset.cases"],
+      "transaction_boundaries": ["dataset.publish", "dataset.deprecate"]
+    },
+    {
+      "module_id": "EXECUTION-003",
+      "name": "Execution",
+      "domain": "execution",
+      "entry_points": ["execution.scheduler", "providers.executor", "execution.rendering"],
+      "allowed_imports": [".domain.enums", ".expectations.compiler", ".providers.base"],
+      "data_ownership": ["execution.run", "execution.job", "execution.response"],
+      "transaction_boundaries": ["execution.run_start", "execution.response_save"]
+    },
+    {
+      "module_id": "GRADING-004",
+      "name": "Grading",
+      "domain": "grading",
+      "entry_points": ["grading.pipeline", "grading.classifier"],
+      "allowed_imports": [".domain.enums", ".grading.deterministic", ".expectations.compiler"],
+      "data_ownership": ["grading.result", "grading.review", "grading.adjucation"],
+      "transaction_boundaries": ["grading.complete", "grading.review_submit"]
+    },
+    {
+      "module_id": "METRIC-005",
+      "name": "Metrics",
+      "domain": "metrics",
+      "entry_points": ["metrics.engine", "metrics.snapshot"],
+      "allowed_imports": [".grading.pipeline", ".gates.engine"],
+      "data_ownership": ["metric.snapshot", "metric.aggregation"],
+      "transaction_boundaries": ["metric.snapshot_create"]
+    },
+    {
+      "module_id": "EVIDENCE-006",
+      "name": "Evidence",
+      "domain": "evidence",
+      "entry_points": ["evidence.store"],
+      "allowed_imports": [".domain.io", ".persistence.database"],
+      "data_ownership": ["evidence.object", "evidence.hash_chain"],
+      "transaction_boundaries": ["evidence.store_put", "evidence.store_get"]
+    },
+    {
+      "module_id": "IDENTITY-007",
+      "name": "Identity",
+      "domain": "identity",
+      "entry_points": ["security.signing", "api.auth"],
+      "allowed_imports": [".config"],
+      "data_ownership": ["identity.token", "identity.signature"],
+      "transaction_boundaries": ["identity.token_issue", "identity.verify"]
+    },
+    {
+      "module_id": "REPORT-008",
+      "name": "Reporting",
+      "domain": "reporting",
+      "entry_points": ["reports.dossier", "reports.matrix"],
+      "allowed_imports": [".grading.pipeline", ".metrics.engine", ".evidence.store"],
+      "data_ownership": ["report.dossier", "report.matrix"],
+      "transaction_boundaries": ["report.generate", "report.publish"]
+    },
+    {
+      "module_id": "PROVIDER-009",
+      "name": "Provider",
+      "domain": "provider",
+      "entry_points": ["providers.executor", "providers.mock"],
+      "allowed_imports": [".domain.io", ".security.signing"],
+      "data_ownership": ["provider.request", "provider.response"],
+      "transaction_boundaries": ["provider.request_send", "provider.response_receive"]
+    },
+    {
+      "module_id": "SCHEDULER-010",
+      "name": "Scheduler",
+      "domain": "scheduler",
+      "entry_points": ["scheduler.main"],
+      "allowed_imports": [".execution", ".persistence.queue"],
+      "data_ownership": ["scheduler.job", "scheduler.lease"],
+      "transaction_boundaries": ["scheduler.job_claim", "scheduler.job_complete"]
+    },
+    {
+      "module_id": "MAINTENANCE-011",
+      "name": "Maintenance",
+      "domain": "maintenance",
+      "entry_points": ["maintenance.migrate", "maintenance.cleanup"],
+      "allowed_imports": [".persistence.database", ".persistence.audit"],
+      "data_ownership": ["maintenance.migration", "maintenance.log"],
+      "transaction_boundaries": ["maintenance.migrate_run", "maintenance.cleanup_run"]
+    },
+    {
+      "module_id": "RELEASE-012",
+      "name": "Release",
+      "domain": "release",
+      "entry_points": ["release.dossier"],
+      "allowed_imports": [".grading.pipeline", ".metrics.engine", ".evidence.store"],
+      "data_ownership": ["release.dossier", "release.certificate"],
+      "transaction_boundaries": ["release.create", "release.certify"]
+    }
+  ],
+  "trust_zones": [
+    {
+      "zone_id": "PROVIDER-CREDENTIALS",
+      "modules": ["PROVIDER-009"],
+      "credentials": ["provider-api-key", "provider-signing-key"],
+      "network_policy": "egress-only"
+    },
+    {
+      "zone_id": "SECURITY-SIGNING",
+      "modules": ["IDENTITY-007"],
+      "credentials": ["signing-key", "kms-access"],
+      "network_policy": "isolated"
+    },
+    {
+      "zone_id": "DATA-GRADING",
+      "modules": ["GRADING-004", "METRIC-005"],
+      "credentials": [],
+      "network_policy": "internal-only"
+    },
+    {
+      "zone_id": "EVIDENCE-STORAGE",
+      "modules": ["EVIDENCE-006"],
+      "credentials": ["storage-access-key"],
+      "network_policy": "internal-only"
+    }
+  ],
+  "split_triggers": [
+    {
+      "trigger": "incompatible-credentials",
+      "description": "Provider API keys or signing keys cannot coexist in same trust boundary",
+      "measurement_method": "architecture-review",
+      "migration_adr_required": true
+    },
+    {
+      "trigger": "sustained-independent-scaling",
+      "description": "Module consistently requires >80% of resources independently for >7 days",
+      "measurement_method": "metric-threshold",
+      "migration_adr_required": true,
+      "thresholds": {
+        "cpu_percent": 80,
+        "duration_days": 7,
+        "metric_name": "module_scaling_ratio"
+      }
+    },
+    {
+      "trigger": "stronger-isolation-required",
+      "description": "Security boundaries require network or process isolation not achievable in monolith",
+      "measurement_method": "manual-review",
+      "migration_adr_required": true
+    },
+    {
+      "trigger": "residency-required",
+      "description": "Data residency laws require geographic or jurisdictional isolation",
+      "measurement_method": "architecture-review",
+      "migration_adr_required": true
+    },
+    {
+      "trigger": "ownership-separation",
+      "description": "Organizational or team boundaries require separate deployment ownership",
+      "measurement_method": "manual-review",
+      "migration_adr_required": true
+    },
+    {
+      "trigger": "different-runtime",
+      "description": "Module requires runtime version incompatible with other modules",
+      "measurement_method": "architecture-review",
+      "migration_adr_required": true
+    },
+    {
+      "trigger": "independent-release-cadence",
+      "description": "Module changes independently with frequency requiring separate CI/CD",
+      "measurement_method": "metric-threshold",
+      "migration_adr_required": true,
+      "thresholds": {
+        "release_frequency_days": 7,
+        "independent_changes_percent": 60
+      }
+    },
+    {
+      "trigger": "failure-domain-split",
+      "description": "Failure isolation requires circuit-breaking across deployment boundaries",
+      "measurement_method": "architecture-review",
+      "migration_adr_required": true
+    }
+  ]
+}

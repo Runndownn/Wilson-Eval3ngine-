@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wilson-eval3ngine.org/schemas/requirements_traceability.v1.schema.json",
+  "title": "Requirements Traceability Record",
+  "description": "Machine-readable record linking requirements to implementation, tests, and evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "requirement_id": { "type": "string" },
+    "source": { "type": "string" },
+    "source_version": { "type": "string" },
+    "normative_level": {
+      "type": "string",
+      "enum": ["MUST", "SHOULD", "COULD"]
+    },
+    "owner": { "type": "string" },
+    "component": { "type": "string" },
+    "implementation_ref": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "test_ids": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "gate_id": { "type": "string" },
+    "evidence_artifact": { "type": "string" },
+    "status": {
+      "type": "string",
+      "enum": ["proposed", "implemented", "verified", "deprecated"]
+    },
+    "exception": { "type": "string" },
+    "exception_expiry": { "type": "string", "format": "date-time" },
+    "last_verification_timestamp": { "type": "string", "format": "date-time" },
+    "verification_proof": { "type": "string" }
+  },
+  "required": ["requirement_id", "source", "source_version", "normative_level", "owner", "component", "implementation_ref", "test_ids", "gate_id", "status", "last_verification_timestamp"]
+}
