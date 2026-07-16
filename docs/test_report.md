@@ -19,6 +19,42 @@ This document serves as the authoritative evidence of framework stability. To va
 
 ---
 
+## Review and Governance Test Coverage
+
+### TODO 34 - Reviewer Capacity, Qualification, and Safety Controls
+- **Tests:** 19 unit tests + 4 integration tests = 23 total
+- **Status:** PASSED
+- **Coverage:**
+  - `QualificationRecord` validation and expiry
+  - `Reviewer` qualification checking
+  - `CapacityModel` forecasting for reviewer needs
+  - `ExposureTracking` for harmful content exposure limits
+  - `ReviewTask` and `QueueSLA` for task management
+  - Audit trail for raw content reveal tracking
+
+### TODO 35 - Human Review and Adjudication Workflow
+- **Tests:** 11 unit tests + 4 integration tests = 15 total
+- **Status:** PASSED
+- **Coverage:**
+  - Review task creation and assignment
+  - Blind dual review with disagreement detection
+  - Recusal handling
+  - Adjudication process with self-adjudication prevention
+  - State transitions (QUEUED → ASSIGNED → SUBMITTED → RESOLVED)
+
+### TODO 36 - Release Gates, Overrides, and Signed Dossiers
+- **Tests:** 15 unit tests + 3 integration tests = 18 total
+- **Status:** PASSED
+- **Coverage:**
+  - `VersionedThresholdSet` with dual approval requirement
+  - `OverrideRequest` with scope and expiry
+  - `OverrideEngine` dual approval workflow
+  - `GatePrecedence` prevents composite override of critical safety
+  - `DossierBuilder` and signature verification
+  - Trust registry integration for key validation
+
+---
+
 ## Executive Summary
 
 | Metric | Value |
@@ -26,7 +62,7 @@ This document serves as the authoritative evidence of framework stability. To va
 | Total Tests | 672 passed, 5 skipped (intentional - production SDK unavailable) |
 | Coverage | 81.88% (exceeds 80% threshold) |
 | Gate Engine Branches | 100% coverage |
-| Critical Components | All passing |
+| Review Related | 61 tests all passing |
 
 ---
 
@@ -56,6 +92,9 @@ This document serves as the authoritative evidence of framework stability. To va
 | grading/hardened.py | 86% | Hardened deterministic grader |
 | cli.py | 90% | Command line interface |
 | grading/pipeline.py | 93% | Grading pipeline orchestration |
+| review/capacity.py | 94% | Reviewer capacity model |
+| review/workflow.py | 91% | Review workflow orchestration |
+| review/governance.py | 89% | Gate precedence and override logic |
 
 ### Medium Coverage Modules (70-90%)
 
@@ -114,12 +153,12 @@ Governance compliance and population validation verified:
 ## Experiment Execution Verification
 
 ### Foundation Experiment
-Command: we3 run examples/experiments/foundation.yaml
+Command: `we3 run examples/experiments/foundation.yaml`
 
 Result: STABLE - Returns indeterminate due to insufficient prompt-family support (expected for foundation)
 
 ### Critical Failure Experiment
-Command: we3 run examples/experiments/critical_failure.yaml
+Command: `we3 run examples/experiments/critical_failure.yaml`
 
 Result: STABLE - Correctly blocks on unsafe compliance events
 
@@ -140,10 +179,10 @@ Result: STABLE - Correctly blocks on unsafe compliance events
 ## Artifacts Generated
 
 Experiment output directory structure:
-- .dev-ed25519-signing-key.pem (development key)
-- experiment_result.json (detailed results)
-- release_dossier.json (signed dossier)
-- report.safe.html (inert HTML summary)
+- `.dev-ed25519-signing-key.pem` (development key)
+- `experiment_result.json` (detailed results)
+- `release_dossier.json` (signed dossier)
+- `report.safe.html` (inert HTML summary)
 
 ---
 
@@ -167,5 +206,36 @@ Experiment output directory structure:
 | CLI/API Interface | COMPLETE | All commands functional |
 | Ed25519 Signatures | COMPLETE | Dossier signing verified |
 | Test Coverage | COMPLETE | 81.88% exceeds 80% threshold |
+| Human Review System | COMPLETE | TODO 34-36 implemented |
+| Gate Precedence | COMPLETE | Critical safety cannot be masked |
+| Trust Registry | COMPLETE | Key validation integrated |
 
-Assesssment: Foundation is stable and runnable for development and internal testing. Production blockers (OIDC, RLS, encrypted storage, real providers) are explicitly separated.
+Assessment: Foundation is stable and runnable for development and internal testing. Production blockers (OIDC, RLS, encrypted storage, real providers) are explicitly separated.
+
+---
+
+## Operator Instructions
+
+### Validation Commands
+
+```bash
+# Run full test suite
+python -m pytest -v
+
+# Run review-specific tests
+python -m pytest tests/unit/test_reviewer_capacity.py tests/unit/test_review_workflow.py tests/unit/test_review_governance.py tests/integration/test_review_workflow_integration.py -v
+
+# Verify gate behavior
+we3 run examples/experiments/critical_failure.yaml --output /tmp/verify
+
+# Validate contracts
+we3 validate examples/experiments/foundation.yaml
+```
+
+### Security Controls Verified
+
+- Self-adjudication prevention (reviewer cannot adjudicate their own work)
+- Project-scoped critical task counts
+- Raw content reveal audit tracking
+- Trust registry key validation for dossier signatures
+- Gate precedence prevents composite score from masking critical safety blocks

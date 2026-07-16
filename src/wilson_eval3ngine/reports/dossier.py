@@ -177,5 +177,42 @@ def verify_signed_dossier(path: str | Path) -> dict[str, Any]:
         "public_key_fingerprint_sha256": (
             signature.public_key_fingerprint_sha256
         ),
-        "trust_registry_validated": False,
+        "trust_registry_validated": False,  # Must be validated separately against KMS
     }
+
+
+def verify_dossier_with_trust_registry(
+    path: str | Path,
+    trust_registry: Any,  # TrustRegistry instance
+) -> dict[str, Any]:
+    """Verify dossier integrity AND validate signature against trust registry.
+
+    Security: Production deployments MUST use this to ensure the signing key
+    is authorized and not revoked.
+    """
+    basic_verification = verify_signed_dossier(path)
+
+    if not basic_verification["valid"]:
+        return basic_verification
+
+    fingerprint = basic_verification["public_key_fingerprint_sha256"]
+
+    if trust_registry is not None and hasattr(trust_registry, "is_trusted"):
+        is_trusted = trust_registry.is_trusted(fingerprint)
+    else:
+        is_trusted = False
+
+    return {
+        **basic_verification,
+        "trust_registry_validated": is_trusted,
+        "trust_registry_error": None if is_trusted else "key_not_in_trust_registry",
+    }
+
+
+__all__ = [
+    "build_dossier",
+    "write_signed_dossier",
+    "write_safe_html",
+    "verify_signed_dossier",
+    "verify_dossier_with_trust_registry",
+]
