@@ -637,6 +637,66 @@ we3 export-schemas --output contracts/schemas
 
 ---
 
+---
+
+## History
+
+### Development Timeline (July 2026)
+
+```mermaid
+gantt
+    title Wilson-Eval3ngine Development History
+    dateFormat YYYY-MM-DD
+    section Phase 1 - Foundation
+    TODO 1-9 Core Setup :done, p1, 2026-07-01, 14d
+    TODO 10-12 Dataset Supply :done, p2, 2026-07-08, 7d
+    TODO 13-14 Expectations & Hardening :done, p3, 2026-07-10, 5d
+    section Phase 2 - Data Layer
+    TODO 15-18 PostgreSQL & Storage :done, p4, 2026-07-12, 7d
+    section Phase 3 - Providers
+    TODO 22-24 Scheduler & Mock :done, p5, 2026-07-14, 5d
+    TODO 25-27 Provider Adapters :done, p6, 2026-07-15, 5d
+    section Phase 4 - Metrics & Judgement
+    TODO 28-33 Grading & Metrics :done, p7, 2026-07-16, 6d
+```
+
+**Phase 1 - Foundation (July 1-14):** Established core architecture with contract registry, modular monolith boundaries, requirements traceability, and the five-outcome taxonomy (appropriate refusal, false refusal, safe/unsafe compliance, ambiguous behavior) that forms the basis for all evaluation logic. Integrated dataset supply chain with promotion controls and curated security boundary benchmark tranches.
+
+**Phase 2 - Data Layer (July 8-18):** Built PostgreSQL schema with ordered migrations, row-level security policies, immutable content-addressed object storage, and provenance tracking with transactional outbox pattern for audit linkage. Implemented lifecycle workflows including regrade, backfill, retention with legal-hold precedence, and rollback capabilities.
+
+**Phase 3 - Providers (July 12-16):** Created durable leasing scheduler with reconciliation, canonical provider-adapter contract, deterministic mock provider for testing, and approved provider/model scope with fingerprint drift detection and budget/backpressure controls.
+
+**Phase 4 - Metrics & Judgement (July 14-16):** Delivered five-outcome deterministic grader with 636/407 LOC, grader calibration harness validated against hidden-set release gates, statistical reference with independent implementation for cluster bootstrap verification, and versioned metrics engine producing Wilson score intervals with confidence bounds.
+
+### Growth Elements Across Time
+
+| Milestone | Date | Key Addition | Test Coverage |
+|-----------|------|--------------|---------------|
+| Foundation | 2026-07-01 | TODO 1-9 completed | Base contracts established |
+| Schema Registry | 2026-07-08 | Contract versioning + security parsers | Validation gates active |
+| Expectation Compiler | 2026-07-10 | Deterministic compile pipeline | Schema-checked |
+| PostgreSQL Core | 2026-07-12 | Migrations + RLS foundation | Integration tested |
+| Scheduler | 2026-07-14 | Durable leasing with reconciliation | Graceful lease recovery |
+| Mock Provider | 2026-07-14 | Canonical contract mock | 6 unit tests |
+| Provider Fingerprints | 2026-07-15 | Budget drift detection | 18 unit tests |
+| Lifecycle Workflows | 2026-07-15 | Backfill/rollback legal hold | 6 tests |
+| Capacity Model | 2026-07-15 | Workload modeling 30% headroom | 5 tests |
+| Grader Calibration | 2026-07-16 | Hidden-set validation harness | 14 unit tests |
+| Statistical Reference | 2026-07-16 | Independent bootstrap verifier | 20 tests |
+| Versioned Metrics | 2026-07-16 | Wilson intervals + snapshots | 20 tests |
+
+### Elements Incorporated
+
+- **Contracts & Schema (11 Pydantic schemas)** with security-aware validation
+- **Provider System** (mock + fingerprints + budget controls)
+- **Data Layer** (PostgreSQL migrations, RLS, object storage, provenance)
+- **Evaluation Engine** (expectation compiler, five-outcome grader, gate engine)
+- **Metrics System** (Wilson intervals, cluster bootstrap, versioned snapshots)
+- **Lifecycle Management** (regrade, backfill, retention, rollback workflows)
+- **Testing Framework** (618 tests, 81.88% coverage)
+
+---
+
 ## Next Actions
 
 ### Immediate (Next 2 Weeks)
