@@ -271,10 +271,10 @@ gantt
 
 | Component | Status | Blocked By | Next Action |
 |-----------|--------|------------|-------------|
-| Provider Adapters | 🔄 Active | Hidden-set calibration | `src/wilson_eval3ngine/providers/` (azure_openai.py, anthropic.py) |
-| Integration Tests | 🔄 Active | Provider mocks | `tests/integration/test_provider_integration.py` |
-| Schema Registry | 🔄 Active | Evidence capture | `scripts/ci/validate_schema_registry.py` |
-| Population Specification | 🔄 Active | Language support | `governance/compliance/population_specification.json` |
+| Provider Adapters (TODO 25-26) | 🔄 Active | Production provider credentials | `src/wilson_eval3ngine/providers/` (azure_openai.py, anthropic.py) |
+| Integration Tests (TODO 28) | 🔄 Active | Provider adapters | `tests/integration/test_provider_integration.py` |
+| Schema Registry (TODO 10-12) | 🔄 Active | Dataset promotion controls | `scripts/ci/validate_schema_registry.py` |
+| Population Specification (TODO 9) | 🔄 Active | Language slice validation | `governance/compliance/population_specification.json` |
 
 ### Not Started / Production Blockers
 
