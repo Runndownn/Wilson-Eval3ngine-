@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import contextmanager
-from typing import Any, Iterator
+from typing import Iterator
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session

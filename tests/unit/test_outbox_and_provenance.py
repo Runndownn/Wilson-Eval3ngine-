@@ -5,10 +5,8 @@ T3.1.4 - Provenance, transactional outbox, and audit linkage.
 
 from __future__ import annotations
 
-import pytest
 
 from wilson_eval3ngine.persistence.outbox import (
-    Outbox,
     OutboxEvent,
     OutboxEventType,
 )

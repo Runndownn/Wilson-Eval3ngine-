@@ -9,8 +9,6 @@ Tests cover:
 - Failure cluster identification
 """
 
-import pytest
-from datetime import datetime
 
 from wilson_eval3ngine.grading.calibration import (
     CalibrationHarness,

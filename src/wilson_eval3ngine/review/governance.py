@@ -116,7 +116,13 @@ class VersionedThresholdSet:
 
 
 class GatePrecedence:
-    """Enforces gate precedence rules."""
+    """Enforces gate precedence rules and review completion checks.
+
+    Security: Critical raw safety and review completion gates CANNOT be
+    overridden by composite scores. This enforces the principle that
+    harmful content flags always block publication.
+    Unresolved critical reviews also block publication.
+    """
 
     # Precedence levels (higher = more important)
     PRECEDENCE = {
@@ -130,18 +136,45 @@ class GatePrecedence:
     }
 
     @classmethod
-    def evaluate(cls, decision: GateDecision) -> GateDecision:
+    def evaluate(
+        cls,
+        decision: GateDecision,
+        *,
+        unresolved_critical_count: int = 0,
+        evidence_verified: bool = True,
+    ) -> GateDecision:
         """Apply precedence rules to gate decision.
 
         Security: Critical raw safety and review completion gates CANNOT be
-        overridden by composite scores. This enforces the principle that
-        harmful content flags always block publication.
+        overridden by composite scores. Unresolved critical reviews block
+        publication. Failed evidence verification blocks publication.
+
+        Args:
+            decision: The gate decision to evaluate.
+            unresolved_critical_count: Number of unresolved critical review tasks.
+            evidence_verified: Whether evidence chain verification passed.
         """
+        # Check for evidence verification failure - integrity gate must pass first
+        if not evidence_verified:
+            return GateDecision(
+                gate_id=decision.gate_id,
+                experiment_id=decision.experiment_id,
+                model_config_id=decision.model_config_id,
+                status=GateStatus.BLOCK,
+                checks=decision.checks,
+                reasons=[
+                    "PRECEDENCE ENFORCED: Evidence verification failed",
+                    *decision.reasons,
+                ],
+                threshold_set_id=decision.threshold_set_id,
+                created_at=utc_now(),
+            )
+
         # Check for critical blocks that should not be overridden
         for check in decision.checks:
             if check.status == GateStatus.BLOCK:
                 # Verify this isn't a composite override of raw safety
-                # Critical raw safety checks have "unsafe" in their message
+                # Critical raw safety checks have "unsafe" or "critical" in their message
                 if "unsafe" in check.message.lower() or "critical" in check.message.lower():
                     # Even if composite would pass, critical safety blocks
                     return GateDecision(
@@ -158,8 +191,23 @@ class GatePrecedence:
                         created_at=utc_now(),
                     )
 
-        # Check for unresolved critical reviews
-        # This would be populated from review state
+        # Check for unresolved critical reviews - blocks publication
+        if unresolved_critical_count > 0:
+            return GateDecision(
+                gate_id=decision.gate_id,
+                experiment_id=decision.experiment_id,
+                model_config_id=decision.model_config_id,
+                status=GateStatus.BLOCK,
+                checks=decision.checks,
+                reasons=[
+                    f"PRECEDENCE ENFORCED: {unresolved_critical_count} unresolved critical review(s) block publication",
+                    *decision.reasons,
+                ],
+                threshold_set_id=decision.threshold_set_id,
+                created_at=utc_now(),
+            )
+
+        # Non-critical block or indeterminate - pass through
         return decision
 
 
@@ -334,8 +382,22 @@ class DossierBuilder:
         overrides: list[OverrideRequest],
         limitations: list[str],
         evidence_verified: bool = True,
+        unresolved_critical_count: int = 0,
     ) -> dict[str, Any]:
-        """Build a complete release dossier."""
+        """Build a complete release dossier.
+
+        Args:
+            experiment_id: The experiment being evaluated.
+            project_id: The project scope.
+            manifest_hash: SHA-256 hash of experiment manifest.
+            dataset_hash: SHA-256 hash of dataset manifest.
+            snapshots: Metric snapshots for the experiment.
+            gates: Gate decisions for the experiment.
+            overrides: Override requests that may affect gates.
+            limitations: Known limitations to include in dossier.
+            evidence_verified: Whether evidence chain verification passed.
+            unresolved_critical_count: Number of unresolved critical review tasks.
+        """
         dossier = build_dossier(
             experiment_id=experiment_id,
             project_id=project_id,
@@ -347,7 +409,7 @@ class DossierBuilder:
             audit_chain_verified=evidence_verified,
             limitations=list(limitations),
         )
-        
+
         # Add override information
         dossier["overrides"] = [
             {
@@ -363,7 +425,13 @@ class DossierBuilder:
             for o in overrides
             if o.is_approved() and not o.is_expired()
         ]
-        
+
+        # Add review state for transparency
+        dossier["review_state"] = {
+            "unresolved_critical_count": unresolved_critical_count,
+            "evidence_verified": evidence_verified,
+        }
+
         logger.info(
             "dossier_built",
             extra={
@@ -372,9 +440,11 @@ class DossierBuilder:
                 "snapshot_count": len(snapshots),
                 "gate_count": len(gates),
                 "override_count": len(overrides),
+                "unresolved_critical_count": unresolved_critical_count,
+                "evidence_verified": evidence_verified,
             },
         )
-        
+
         return dossier
 
     def verify_dossier_integrity(self, dossier: dict[str, Any]) -> bool:

@@ -11,7 +11,7 @@ Tests cover:
 from __future__ import annotations
 
 import pytest
-from unittest.mock import MagicMock, patch, Mock
+from unittest.mock import patch, Mock
 
 from wilson_eval3ngine.domain.contracts import ProviderRequest, ConversationTurn, ContentBlock
 from wilson_eval3ngine.providers.azure_openai import AzureOpenAIAdapter, _azure_available

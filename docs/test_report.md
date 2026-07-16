@@ -2,12 +2,16 @@
 
 **Generated:** 2026-07-16  
 **Framework Version:** 0.1.0  
+**Release Tier:** `foundation`  
+**Status:** `NOT APPROVED FOR PRODUCTION CERTIFICATION`  
 **Python Version:** 3.13.12  
 **Test Session:** 247 seconds
 
+> **Comprehensive PDF Report:** See `Wilson-Eval3ngine_Test_Report.pdf` for the full professional report with logo cover, complete TODO matrix, and detailed test coverage analysis.
+
 ---
 
-## Operator Instructions for Test Report
+## Test Coverage: 100% Pass Rate (With Intentional Skips)
 
 This document serves as the authoritative evidence of framework stability. To validate:
 
@@ -22,36 +26,61 @@ This document serves as the authoritative evidence of framework stability. To va
 ## Review and Governance Test Coverage
 
 ### TODO 34 - Reviewer Capacity, Qualification, and Safety Controls
-- **Tests:** 19 unit tests + 4 integration tests = 23 total
+- **Tests:** 19 unit tests + 5 integration tests = 24 total
 - **Status:** PASSED
 - **Coverage:**
-  - `QualificationRecord` validation and expiry
-  - `Reviewer` qualification checking
-  - `CapacityModel` forecasting for reviewer needs
-  - `ExposureTracking` for harmful content exposure limits
-  - `ReviewTask` and `QueueSLA` for task management
+  - `QualificationRecord` validation and expiry with timezone handling
+  - `Reviewer` qualification checking including capacity limits
+  - `CapacityModel` forecasting for reviewer needs with surge/vacation buffers
+  - `ExposureTracking` for harmful content exposure limits with daily reset
+  - `ReviewTask` and `QueueSLA` for task management and overdue detection
   - Audit trail for raw content reveal tracking
+  - Project-scoped access control verification
+  - Qualification expiration checking in database
 
 ### TODO 35 - Human Review and Adjudication Workflow
-- **Tests:** 11 unit tests + 4 integration tests = 15 total
+- **Tests:** 11 unit tests + 6 integration tests = 17 total
 - **Status:** PASSED
 - **Coverage:**
-  - Review task creation and assignment
+  - Review task creation and assignment with qualification validation
   - Blind dual review with disagreement detection
   - Recusal handling
   - Adjudication process with self-adjudication prevention
   - State transitions (QUEUED → ASSIGNED → SUBMITTED → RESOLVED)
+  - Both reviewers abstaining edge case
+  - Stale version submission handling
 
 ### TODO 36 - Release Gates, Overrides, and Signed Dossiers
-- **Tests:** 15 unit tests + 3 integration tests = 18 total
+- **Tests:** 18 unit tests + 4 integration tests = 22 total
 - **Status:** PASSED
 - **Coverage:**
-  - `VersionedThresholdSet` with dual approval requirement
-  - `OverrideRequest` with scope and expiry
-  - `OverrideEngine` dual approval workflow
+  - `VersionedThresholdSet` with dual approval requirement and effective periods
+  - `OverrideRequest` with scope, expiry, and compensating controls
+  - `OverrideEngine` dual approval workflow with application to gates
   - `GatePrecedence` prevents composite override of critical safety
+  - Evidence verification failure blocks publication
+  - Unresolved critical reviews block publication
   - `DossierBuilder` and signature verification
   - Trust registry integration for key validation
+
+### TODO 37 - Adversarial Tests for Grading, Statistics, and Release Gates
+- **Tests:** 26 adversarial tests (14 grading + 12 gates)
+- **Status:** PASSED
+- **Coverage:**
+  - XSS injection attempts treated as inert text (no execution)
+  - Prompt injection not interpreted as instructions
+  - Empty/whitespace responses handled safely
+  - Multilingual responses processed without misclassification
+  - Ambiguous/partial responses trigger abstention for review
+  - Confidence boundary testing (low confidence triggers abstention)
+  - Critical severity triggers review requirement
+  - Deterministic regrading without provider calls
+  - Statistical mutation resistance (denominator changes affect results)
+  - Gate threshold boundary handling (warning vs block)
+  - Missing required metrics return INDETERMINATE
+  - UCR (unsafe compliance events) always block
+  - Gate precedence enforced (critical safety cannot be masked)
+  - Evidence verification failure blocks publication
 
 ---
 
@@ -62,7 +91,7 @@ This document serves as the authoritative evidence of framework stability. To va
 | Total Tests | 672 passed, 5 skipped (intentional - production SDK unavailable) |
 | Coverage | 81.88% (exceeds 80% threshold) |
 | Gate Engine Branches | 100% coverage |
-| Review Related | 61 tests all passing |
+| Review Related | 68 tests all passing |
 
 ---
 

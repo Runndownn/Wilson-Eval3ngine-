@@ -73,7 +73,7 @@ class TestLanguageScopeDefined:
 
     def test_english_language_defined(self, population_spec):
         """English language is in supported languages."""
-        supported_langs = {l["language_code"] for l in population_spec.get("language_scope", {}).get("supported_languages", [])}
+        supported_langs = {lang["language_code"] for lang in population_spec.get("language_scope", {}).get("supported_languages", [])}
         assert "en" in supported_langs or "en-US" in supported_langs
 
     def test_unsupported_language_returns_indeterminate(self, population_spec):

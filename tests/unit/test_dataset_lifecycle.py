@@ -4,7 +4,6 @@ Tests for Dataset Lifecycle State Machine and Promotion Controls.
 Validates T2.1.4 requirements for supply-chain controls.
 """
 
-import pytest
 
 from wilson_eval3ngine.benchmark.lifecycle import (
     DatasetLifecycle,

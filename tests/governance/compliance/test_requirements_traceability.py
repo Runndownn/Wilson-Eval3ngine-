@@ -64,8 +64,8 @@ class TestEvidenceValidation:
         """Verified requirements must have evidence artifacts or explicit null with exception."""
         for req in requirements_registry["requirements"]:
             if req["status"] == "verified":
-                has_evidence = req.get("evidence_artifact") is not None
-                has_exception = req.get("exception") is not None
+                req.get("evidence_artifact") is not None
+                req.get("exception") is not None
                 # Either evidence exists OR there's an explicit exception
                 # For now, we allow null evidence if status is verified with explanation
                 pass  # Evidence validation depends on external hash verification
@@ -86,10 +86,10 @@ class TestExpiryDetection:
 
     def test_expiry_detection(self, requirements_registry):
         """Expired exceptions must be flagged."""
-        now = datetime.now(timezone.utc)
+        datetime.now(timezone.utc)
         for req in requirements_registry["requirements"]:
             if req.get("exception_expiry"):
-                expiry = datetime.fromisoformat(req["exception_expiry"].replace("Z", "+00:00"))
+                datetime.fromisoformat(req["exception_expiry"].replace("Z", "+00:00"))
                 # Expired exceptions should block verification
                 # This is informational; actual enforcement in CI
                 pass

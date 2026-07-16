@@ -13,9 +13,8 @@ from wilson_eval3ngine.persistence.scheduler import (
     ReconciliationReport,
     DurableScheduler,
     validate_job_transition,
-    LeaseClaimedError,
-    InvalidLeaseError,
     SchedulerError,
+    _JOB_STATE_TRANSITIONS,
 )
 
 
@@ -285,10 +284,6 @@ class TestSchedulerLeaseFencing:
         # This is tested at the SQL level - the UPDATE with WHERE clause
         # verifies that lease_version matches
         assert scheduler._retry_policy.is_retryable(1) is True
-
-
-# Import the transition dict for testing
-from wilson_eval3ngine.persistence.scheduler import _JOB_STATE_TRANSITIONS
 
 
 class TestConcurrentClaimSafety:

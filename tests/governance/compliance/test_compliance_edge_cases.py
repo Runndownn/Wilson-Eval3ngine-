@@ -35,8 +35,6 @@ class TestDerivedDataClassification:
         """Derived data with mixed sources inherits highest classification."""
         # If source data is Confidential and derived data uses Secret elements,
         # derived data becomes Secret (max classification)
-        source_classifications = ["Confidential", "Secret"]
-        max_expected = "Secret"
 
         # Policy states derived data's classification is max of sources
         derived_policy = policy_matrix["derived_data_policy"]

@@ -12,7 +12,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -148,7 +147,7 @@ class ParserSandboxExecutor:
         raw_hash: str,
     ) -> SandboxResult:
         """Execute parser in sandboxed mode."""
-        start_time = datetime.now(tz=UTC)
+        datetime.now(tz=UTC)
 
         # Validate input is within size limits
         input_size = input_path.stat().st_size

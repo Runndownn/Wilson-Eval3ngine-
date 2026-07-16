@@ -8,9 +8,7 @@ Tests cover:
 - Experiment manifest validation against approved scope
 """
 
-import pytest
 
-from wilson_eval3ngine.domain.contracts import ExperimentManifest
 from wilson_eval3ngine.providers.scope import (
     APPROVED_PROVIDERS,
     DataClassification,

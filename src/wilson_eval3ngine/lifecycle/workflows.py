@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from enum import Enum, StrEnum
+from enum import Enum
 from typing import Any, Protocol
 
 from ..util import new_id, sha256_hex, utc_now

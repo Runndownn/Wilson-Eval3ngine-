@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import logging
 import secrets
-import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -23,10 +22,9 @@ from sqlalchemy.exc import OperationalError
 
 from .database import Database
 from ..constants import StateTimeouts, RetryThresholds, FailureMode
-from ..domain.state import validate_run_transition, InvalidStateTransition
-from ..domain.enums import RunState
+from ..domain.state import InvalidStateTransition
 from ..security.context import validate_context_bound
-from ..util import utc_now, new_id
+from ..util import utc_now
 
 logger = logging.getLogger("wilson.scheduler")
 

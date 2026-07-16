@@ -21,7 +21,7 @@ from ..domain.io import (
     resolve_dataset_path,
 )
 from ..evidence.store import ArtifactRef, LocalArtifactStore
-from ..expectations.compiler import CompilationResult, ExpectationCompiler
+from ..expectations.compiler import ExpectationCompiler
 from ..gates.defaults import default_threshold_set
 from ..gates.engine import GateEngine
 from ..grading.pipeline import GradingPipeline

@@ -1,4 +1,3 @@
-from wilson_eval3ngine.domain.contracts import ProviderRequest
 from wilson_eval3ngine.domain.enums import PrimaryLabel
 from wilson_eval3ngine.domain.io import load_dataset, load_experiment, resolve_dataset_path
 from wilson_eval3ngine.expectations.compiler import ExpectationCompiler, PolicyRegistry, RubricRegistry

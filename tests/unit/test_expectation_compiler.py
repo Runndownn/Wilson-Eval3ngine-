@@ -623,7 +623,7 @@ class TestObservationLeakagePrevention:
     def test_compiler_accepts_only_case_inputs(self):
         """Compiler compile() only accepts TestCase, not responses or grades."""
         case_dict = _make_minimal_case()
-        case = _build_case(case_dict)
+        _build_case(case_dict)
         
         compiler = ExpectationCompiler("1.0.0")
         

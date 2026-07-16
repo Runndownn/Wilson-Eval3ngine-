@@ -6,7 +6,7 @@ from typing import Any
 from ..domain.contracts import ProviderRequest, ProviderResponse
 from ..util import new_id, sha256_hex
 from ..constants import FailureMode
-from .base import ProviderAdapter, ProviderFailure
+from .base import ProviderFailure
 
 # Lazy imports to allow testing without SDK installed
 _azure_available = False

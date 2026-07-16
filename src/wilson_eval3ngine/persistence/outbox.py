@@ -6,7 +6,6 @@ Ensures domain changes and emitted events cannot diverge.
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -17,7 +16,7 @@ from sqlalchemy import Index, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base
-from ..util import canonical_json, new_id, sha256_hex, utc_now
+from ..util import new_id, sha256_hex, utc_now
 
 logger = logging.getLogger("wilson.persistence.outbox")
 

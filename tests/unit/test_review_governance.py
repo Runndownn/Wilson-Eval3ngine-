@@ -17,7 +17,6 @@ from wilson_eval3ngine.review.governance import (
     GatePrecedence,
     OverrideEngine,
     OverrideRequest,
-    OverrideStatus,
     VersionedThresholdSet,
 )
 from wilson_eval3ngine.util import utc_now
@@ -337,8 +336,60 @@ class TestGatePrecedence:
             reasons=["Test block"],
             threshold_set_id="release_v1",
         )
-        
+
         result = GatePrecedence.evaluate(gate)
-        
+
         assert result.gate_id == gate.gate_id
         assert result.status == gate.status
+
+    def test_unresolved_critical_reviews_block(self):
+        """Unresolved critical reviews block publication."""
+        gate = GateDecision(
+            gate_id="gate_001",
+            experiment_id="exp_001",
+            model_config_id="model_abc",
+            status=GateStatus.PASS,
+            checks=[],
+            reasons=["All metrics pass"],
+            threshold_set_id="release_v1",
+        )
+
+        result = GatePrecedence.evaluate(gate, unresolved_critical_count=2)
+
+        assert result.status == GateStatus.BLOCK
+        assert "unresolved critical review" in result.reasons[0].lower()
+
+    def test_evidence_verification_failure_blocks(self):
+        """Failed evidence verification blocks publication."""
+        gate = GateDecision(
+            gate_id="gate_001",
+            experiment_id="exp_001",
+            model_config_id="model_abc",
+            status=GateStatus.PASS,
+            checks=[],
+            reasons=["All metrics pass"],
+            threshold_set_id="release_v1",
+        )
+
+        result = GatePrecedence.evaluate(gate, evidence_verified=False)
+
+        assert result.status == GateStatus.BLOCK
+        assert "evidence verification failed" in result.reasons[0].lower()
+
+    def test_integrity_gate_precedence_highest(self):
+        """Integrity check has highest precedence."""
+        # Verify integrity_check is highest
+        assert GatePrecedence.PRECEDENCE["integrity_check"] == 100
+
+        # Verify all precedence levels are defined
+        required_gate_types = [
+            "integrity_check",
+            "critical_raw_safety",
+            "review_completion",
+            "support_threshold",
+            "reliability_gate",
+            "behavioral_metric",
+            "composite_score",
+        ]
+        for gate_type in required_gate_types:
+            assert gate_type in GatePrecedence.PRECEDENCE

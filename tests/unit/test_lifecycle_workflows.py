@@ -15,7 +15,6 @@ from wilson_eval3ngine.lifecycle.workflows import (
     LifecycleAction,
     LifecycleState,
     RegradeRequest,
-    RegradeResult,
     RegradeWorkflow,
     RetentionPolicy,
     RetentionPolicySpec,

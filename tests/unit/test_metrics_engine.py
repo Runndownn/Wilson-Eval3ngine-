@@ -13,10 +13,8 @@ import pytest
 from wilson_eval3ngine.domain.contracts import MetricResult
 from wilson_eval3ngine.metrics.engine import (
     ComparisonStatus,
-    DriftIndicator,
     MetricDefinition,
     MetricDirection,
-    MetricRegistry,
     check_comparison_eligibility,
     compute_metric_comparison,
     create_metric_snapshot,

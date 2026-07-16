@@ -6,7 +6,7 @@ T4.1.2 - Integration tests for scheduler behavior.
 from __future__ import annotations
 
 import pytest
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from sqlalchemy import text
 
 from wilson_eval3ngine.persistence.scheduler import (
@@ -15,8 +15,6 @@ from wilson_eval3ngine.persistence.scheduler import (
     validate_job_transition,
 )
 from wilson_eval3ngine.persistence.database import Database, Repository
-from wilson_eval3ngine.domain.enums import ExperimentState, RunState
-from wilson_eval3ngine.util import new_id
 
 
 @pytest.fixture

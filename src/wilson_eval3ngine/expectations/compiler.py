@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Literal
+from typing import Any
 
 from ..domain.contracts import ExpectationRecord, TestCase
 from ..domain.enums import AuthorizationStatus, Severity
-from ..util import canonical_json, sha256_hex, utc_now
+from ..util import sha256_hex
 
 
 class CompilationError(Enum):

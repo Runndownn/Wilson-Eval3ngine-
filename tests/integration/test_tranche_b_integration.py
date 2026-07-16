@@ -4,7 +4,6 @@ Integration Tests for Benchmark Tranche B - Defensive Translations and Review Wo
 Tests for T2.1.6 acceptance criteria.
 """
 
-import pytest
 
 from wilson_eval3ngine.benchmark.supply_chain import (
     AttachmentClassification,

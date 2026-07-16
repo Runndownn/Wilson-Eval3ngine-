@@ -5,8 +5,6 @@ T3.1.3 - Immutable content-addressed object storage.
 
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
 
 import pytest
 
@@ -15,9 +13,6 @@ from wilson_eval3ngine.evidence.store import (
     LocalArtifactStore,
 )
 from wilson_eval3ngine.storage.object_store import (
-    ObjectNotFoundError,
-    ObjectStoreError,
-    ContentCollisionError,
     SCOPED_PATH_PATTERN,
     S3ObjectStore,
 )

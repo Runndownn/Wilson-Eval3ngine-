@@ -16,7 +16,6 @@ from wilson_eval3ngine.domain.contracts import (
     ContentBlock,
     ConversationTurn,
     ProviderRequest,
-    ProviderResponse,
 )
 from wilson_eval3ngine.providers.base import ProviderAdapter, ProviderFailure
 from wilson_eval3ngine.providers.mock import DeterministicMockProvider

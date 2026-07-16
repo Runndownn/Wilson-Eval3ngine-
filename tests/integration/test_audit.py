@@ -1,4 +1,3 @@
-from sqlalchemy import update
 
 from wilson_eval3ngine.persistence.audit import AuditLedger
 from wilson_eval3ngine.persistence.database import AuditEventRow, Database, Repository

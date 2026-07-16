@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate PDF from markdown test report."""
+"""Generate PDF from markdown test report with logo cover page."""
 
 from pathlib import Path
 from weasyprint import HTML
@@ -8,6 +8,7 @@ import markdown
 # Read markdown report
 md_path = Path(__file__).parent.parent / "docs" / "test_report.md"
 pdf_path = Path(__file__).parent.parent / "docs" / "Wilson-Eval3ngine_Test_Report.pdf"
+logo_path = Path(__file__).parent.parent / "docs" / "64493cd5-d7b8-4737-b8ad-1245ae595ffd.png"
 
 md_content = md_path.read_text()
 
@@ -23,12 +24,58 @@ styled_html = f"""
 <style>
 @page {{ margin: 0.75in; size: letter; }}
 @page {{ @bottom-center {{ content: counter(page); font-size: 10pt; color: #666; }} }}
+@page :first {{ margin: 0; }}
 
 body {{ 
     font-family: 'DejaVu Sans', 'Liberation Sans', sans-serif; 
     line-height: 1.5; 
     color: #222;
     font-size: 11pt;
+}}
+
+/* Cover page styling */
+.cover-page {{
+    page-break-after: always;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    text-align: center;
+    padding: 0;
+    margin: 0;
+}}
+
+.cover-logo {{
+    max-width: 300px;
+    max-height: 300px;
+    margin-bottom: 2em;
+}}
+
+.cover-title {{
+    font-size: 36pt;
+    color: #264653;
+    margin: 0.5em 0;
+    font-weight: bold;
+}}
+
+.cover-subtitle {{
+    font-size: 18pt;
+    color: #8338ec;
+    margin: 0.5em 0;
+}}
+
+.cover-meta {{
+    font-size: 12pt;
+    color: #666;
+    margin: 2em 0;
+}}
+
+.cover-status {{
+    font-size: 14pt;
+    color: #e63946;
+    margin: 2em 0;
+    font-weight: bold;
 }}
 
 h1 {{ 
@@ -97,6 +144,20 @@ em {{ font-style: italic; }}
 </style>
 </head>
 <body>
+<!-- Cover Page -->
+<div class="cover-page">
+    <img src="file://{logo_path}" alt="Wilson Eval3ngine Logo" class="cover-logo">
+    <h1 class="cover-title">Wilson Eval3ngine</h1>
+    <p class="cover-subtitle">Test Report - Foundation Release v0.1.0</p>
+    <div class="cover-meta">
+        <p>Generated: 2026-07-16</p>
+        <p>Framework Version: 0.1.0</p>
+        <p>Release Tier: foundation</p>
+        <p>Python Version: 3.13.12</p>
+    </div>
+    <p class="cover-status">STATUS: NOT APPROVED FOR PRODUCTION CERTIFICATION</p>
+</div>
+<!-- Content Pages -->
 {html_content}
 </body>
 </html>

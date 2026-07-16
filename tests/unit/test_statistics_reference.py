@@ -7,7 +7,6 @@ Tests cover:
 - Edge cases (singleton clusters, degenerate samples)
 """
 
-import math
 import pytest
 
 from wilson_eval3ngine.domain.contracts import Interval
@@ -15,7 +14,6 @@ from wilson_eval3ngine.statistics.intervals import wilson_interval as wilson_pro
 from wilson_eval3ngine.statistics.reference import (
     ClusterBootstrapConfig,
     ClusterBootstrapResult,
-    PairedDeltaResult,
     cluster_bootstrap_reference,
     paired_delta_reference,
     validate_cluster_unit_assumption,

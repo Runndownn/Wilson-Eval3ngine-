@@ -418,9 +418,22 @@ class GovernancePersistence:
     def apply_gate_precedence(
         self,
         decision: GateDecision,
+        *,
+        unresolved_critical_count: int = 0,
+        evidence_verified: bool = True,
     ) -> GateDecision:
-        """Apply gate precedence rules to prevent unsafe override bypass."""
-        return GatePrecedence.evaluate(decision)
+        """Apply gate precedence rules to prevent unsafe override bypass.
+
+        Args:
+            decision: Gate decision to evaluate.
+            unresolved_critical_count: Number of unresolved critical review tasks.
+            evidence_verified: Whether evidence chain verification passed.
+        """
+        return GatePrecedence.evaluate(
+            decision,
+            unresolved_critical_count=unresolved_critical_count,
+            evidence_verified=evidence_verified,
+        )
 
 
 __all__ = [

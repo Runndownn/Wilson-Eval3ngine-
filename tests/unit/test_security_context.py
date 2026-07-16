@@ -12,7 +12,6 @@ from wilson_eval3ngine.security.context import (
     ProjectContextError,
     PROJECT_CONTEXT_KEY,
     validate_context_bound,
-    assert_application_role,
 )
 
 
@@ -27,7 +26,6 @@ class TestProjectContextConstants:
         """Empty project IDs are rejected - validation logic verified."""
         # The validation is in bind_project_context - we test the constant and error type
         with pytest.raises(ProjectContextError, match="invalid project_id"):
-            from wilson_eval3ngine.security.context import bind_project_context
             # Test by constructing with empty project_id would fail, but we verify
             # the validation logic exists by checking the exception
             raise ProjectContextError("invalid project_id: ''")
@@ -58,7 +56,7 @@ class TestApplicationRoleAssertion:
 
         db = Database("sqlite:///./test_role_assertion.db")
         db.initialize()
-        with db.session() as session:
+        with db.session():
             # SQLite doesn't support roles, so we just verify function exists
             # The actual check is PostgreSQL-specific
             from wilson_eval3ngine.security.context import assert_application_role

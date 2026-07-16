@@ -10,6 +10,8 @@ import time
 import uuid
 from typing import Any
 
+from sqlalchemy import text
+
 from wilson_eval3ngine.persistence.database import Database, JobRow
 from wilson_eval3ngine.persistence.queue import DurableJobQueue
 from wilson_eval3ngine.performance.capacity_model import (
@@ -23,7 +25,6 @@ class LeaseBenchmark:
     """Benchmarks PostgreSQL leasing performance under different workloads."""
 
     def __init__(self, database_url: str) -> None:
-        from wilson_eval3ngine.performance.capacity_model import CapacityInputs
         self.database = Database(database_url)
         self.queue = DurableJobQueue(self.database)
         self.model = CapacityModel()
@@ -35,7 +36,6 @@ class LeaseBenchmark:
         job_type: str = "benchmark_lease",
     ) -> list[str]:
         """Create test jobs for benchmarking."""
-        from wilson_eval3ngine.util import utc_now
         job_ids = []
         with self.database.session() as session, session.begin():
             for i in range(count):
@@ -126,10 +126,6 @@ class LeaseBenchmark:
             session.execute(
                 text("DELETE FROM jobs WHERE job_type = 'benchmark_lease'")
             )
-
-
-# Import text for cleanup
-from sqlalchemy import text
 
 
 def run_all_benchmarks(database_url: str) -> dict[str, Any]:

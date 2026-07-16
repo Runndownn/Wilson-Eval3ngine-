@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from wilson_eval3ngine.performance.capacity_model import (
     CapacityInputs,

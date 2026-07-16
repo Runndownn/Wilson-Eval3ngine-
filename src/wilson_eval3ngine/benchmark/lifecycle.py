@@ -13,7 +13,6 @@ from enum import Enum
 from typing import Any
 
 from ..security.signing import SignatureEnvelope, load_private_key, sign_bytes
-from ..util import sha256_hex
 
 
 class DatasetLifecycleState(Enum):

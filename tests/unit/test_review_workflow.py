@@ -200,7 +200,7 @@ class TestReviewWorkflow:
         )
         
         # Assign to reviewer B (simulating reassignment for disagreement)
-        reviewer_b = Reviewer(
+        Reviewer(
             reviewer_id="rev_b",
             identity_id="user_b",
             status=ReviewerStatus.ACTIVE,

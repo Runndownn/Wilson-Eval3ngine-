@@ -6,7 +6,7 @@ on frozen fixtures, validating the statistical independence.
 
 import pytest
 
-from wilson_eval3ngine.domain.contracts import Interval, MetricResult
+from wilson_eval3ngine.domain.contracts import MetricResult
 from wilson_eval3ngine.metrics.engine import (
     MetricDefinition,
     MetricDirection,

@@ -4,7 +4,6 @@ Tests for Benchmark Tranche B Supply Chain - Hostile/High-Severity Cases.
 Validates T2.1.6 requirements for hostile input curation.
 """
 
-import pytest
 
 from wilson_eval3ngine.benchmark.supply_chain import (
     AttachmentClassification,

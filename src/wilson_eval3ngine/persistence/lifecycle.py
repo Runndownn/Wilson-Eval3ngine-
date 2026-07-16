@@ -5,7 +5,7 @@ T3.1.5 - Lifecycle workflows with immutable versioning and audit linkage.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
 from hashlib import sha256
 from typing import Any, Optional

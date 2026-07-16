@@ -4,7 +4,6 @@ Dataset validation tests for Tranche A and Tranche B.
 Validates dataset loading, case counts, and review states.
 """
 
-import pytest
 
 from wilson_eval3ngine.domain.io import load_dataset
 

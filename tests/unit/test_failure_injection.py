@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 from wilson_eval3ngine.testing.failure_injection import (
-    EvidenceStateSnapshot,
     FaultConfig,
     FaultController,
     FaultInjection,

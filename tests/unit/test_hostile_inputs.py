@@ -5,8 +5,11 @@ Validates T2.1.8 requirements for safe parsing under malformed, adversarial inpu
 Tests parsers, validators, canonicalization, and dataset tooling under hostile conditions.
 """
 
+from __future__ import annotations
+
 import json
 from io import StringIO
+from typing import Any
 
 import pytest
 import yaml
@@ -20,7 +23,6 @@ from wilson_eval3ngine.domain.contracts import (
     TestCase,
 )
 from wilson_eval3ngine.domain.enums import AuthorizationStatus, ExpectedTreatment, Severity
-from wilson_eval3ngine.domain.io import load_yaml_model
 
 
 class TestYAMLHostileInputs:
@@ -165,7 +167,7 @@ class TestCanonicalizationInvariants:
 
     def test_unicode_normalization_consistency(self):
         """Unicode normalization should produce consistent hashes."""
-        from wilson_eval3ngine.util import canonical_json, sha256_hex
+        from wilson_eval3ngine.util import canonical_json
 
         # Same text with different Unicode representations
         text1 = "café"  # NFC form
@@ -293,7 +295,7 @@ class TestProviderResponseMalicious:
 
     def test_malformed_response_state(self):
         """Mismatched protocol_valid/terminal states handled correctly."""
-        from wilson_eval3ngine.domain.contracts import ProviderResponse, TestCase
+        from wilson_eval3ngine.domain.contracts import ProviderResponse
 
         # A response that claims to be protocol_valid but isn't terminal
         response = ProviderResponse(
@@ -451,7 +453,7 @@ class TestParserSecurityIntegration:
 
     def test_resource_limits_prevent_exhaustion(self):
         """Resource limits prevent parser exhaustion attacks."""
-        from wilson_eval3ngine.parser_sandbox.parser_sandbox import ParserSandboxContract, ParserSandboxExecutor
+        from wilson_eval3ngine.parser_sandbox.parser_sandbox import ParserSandboxContract
         
         contract = ParserSandboxContract(parser_id="test")
         # Verify isolation controls include resource constraints

@@ -174,7 +174,6 @@ class TestSchemaRegistryIndexSchema:
 
     def test_registry_schema_exists(self):
         """Schema for registry index exists."""
-        import os
         schema_path = Path("/home/geezeradmin/work/Wilson-Eval3ngine/governance/schemas/schema_registry_index.schema.json")
         assert schema_path.exists()
 

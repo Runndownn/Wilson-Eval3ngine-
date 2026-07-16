@@ -6,11 +6,11 @@ and comparison eligibility for reproducible performance and safety measurements.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from ..domain.contracts import Interval, MetricResult, MetricSnapshot
+from ..domain.contracts import MetricResult, MetricSnapshot
 from ..statistics.intervals import wilson_interval
 from ..util import sha256_hex, utc_now
 

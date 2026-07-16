@@ -8,7 +8,6 @@ Tests cover:
 - ReviewTask and QueueSLA
 """
 
-import pytest
 from datetime import datetime, timedelta
 
 from wilson_eval3ngine.review.capacity import (
@@ -16,8 +15,6 @@ from wilson_eval3ngine.review.capacity import (
     ExposureTracking,
     QualificationRecord,
     QueueSLA,
-    RecusalReason,
-    ReviewAssignment,
     ReviewCategory,
     ReviewTask,
     Reviewer,

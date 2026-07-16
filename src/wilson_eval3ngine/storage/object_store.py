@@ -5,13 +5,10 @@ T3.1.3 - Immutable content-addressed object storage.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
-from pathlib import Path
-from typing import Any, Protocol
+from typing import Protocol
 
-from ..util import sha256_hex, utc_now
+from ..util import sha256_hex
 
 logger = logging.getLogger("wilson.storage.object")
 
@@ -178,7 +175,7 @@ class S3ObjectStore:
         self._validate_mime_type(media_type, payload)
 
         digest = sha256_hex(payload)
-        staging_key = self._scoped_key(project_id, classification, digest, staging=True)
+        self._scoped_key(project_id, classification, digest, staging=True)
 
         # In production, this would:
         # 1. Check if object already exists at final location (idempotent write)
@@ -235,7 +232,7 @@ class S3ObjectStore:
     ) -> bool:
         """Check object existence without retrieval."""
         classification = self._validate_classification(classification)
-        key = self._scoped_key(project_id, classification, digest)
+        self._scoped_key(project_id, classification, digest)
         # In production: HEAD request to S3 with access validation
         return False
 

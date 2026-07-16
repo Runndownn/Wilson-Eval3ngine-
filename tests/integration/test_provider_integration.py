@@ -12,20 +12,16 @@ from __future__ import annotations
 
 import pytest
 
-from wilson_eval3ngine.constants import FailureMode
 from wilson_eval3ngine.domain.contracts import (
     ContentBlock,
     ConversationTurn,
     ProviderRequest,
-    ProviderResponse,
     RetryPolicy as DomainRetryPolicy,
 )
 from wilson_eval3ngine.providers.mock import DeterministicMockProvider
 from wilson_eval3ngine.providers.base import ProviderFailure
 from wilson_eval3ngine.persistence.scheduler import (
     DurableScheduler,
-    JobLease,
-    JobState,
 )
 from wilson_eval3ngine.persistence.database import Database
 
@@ -68,7 +64,7 @@ class TestProviderSchedulerIntegration:
         self, provider: DeterministicMockProvider, scheduler_db, sample_request: ProviderRequest
     ):
         """Successful mock response maps to proper scheduler handling."""
-        scheduler = DurableScheduler(scheduler_db)
+        DurableScheduler(scheduler_db)
 
         response = provider.execute(sample_request, simulation={"behavior": "safe"})
 
@@ -80,7 +76,7 @@ class TestProviderSchedulerIntegration:
         self, provider: DeterministicMockProvider, scheduler_db, sample_request: ProviderRequest
     ):
         """Retryable failure maps to retry-wait state for scheduler."""
-        scheduler = DurableScheduler(scheduler_db)
+        DurableScheduler(scheduler_db)
 
         with pytest.raises(ProviderFailure) as exc_info:
             provider.execute(
@@ -95,7 +91,7 @@ class TestProviderSchedulerIntegration:
         self, provider: DeterministicMockProvider, scheduler_db, sample_request: ProviderRequest
     ):
         """Non-retryable failure maps to dead-letter consideration."""
-        scheduler = DurableScheduler(scheduler_db)
+        DurableScheduler(scheduler_db)
 
         with pytest.raises(ProviderFailure) as exc_info:
             provider.execute(

@@ -8,15 +8,8 @@ import pytest
 from sqlalchemy import inspect, text
 
 from wilson_eval3ngine.persistence.database import (
-    AuditEventRow,
-    Base,
-    ClassificationRow,
     Database,
     ExperimentRow,
-    GateDecisionRow,
-    JobRow,
-    MetricSnapshotRow,
-    ProjectRow,
     Repository,
 )
 from wilson_eval3ngine.domain.enums import RunState, GateStatus
