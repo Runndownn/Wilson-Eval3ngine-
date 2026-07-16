@@ -19,8 +19,9 @@ from __future__ import annotations
 
 import os
 import tempfile
-import pytest
 from datetime import datetime, timedelta, timezone
+
+import pytest
 
 from wilson_eval3ngine.security.authorization import (
     AuthorizationError,
@@ -49,6 +50,7 @@ from wilson_eval3ngine.quarantine.quarantine import detect_mime_type
 from wilson_eval3ngine.grading.hardened import DeterministicGrader
 from wilson_eval3ngine.domain.contracts import ExpectationRecord, ProviderResponse
 from wilson_eval3ngine.domain.enums import ExpectedTreatment
+from wilson_eval3ngine.util import sha256_hex, utc_now
 
 
 class TestSQLInjectionPrevention:
@@ -282,9 +284,9 @@ class TestSignatureAuditCompromise:
         # Create and trust a key
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
         from cryptography.hazmat.primitives import serialization
-        key = Ed25519PrivateKey.generate()
-        from wilson_eval3ngine.util import sha256_hex
+        from datetime import datetime
 
+        key = Ed25519PrivateKey.generate()
         pem = key.public_key().public_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo,
@@ -292,13 +294,15 @@ class TestSignatureAuditCompromise:
         fingerprint = sha256_hex(pem)
         registry.trust_key(fingerprint)
 
-        # Create valid checkpoint
-        envelope = sign_bytes(b"100|root_hash_abc", key)
+        # Create valid checkpoint with ISO string timestamps
+        now_iso = utc_now().isoformat()
+        start_iso = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        envelope = sign_bytes(f"{now_iso}:100:root_hash_abc".encode(), key)
         checkpoint = AuditCheckpoint(
             checkpoint_id="chk_001",
-            timestamp=datetime.now(timezone.utc),
-            event_window_start=datetime.now(timezone.utc) - timedelta(hours=1),
-            event_window_end=datetime.now(timezone.utc),
+            timestamp=now_iso,
+            event_window_start=start_iso,
+            event_window_end=now_iso,
             event_count=100,
             event_hash_chain_root="root_hash_abc",
             signature=envelope,

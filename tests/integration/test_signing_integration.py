@@ -116,8 +116,8 @@ class TestAuditCheckpointWorkflow:
         registry = TrustRegistry()
         key = Ed25519PrivateKey.generate()
 
-        now = utc_now()
-        window_start = now - timedelta(hours=1)
+        now = utc_now().isoformat()
+        window_start = (utc_now() - timedelta(hours=1)).isoformat()
         window_end = now
 
         # Create checkpoint
@@ -149,9 +149,10 @@ class TestAuditCheckpointWorkflow:
 
         checkpoints = []
         for i in range(3):
-            now = utc_now()
+            now = utc_now().isoformat()
+            start = (utc_now() - timedelta(hours=1)).isoformat()
             checkpoint = create_audit_checkpoint(
-                event_window_start=now - timedelta(hours=1),
+                event_window_start=start,
                 event_window_end=now,
                 event_count=i * 100,
                 event_hash_chain_root=sha256_hex(f"chain_{i}".encode()),
@@ -170,10 +171,11 @@ class TestAuditCheckpointWorkflow:
     def test_checkpoint_verification_fails_without_trust(self) -> None:
         """Checkpoint verification fails if key not in trust registry."""
         key = Ed25519PrivateKey.generate()
-        now = utc_now()
+        now = utc_now().isoformat()
+        start = (utc_now() - timedelta(hours=1)).isoformat()
 
         checkpoint = create_audit_checkpoint(
-            event_window_start=now - timedelta(hours=1),
+            event_window_start=start,
             event_window_end=now,
             event_count=100,
             event_hash_chain_root=sha256_hex(b"root"),
@@ -195,10 +197,11 @@ class TestKeyRevocationImpact:
         registry = TrustRegistry()
         key = Ed25519PrivateKey.generate()
 
+        now = utc_now().isoformat()
+        start = (utc_now() - timedelta(hours=1)).isoformat()
         # Create checkpoint
-        now = utc_now()
         checkpoint = create_audit_checkpoint(
-            event_window_start=now - timedelta(hours=1),
+            event_window_start=start,
             event_window_end=now,
             event_count=100,
             event_hash_chain_root=sha256_hex(b"root"),
@@ -241,9 +244,10 @@ class TestAuditIntegrity:
         registry = TrustRegistry()
         key = Ed25519PrivateKey.generate()
 
-        now = utc_now()
+        now = utc_now().isoformat()
+        start = (utc_now() - timedelta(hours=1)).isoformat()
         original = create_audit_checkpoint(
-            event_window_start=now - timedelta(hours=1),
+            event_window_start=start,
             event_window_end=now,
             event_count=100,
             event_hash_chain_root=sha256_hex(b"root"),
@@ -274,9 +278,10 @@ class TestAuditIntegrity:
         registry = TrustRegistry()
         key = Ed25519PrivateKey.generate()
 
-        now = utc_now()
+        now = utc_now().isoformat()
+        start = (utc_now() - timedelta(hours=1)).isoformat()
         original = create_audit_checkpoint(
-            event_window_start=now - timedelta(hours=1),
+            event_window_start=start,
             event_window_end=now,
             event_count=100,
             event_hash_chain_root=sha256_hex(b"original_root"),

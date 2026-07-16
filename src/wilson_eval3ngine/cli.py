@@ -27,6 +27,10 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+# Exit codes for hostile testing
+EXIT_PLATFORM_FAILURE = 2
+EXIT_VALIDATION_ERROR = 1
+
 
 @app.command()
 def validate(manifest: Path) -> None:

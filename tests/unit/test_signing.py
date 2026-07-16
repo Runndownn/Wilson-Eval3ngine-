@@ -176,19 +176,19 @@ class TestAuditCheckpoint:
         """Audit checkpoint can be created."""
         key = Ed25519PrivateKey.generate()
         envelope = sign_bytes(b"test", key)
-        
-        now = utc_now()
+
+        now = utc_now().isoformat()
         checkpoint = AuditCheckpoint(
             checkpoint_id="checkpoint_001",
             timestamp=now,
-            event_window_start=now - timedelta(hours=1),
+            event_window_start=(utc_now() - timedelta(hours=1)).isoformat(),
             event_window_end=now,
             event_count=100,
             event_hash_chain_root=sha256_hex(b"root"),
             signature=envelope,
             signer_key_id="key_001",
         )
-        
+
         assert checkpoint.checkpoint_id == "checkpoint_001"
         assert checkpoint.event_count == 100
         assert checkpoint.signer_key_id == "key_001"
@@ -197,28 +197,29 @@ class TestAuditCheckpoint:
         """Audit checkpoint can be verified."""
         registry = TrustRegistry()
         key = Ed25519PrivateKey.generate()
-        
-        now = utc_now()
+
+        now_str = utc_now().isoformat()
+        now_dt = utc_now()
         checkpoint = create_audit_checkpoint(
-            event_window_start=now - timedelta(hours=1),
-            event_window_end=now,
+            event_window_start=(now_dt - timedelta(hours=1)).isoformat(),
+            event_window_end=now_str,
             event_count=42,
             event_hash_chain_root=sha256_hex(b"chain_root"),
             private_key=key,
             signer_key_id="key_audit_001",
         )
-        
+
         # Trust the key (simulating trust registry population)
         registry.trust_key(checkpoint.signature.public_key_fingerprint_sha256)
-        
+
         assert checkpoint.verify(registry) is True
 
     def test_checkpoint_to_dict(self) -> None:
         """Audit checkpoint serializes correctly."""
         key = Ed25519PrivateKey.generate()
         envelope = sign_bytes(b"test", key)
-        
-        now = utc_now()
+
+        now = utc_now().isoformat()
         checkpoint = AuditCheckpoint(
             checkpoint_id="checkpoint_001",
             timestamp=now,
@@ -229,7 +230,7 @@ class TestAuditCheckpoint:
             signature=envelope,
             signer_key_id="key_001",
         )
-        
+
         d = checkpoint.to_dict()
         assert d["checkpoint_id"] == "checkpoint_001"
         assert d["event_count"] == 10
@@ -239,20 +240,20 @@ class TestAuditCheckpoint:
         """Audit checkpoint verification fails for revoked key."""
         registry = TrustRegistry()
         key = Ed25519PrivateKey.generate()
-        
-        now = utc_now()
+
+        now_dt = utc_now()
         checkpoint = create_audit_checkpoint(
-            event_window_start=now - timedelta(hours=1),
-            event_window_end=now,
+            event_window_start=(now_dt - timedelta(hours=1)).isoformat(),
+            event_window_end=now_dt.isoformat(),
             event_count=42,
             event_hash_chain_root=sha256_hex(b"chain_root"),
             private_key=key,
             signer_key_id="key_audit_001",
         )
-        
+
         # Key not trusted - verification should fail
         assert checkpoint.verify(registry) is False
-        
+
         # Revoke after trust - verification should still fail
         registry.trust_key(checkpoint.signature.public_key_fingerprint_sha256)
         registry.revoke_key(checkpoint.signature.public_key_fingerprint_sha256)
