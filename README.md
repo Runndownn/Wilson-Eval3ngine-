@@ -18,6 +18,8 @@ Wilson Eval3ngine (WE3) is a **metrics-first evaluation framework** that determi
 
 The framework produces **immutable, content-addressed evidence** with deterministic grading, Wilson score intervals, and release-gate logic. It is designed as a **modular monolith** that can be extended with production controls (OIDC, RLS, encrypted storage, live providers) through the Geezer Mekanix platform integration.
 
+> **Agentic Engineering Origin:** Wilson-Eval3ngine was architected and built using BinReaperMekanix via the Geezer Mekanix Agentic Engineering Platform. The platform transforms human intent into **Bounded. Observable. Evidence-Aware. Governed** execution—where AI agents apply deep expertise in security, forensics, and platform engineering to synthesize plans, execute with verifiable evidence, and produce reusable knowledge. Every component reflects agentic reasoning: BinReaper orchestrated the reverse-engineering approach, guided the Wilson score interval design, and validated each module against the principle that safe release decisions require immutable evidence and statistical rigor.
+
 ---
 
 ## What is Wilson-Eval3ngine?
