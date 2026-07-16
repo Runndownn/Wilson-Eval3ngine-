@@ -8,19 +8,27 @@
 
 ## Executive Summary
 
-Wilson Eval3ngine (WE3) is a **metrics-first evaluation framework** that determines whether an LLM behaves correctly across five distinct outcome categories:
+Wilson Eval3ngine (WE3) is a metrics-first, platform-independent evaluation framework that determines whether an LLM behaves correctly across five distinct outcome categories:
 
-1. **Appropriate Refusal** - Model correctly refuses inappropriate request
-2. **False Refusal** - Model incorrectly refuses appropriate request  
-3. **Safe Useful Compliance** - Model complies safely and helpfully
-4. **Unsafe Compliance** - Model complies unsafely (includes harmful leakage)
-5. **Ambiguous/Partial Behavior** - Response is incomplete, malformed, or indeterminate
+Appropriate Refusal — The model correctly refuses an inappropriate request.
+False Refusal — The model incorrectly refuses an appropriate request.
+Safe Useful Compliance — The model complies safely and helpfully.
+Unsafe Compliance — The model complies unsafely, including harmful information leakage.
+Ambiguous/Partial Behavior — The response is incomplete, malformed, or otherwise indeterminate.
 
-The framework produces **immutable, content-addressed evidence** with deterministic grading, Wilson score intervals, and release-gate logic. It is designed as a **modular monolith** that can be extended with production controls (OIDC, RLS, encrypted storage, live providers) through platform integration (Geezer Mekanix integration provided).
+The framework produces immutable, content-addressed evidence supported by deterministic grading, Wilson score intervals, and release-gate logic. It is designed as a modular monolith that can operate independently and be integrated into different platforms, deployment environments, and evaluation workflows. Production controls—including OIDC, row-level security, encrypted storage, and live model providers—can be added through implementation-specific adapters and platform integrations.
+
+Wilson Eval3ngine is currently being built and exercised through the Geezer Mekanix Agentic Engineering Platform, which provides its present engineering, orchestration, and integration environment. This reflects how the framework is being developed, not a restriction on where it can be deployed or used. Geezer Mekanix integration is provided as the initial reference integration, while the underlying WE3 architecture remains portable, extensible, and capable of supporting other platforms, providers, and operational environments.
 
 ### What Can Be Done Now (Foundation v0.1.0)
 
-At the current foundation release, Wilson-Eval3ngine can evaluate LLMs through deterministic, rule-based classification without requiring production credentials or external dependencies. The framework processes experiment manifests that define datasets of test cases with expected outcomes (comply or refuse), executes these against mock or configured providers, grades responses using five-outcome deterministic rules, and produces metric snapshots with Wilson score confidence intervals. All evidence is preserved immutably using SHA-256 content addressing, enabling full auditability and reproducibility. The `we3 validate` command checks experiment integrity, `we3 run` executes experiments and produces dossiers, `we3 verify-dossier` validates Ed25519 signatures, and `we3 export-schemas` generates JSON schemas from Pydantic contracts. The system correctly identifies unsafe compliance events and will block release decisions when critical thresholds are exceeded.
+At the current foundation release, Wilson-Eval3ngine can evaluate LLMs through deterministic, rule-based classification without requiring production credentials or external dependencies. The framework processes experiment manifests that define datasets of test cases and their expected outcomes—such as compliance or refusal—then executes those cases against mock or configured providers.
+
+Responses are graded using deterministic five-outcome rules, and the resulting metric snapshots include Wilson score confidence intervals. All evidence is preserved immutably through SHA-256 content addressing, enabling auditability, integrity verification, and reproducibility across evaluation runs.
+
+The we3 validate command checks experiment integrity, we3 run executes experiments and produces evaluation dossiers, we3 verify-dossier validates Ed25519 signatures, and we3 export-schemas generates JSON schemas from Pydantic contracts. The system identifies unsafe-compliance events and blocks release decisions when configured critical thresholds are exceeded.
+
+These foundation capabilities belong to Wilson Eval3ngine itself and are not dependent on Geezer Mekanix. Geezer Mekanix currently serves as the platform through which WE3 is being engineered, integrated, and operationally demonstrated, while the framework remains available for standalone use or integration into other systems.
 
 ### How It Works
 
