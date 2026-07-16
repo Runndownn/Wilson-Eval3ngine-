@@ -243,7 +243,7 @@ flowchart TB
 ```mermaid
 gantt
     title Wilson Eval3ngine Development Milestones
-    dateFormat  YYYY-MM-DD
+    dateFormat YYYY-MM-DD
     section Foundation
     Contracts & Schema :done, des1, 2026-07-01, 10d
     Mock Provider :done, des2, 2026-07-05, 5d
