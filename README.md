@@ -255,18 +255,17 @@ gantt
 
 | Component | Status | Tests | Evidence |
 |-----------|--------|-------|----------|
-| Versioned Pydantic Contracts | ✅ Complete | - | `contracts/schemas/` (11 schemas) |
-| Deterministic Mock Provider | ✅ Complete | - | `src/wilson_eval3ngine/providers/mock.py` |
-| Expectation Compiler | ✅ Complete | - | `src/wilson_eval3ngine/expectations/compiler.py` |
-| Five-Outcome Classifier | ✅ Complete | 636, 407 LOC | `src/wilson_eval3ngine/grading/classifier.py` |
-| Gate Engine | ✅ Complete | 6565 LOC, 100% coverage | `src/wilson_eval3ngine/gates/engine.py` |
-| Metric Engine | ✅ Complete | 5482 LOC | `src/wilson_eval3ngine/metrics/engine.py` |
-| Wilson Intervals | ✅ Complete | 869 LOC | `src/wilson_eval3ngine/statistics/intervals.py` |
-| Grader Calibration (TODO31) | ✅ Complete | 14 unit tests | `src/wilson_eval3ngine/grading/calibration.py` |
-| Statistical Reference (TODO32) | ✅ Complete | 20 tests (14 unit + 6 integration) | `src/wilson_eval3ngine/statistics/reference.py` |
-| Versioned Metrics (TODO33) | ✅ Complete | 20 tests (15 unit + 5 integration) | `src/wilson_eval3ngine/metrics/engine.py` |
-| Lifecycle Workflows | ✅ Complete | 6 tests | `src/wilson_eval3ngine/lifecycle/workflows.py` |
-| Capacity Model | ✅ Complete | 5 tests | `src/wilson_eval3ngine/performance/capacity_model.py` |
+| Versioned Pydantic Contracts (TODO 8) | ✅ Complete | - | `contracts/schemas/` (11 schemas) - Establishes contract versioning, schema reference resolution, and security parsers for validation |
+| Deterministic Mock Provider (TODO 23) | ✅ Complete | 6 unit tests | `src/wilson_eval3ngine/providers/mock.py` - Implements provider contract with simulated latency, error injection, and deterministic responses |
+| Expectation Compiler (TODO 13) | ✅ Complete | - | `src/wilson_eval3ngine/expectations/compiler.py` - Compiles datasets into execution graphs with policy injection and schema validation |
+| Five-Outcome Classifier (TODO 29) | ✅ Complete | 636, 407 LOC | `src/wilson_eval3ngine/grading/classifier.py` - Implements deterministic rules for appropriate refusal, false refusal, safe/unsafe compliance, and ambiguous behavior |
+| Gate Engine (TODO 36) | ✅ Complete | 6565 LOC, 100% coverage | `src/wilson_eval3ngine/gates/engine.py` - Evaluates release gates with critical-event precedence, support checks, and threshold comparisons |
+| Metric Engine (TODO 33) | ✅ Complete | 20 tests (15 unit + 5 integration) | `src/wilson_eval3ngine/metrics/engine.py` - Produces versioned metrics with Wilson score intervals and deterministic snapshots |
+| Wilson Intervals (TODO 32) | ✅ Complete | 20 tests (14 unit + 6 integration) | `src/wilson_eval3ngine/statistics/intervals.py` - Implements Wilson score calculations with cluster bootstrap and confidence intervals |
+| Grader Calibration (TODO 31) | ✅ Complete | 14 unit tests | `src/wilson_eval3ngine/grading/calibration.py` - Builds calibration harness with blinded gold ingestion and release threshold validation |
+| Lifecycle Workflows (TODO 19, 20) | ✅ Complete | 6 tests | `src/wilson_eval3ngine/lifecycle/workflows.py` - Implements regrade, backfill, retention, and rollback with legal-hold precedence |
+| Capacity Model (TODO 21) | ✅ Complete | 5 tests | `src/wilson_eval3ngine/performance/capacity_model.py` - Models workload profiles and validates PostgreSQL queue envelope with 30% headroom |
+| Provider Fingerprints (TODO 27) | ✅ Complete | 18 unit tests | `src/wilson_eval3ngine/providers/fingerprints.py` - Detects model drift and enforces budgets with soft/hard thresholds and audit trails |
 
 ### In Progress
 
@@ -277,17 +276,17 @@ gantt
 | Schema Registry | 🔄 Active | Evidence capture | `scripts/ci/validate_schema_registry.py` |
 | Population Specification | 🔄 Active | Language support | `governance/compliance/population_specification.json` |
 
-### Not Started / Remaining Work
+### Not Started / Production Blockers
 
-| Component | Status | Dependencies |
-|-----------|--------|--------------|
-| Human Review UI | ❌ Not Started | Classification queue, RBAC |
-| PostgreSQL RLS | ❌ Not Started | OIDC integration, schema migration |
-| Immutable Object Storage | ❌ Not Started | KMS setup, retention policy |
-| Calibrated Semantic Grader | ❌ Not Started | Hidden-set evidence, judge bootstrap |
-| Cluster Bootstrap | ❌ Not Started | Production dataset, population slices |
-| OIDC Authentication | ❌ Not Started | Azure AD or managed IdP |
-| Signing Key Management | ❌ Not Started | HSM/KMS integration |
+| Component | Status | Dependencies | Production Impact |
+|-----------|--------|--------------|-------------------|
+| OIDC Authentication | ❌ Not Started | Azure AD or managed IdP | Required for production identity enforcement |
+| PostgreSQL RLS | ❌ Not Started | OIDC integration, schema migration | Required for multi-tenant data isolation |
+| Encrypted Object Storage | ❌ Not Started | KMS setup, retention policy | Required for evidence protection at rest |
+| Calibrated Semantic Grader | ❌ Not Started | Hidden-set evidence, judge bootstrap | Required for semantic judgment beyond rules |
+| Human Review UI | ❌ Not Started | Classification queue, RBAC | Required for adjudication of contested cases |
+| Signing Key Management | ❌ Not Started | HSM/KMS integration | Required for dossier verifiability |
+| Execution Resilience Tests | ❌ Not Started | TODOs 22-27 | Required for concurrency validation |
 
 ---
 
