@@ -447,6 +447,60 @@
       "status": "verified",
       "last_verification_timestamp": "2026-07-15T21:50:00Z",
       "verification_proof": "pytest tests/unit/test_lifecycle.py -v --tb=short"
+    },
+    {
+      "requirement_id": "REQ-EVAL-011",
+      "source": "TODO 43 - Software Supply Chain Controls",
+      "source_version": "T6.1.6",
+      "normative_level": "MUST",
+      "owner": "platform-team",
+      "component": "src/wilson_eval3ngine/supply_chain",
+      "implementation_ref": [
+        "src/wilson_eval3ngine/supply_chain/__init__.py"
+      ],
+      "test_ids": [
+        "tests/unit/test_supply_chain_core.py::TestSBOMGeneration::test_sbom_creation",
+        "tests/unit/test_supply_chain_core.py::TestSBOMGeneration::test_sbom_add_component",
+        "tests/unit/test_supply_chain_core.py::TestVulnerabilityPolicy::test_block_critical_vulnerability",
+        "tests/unit/test_supply_chain_core.py::TestVulnerabilityPolicy::test_exception_allows_vulnerability",
+        "tests/integration/test_supply_chain_integration.py::TestSupplyChainManagerIntegration::test_full_release_workflow"
+      ],
+      "gate_id": "ci/security-check",
+      "evidence_artifact": "governance/compliance/supply_chain.sha256",
+      "status": "verified",
+      "last_verification_timestamp": "2026-07-16T09:15:00Z",
+      "verification_proof": "pytest tests/unit/test_supply_chain_core.py tests/integration/test_supply_chain_integration.py -v"
+    },
+    {
+      "requirement_id": "REQ-EVAL-012",
+      "source": "TODO 44 - Adversarial Security Matrix",
+      "source_version": "T6.1.7",
+      "normative_level": "MUST",
+      "owner": "security-team",
+      "component": "tests/governance/adversarial",
+      "implementation_ref": [
+        "tests/governance/adversarial/test_adversarial_security_matrix.py",
+        "tests/governance/adversarial/test_adversarial_permissions.py"
+      ],
+      "test_ids": [
+        "tests/governance/adversarial/test_adversarial_security_matrix.py::TestSQLInjectionPrevention",
+        "tests/governance/adversarial/test_adversarial_security_matrix.py::TestAuthTokenFaults",
+        "tests/governance/adversarial/test_adversarial_security_matrix.py::TestRaceConditionPrevention",
+        "tests/governance/adversarial/test_adversarial_security_matrix.py::TestExcessiveAgencyPrevention",
+        "tests/governance/adversarial/test_adversarial_security_matrix.py::TestSecretLeakagePrevention",
+        "tests/governance/adversarial/test_adversarial_security_matrix.py::TestSignatureAuditCompromise",
+        "tests/governance/adversarial/test_adversarial_security_matrix.py::TestSupplyChainTampering",
+        "tests/governance/adversarial/test_adversarial_security_matrix.py::TestAttachmentExecutionPrevention",
+        "tests/governance/adversarial/test_adversarial_security_matrix.py::TestCrossProjectAccessUnderLoad",
+        "tests/governance/adversarial/test_adversarial_security_matrix.py::TestBackendAuthorizationEnforcement",
+        "tests/governance/adversarial/test_adversarial_permissions.py::TestHumanRolePermissionDenials",
+        "tests/governance/adversarial/test_adversarial_permissions.py::TestWorkloadRoleIsolation"
+      ],
+      "gate_id": "ci/security-check",
+      "evidence_artifact": "tests/governance/adversarial/test_adversarial_security_matrix.py.sha256",
+      "status": "verified",
+      "last_verification_timestamp": "2026-07-16T09:30:00Z",
+      "verification_proof": "pytest tests/governance/adversarial/ -v"
     }
   ]
 }

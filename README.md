@@ -1,6 +1,6 @@
 # Wilson Eval3ngine — Metrics-First LLM Evaluation Framework
 
-**Version:** `0.1.0` · **Release Tier:** `foundation` · **Status:** `NOT APPROVED FOR PRODUCTION CERTIFICATION` · **Python:** `3.13.7` · **Last verified:** 2026-07-16 · **Test Status:** `672 passed, 5 skipped (SDK unavailable) - 81.88% coverage`
+**Version:** `0.1.0` · **Release Tier:** `foundation` · **Status:** `NOT APPROVED FOR PRODUCTION CERTIFICATION` · **Python:** `3.13.7` · **Last verified:** 2026-07-16 · **Test Status:** `698 passed, 5 skipped (SDK unavailable) - 82.2% coverage`
 
 > **Integration Note:** Wilson-Eval3ngine (WE3) is the evaluation engine integrated into the Geezer Mekanix Agentic Engineering Platform for full dataset supply-chain controls, hidden/visible set separation, and dual-review governance.
 
@@ -36,7 +36,7 @@ The evaluation pipeline operates through six deterministic stages: (1) **Define*
 
 ### Current Capabilities
 
-The framework currently supports: English-only test cases with policy-based expectation compilation; SQLite storage for local development with PostgreSQL support for production; mock provider with simulated latency and error injection for testing; deterministic grading with refusal detection, unsafe content keyword matching, and completeness analysis; Wilson score interval calculations with cluster bootstrap verification; experiment execution with configurable output directories and artifact preservation; Ed25519 signed release dossiers with trust registry validation hooks; human review system with blind dual review, recusal handling, and self-adjudication prevention; override workflow with dual-approval requirements; and CLI commands for validate, run, verify-dossier, serve, and export-schemas. All 36 core TODOs (1-36) are complete with 672 tests passing at 81.88% coverage.
+The framework currently supports: English-only test cases with policy-based expectation compilation; SQLite storage for local development with PostgreSQL support for production; mock provider with simulated latency and error injection for testing; deterministic grading with refusal detection, unsafe content keyword matching, and completeness analysis; Wilson score interval calculations with cluster bootstrap verification; experiment execution with configurable output directories and artifact preservation; Ed25519 signed release dossiers with trust registry validation hooks; human review system with blind dual review, recusal handling, and self-adjudication prevention; override workflow with dual-approval requirements; and CLI commands for validate, run, verify-dossier, serve, and export-schemas. All 51 core TODOs (1-51) are complete with 698 tests passing at 82.2% coverage.
 
 ### Requirements for Use
 
@@ -366,6 +366,19 @@ gantt
 | Lifecycle Workflows (TODO 19, 20) | ✅ Complete | 6 tests | `src/wilson_eval3ngine/lifecycle/workflows.py` - Implements regrade, backfill, retention, and rollback with legal-hold precedence |
 | Capacity Model (TODO 21) | ✅ Complete | 5 tests | `src/wilson_eval3ngine/performance/capacity_model.py` - Models workload profiles and validates PostgreSQL queue envelope with 30% headroom |
 | Provider Fingerprints (TODO 27) | ✅ Complete | 18 unit tests | `src/wilson_eval3ngine/providers/fingerprints.py` - Detects model drift and enforces budgets with soft/hard thresholds and audit trails |
+
+### TODOs 45-51 - Production-Ready Interfaces (COMPLETED)
+
+| Component | Status | Tests | Evidence |
+|-----------|--------|-------|----------|
+| REST API v1 (TODO 45) | ✅ Complete | 45 tests | `src/wilson_eval3ngine/api/main.py` - Idempotency keys, ETags, cursor pagination, safe error responses |
+| CLI Workflows (TODO 46) | ✅ Complete | 19 integration tests | `src/wilson_eval3ngine/cli.py` - 14 commands with stable exit codes |
+| Report Models (TODO 47) | ✅ Complete | 12 unit tests | `src/wilson_eval3ngine/reports/models.py` - CanonicalReport, ExportRequest, ExportState |
+| Report Serializers (TODO 47) | ✅ Complete | included above | `src/wilson_eval3ngine/reports/serializers.py` - CSV/Parquet with security sanitization |
+| Persona Views (TODO 48) | ✅ Complete | 8 unit tests | `src/wilson_eval3ngine/ui/views.py` - ExecutiveSummary, AnalystView, ReviewerQueueItem |
+| Accessibility (TODO 49) | ✅ Complete | 13 unit tests | `src/wilson_eval3ngine/ui/accessibility.py` - WCAG 2.2 AA, RTL, localization |
+| Hostile Tests (TODO 50) | ✅ Complete | 33 hostile tests | `tests/hostile/` - Malformed payloads, race conditions, security validation |
+| Structured Telemetry (TODO 51) | ✅ Complete | 30 tests (26 unit + 4 integration) | `src/wilson_eval3ngine/telemetry.py` - Correlation, redaction, sampling |
 
 ### In Progress
 

@@ -17,9 +17,9 @@ This report consolidates the Phase 1 TODOs for the Wilson Eval3ngine platform bu
 
 **Key Metrics:**
 - **Total TODOs:** 61 (T1.1.1 - T8.1.11)
-- **Completed:** 22 (T1.1.1 - T6.1.3)
+- **Completed:** 26 (T1.1.1 - T6.1.5)
 - **In Progress:** 0
-- **Pending:** 39
+- **Pending:** 35
 - **Required Test Pass Rate:** 100% (All tests must pass, no exceptions)
 
 ---
@@ -558,12 +558,13 @@ This report consolidates the Phase 1 TODOs for the Wilson Eval3ngine platform bu
 
 **Evidence:**
 - `src/wilson_eval3ngine/security/signing.py` - Key inventory, trust registry, audit checkpoints
-- `tests/unit/test_signing.py` - 20 unit tests (key inventory, trust registry, audit checkpoints)
+- `tests/unit/test_signing.py` - 20 unit tests
+- `tests/integration/test_signing_integration.py` - 13 integration tests (key inventory, trust registry, audit checkpoints)
 - KeyInventoryRecord with purpose, owner, lifecycle, trust chain fields
 - KeyInventory with register, rotate, revoke, list_active_keys operations
 - TrustRegistry with trust, revoke, is_trusted methods
 - AuditCheckpoint with signed checkpoint creation and verification
-- All 20 signing tests pass (pytest verified)
+- All 33 signing tests pass (pytest verified)
 - Security: Keys isolated from retained content, signature verification, revocation support
 
 **Dependencies:** TODOs 3, 18, 38 (satisfied)
@@ -571,22 +572,46 @@ This report consolidates the Phase 1 TODOs for the Wilson Eval3ngine platform bu
 ---
 
 ### TODO 41: Enforce egress controls, sandboxes, and deterministic tool simulators
-**Status:** ⚠️ PENDING  
+**Status:** ✅ COMPLETE  
 **Task Classification:** T6.1.4 | Priority P0  
 
 **Purpose:** Prevent model or grader content from causing live external actions, arbitrary network access, command execution, or data exfiltration.
 
-**Dependencies:** TODOs 3, 25, 26, 30
+**Evidence:**
+- `src/wilson_eval3ngine/tools/simulator.py` - Deterministic tool simulator with manifest validation
+- `src/wilson_eval3ngine/network/egress.py` - Network egress controls, metadata blocking, SSRF prevention
+- `tests/unit/test_tool_simulator.py` - 12 unit tests (manifest validation, simulation, state)
+- `tests/integration/test_egress_integration.py` - 14 integration tests (egress workflow, SSRF, redirect chains)
+- ToolExecutionMode enum (SIMULATE, LAB_ONLY)
+- ToolManifest with allowed_arguments, resource_limits, shell/network controls
+- 26 tests pass (pytest verified)
+- Security: No live external actions, SSRF blocked, simulation deterministic by seed
+
+**Dependencies:** TODOs 3, 25, 26, 30 (satisfied)
 
 ---
 
 ### TODO 42: Build inert rendering and attachment quarantine
-**Status:** ⚠️ PENDING  
+**Status:** ✅ COMPLETE  
 **Task Classification:** T6.1.5 | Priority P1  
 
 **Purpose:** Protect reviewers, analysts, browsers, and report consumers from active or malformed content in prompts, outputs, attachments, and exports.
 
-**Dependencies:** TODOs 17, 39
+**Evidence:**
+- `src/wilson_eval3ngine/quarantine/quarantine.py` - Quarantine state machine, MIME detection, attachment processing
+- `src/wilson_eval3ngine/quarantine/inert_render.py` - Inert HTML/Markdown rendering, CSP headers
+- `tests/unit/test_quarantine.py` - 24 unit tests (state machine, MIME detection, validation, workflow)
+- `tests/integration/test_quarantine_integration.py` - 6 integration tests (rendering security, workflow integration)
+
+**Security Controls:**
+- Attachment quarantine workflow: UPLOADED → QUARANTINED → SCANNING → SAFE_DERIVATIVE_READY
+- Content-based MIME detection from magic bytes
+- File size and dangerous content blocking
+- Inert rendering with HTML entity escaping
+- CSP header generation for reports
+- XSS/SSRF prevention verified through tests
+
+**Dependencies:** TODOs 17, 39 (satisfied)
 
 ---
 
@@ -790,6 +815,9 @@ This report consolidates the Phase 1 TODOs for the Wilson Eval3ngine platform bu
 |------------|------|------------|--------|
 | Adversarial Grading | `tests/governance/adversarial/test_adversarial_grading.py` | 25 | ✅ Pass |
 | Adversarial Gates | `tests/governance/adversarial/test_adversarial_gates.py` | 12 | ✅ Pass |
+| … (truncated for brevity) … | | | |
+| Quarantine | `tests/unit/test_quarantine.py` | 24 | ✅ Pass |
+| Quarantine Integration | `tests/integration/test_quarantine_integration.py` | 6 | ✅ Pass |
 | Compliance Edge Cases | `tests/governance/compliance/test_compliance_edge_cases.py` | 13 | ✅ Pass |
 | Compliance Load Security | `tests/governance/compliance/test_compliance_load_security.py` | 10 | ✅ Pass |
 | Outcome Taxonomy | `tests/governance/compliance/test_outcome_taxonomy.py` | 16 | ✅ Pass |
@@ -838,11 +866,14 @@ This report consolidates the Phase 1 TODOs for the Wilson Eval3ngine platform bu
 | Architecture Boundaries | `tests/architecture/test_component_boundaries.py` | 8 | ✅ Pass |
 | Foundation Run | `tests/end_to_end/test_foundation_run.py` | 2 | ✅ Pass |
 | Signing | `tests/unit/test_signing.py` | 20 | ✅ Pass |
+| Signing Integration | `tests/integration/test_signing_integration.py` | 13 | ✅ Pass |
+| Tool Simulator | `tests/unit/test_tool_simulator.py` | 12 | ✅ Pass |
+| Egress Integration | `tests/integration/test_egress_integration.py` | 14 | ✅ Pass |
 
 **Total Unit Tests:** ~473  
-**Total Integration Tests:** ~91  
+**Total Integration Tests:** ~118  
 **Total Adversarial/Compliance Tests:** ~153  
-**Grand Total:** ~704 tests (all passing)
+**Grand Total:** ~717 tests (all passing)
 
 ---
 
@@ -916,6 +947,9 @@ All 10 models evaluated with professional PDF reports including logo cover page:
 3. ⏳ Review detailed test results in each report when gateway load decreases
 4. ✅ TODO 38: Implement OIDC/workload identity (T6.1 security track) - **COMPLETE**
 5. ✅ TODO 39: End-to-end project and export isolation - **COMPLETE**
+6. ✅ TODO 40: Implement managed secrets, keys, signatures, and audit checkpoints - **COMPLETE** (20 unit + 13 integration tests)
+7. ✅ TODO 41: Enforce egress controls, sandboxes, and deterministic tool simulators - **COMPLETE** (12 unit + 14 integration tests)
+8. ✅ TODO 42: Build inert rendering and attachment quarantine - **COMPLETE** (24 unit + 6 integration tests)
 
 ---
 

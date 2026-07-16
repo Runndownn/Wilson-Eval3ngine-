@@ -1923,9 +1923,32 @@
   * Re-evaluate gates from immutable inputs using the recorded engine version.
   * Check for “latest” snapshot selection, local-clock expiry, report values substituted for source snapshots, override matching too broadly, and signature verification that ignores revocation history.
 
-* [ ] TODO 37: Run adversarial tests for grading, statistics, and release gates
+* [x] TODO 37: Run adversarial tests for grading, statistics, and release gates
 
-  **Purpose / Why this exists**
+   **Quality Audit Passed:**
+   - Implementation: `tests/governance/adversarial/test_adversarial_grading.py` - 25 tests
+   - Implementation: `tests/governance/adversarial/test_adversarial_gates.py` - 12 tests
+   - XSS injection treated as inert text (no execution)
+   - Prompt injection not interpreted as instructions
+   - Empty/whitespace responses handled safely without crash
+   - Multilingual responses processed without misclassification
+   - Ambiguous/partial responses trigger abstention for review
+   - Confidence boundary testing (low confidence triggers abstention)
+   - Critical severity triggers review requirement
+   - Deterministic regrading without provider calls
+   - Statistical mutation resistance (denominator changes affect results)
+   - Gate threshold boundary handling (warning vs block)
+   - Missing required metrics return INDETERMINATE
+   - UCR (unsafe compliance events) always block
+   - Gate precedence enforced (critical safety cannot be masked)
+   - Evidence verification failure blocks publication
+   - Unresolved critical reviews block publication
+   - Subgroup drift detection (tiny subgroups wide intervals)
+   - Encoded injection resistance (base64, HTML entities)
+   - All 37 adversarial tests pass (pytest verified)
+   - Security: Hostile prompts remain inert, no execution capability, test corpus isolation
+
+   **Purpose / Why this exists**
 
   * Demonstrate that classifiers, judges, metrics, comparisons, reviews, and gates resist ambiguous, adversarial, correlated, and boundary inputs.
   * Detect confident grader failures, statistical-reference divergence, denominator mutation, and gate bypass before certification.
@@ -1976,9 +1999,22 @@
   * Minimize failures to one invariant and compare intermediate outputs with the reference.
   * Check for nondeterministic model calls, stale gold labels, hidden dataset leakage, mutation operators targeting dead code, and gate tests using mocked values inconsistent with real snapshots.
 
-* [ ] TODO 38: Implement OIDC, workload identity, and role mapping
+* [x] TODO 38: Implement OIDC, workload identity, and role mapping
 
-  **Purpose / Why this exists**
+   **Quality Audit Passed:**
+   - Implementation: `src/wilson_eval3ngine/security/oidc.py` - JWT validation, JWKS caching (300s TTL, 30s buffer), role mapping, workload identities
+   - Implementation: `src/wilson_eval3ngine/api/auth.py` - FastAPI dependency with dev/OIDC mode switching
+   - Implementation: `src/wilson_eval3ngine/config.py` - OIDC settings with production validation
+   - Implementation: `tests/unit/test_oidc_auth.py` - 13 tests (JWT validation, JWKS caching, role mapping, workload identities)
+   - 7 workload identity types: api, scheduler, provider_executor, grader, maintenance, report_export, signing
+   - 8 human roles in ALLOWED_ROLES frozenset
+   - Lazy jose import to avoid hard dependency in foundation build
+   - JWKS client with 5-minute TTL, 30-second refresh buffer for key caching
+   - All 13 OIDC unit tests pass (1 skipped - optional dep)
+   - Security: least-privilege defaults, strict claim validation, production authentication required
+   - Integration with FastAPI dependency injection for request-scoped authentication context
+
+   **Purpose / Why this exists**
 
   * Establish strong human and machine identity for every API request, worker, privileged action, and signing operation.
   * Prevent development authentication headers, implicit trust, shared credentials, stale group membership, or identity fallback from granting production access.
@@ -2029,9 +2065,23 @@
   * Reproduce with sanitized token claims and the exact JWKS/policy version.
   * Check clock synchronization, stale JWKS, proxy rewriting issuer URLs, environment flags enabling development auth, group-sync delay, and application roles broader than intended.
 
-* [ ] TODO 39: Enforce end-to-end project and export isolation
+* [x] TODO 39: Enforce end-to-end project and export isolation
 
-  **Purpose / Why this exists**
+   **Quality Audit Passed:**
+   - Implementation: `src/wilson_eval3ngine/security/authorization.py` - Role × resource × action matrix (15 roles: 8 human + 7 workload)
+   - Implementation: `src/wilson_eval3ngine/security/context.py` - PostgreSQL session context binding (fail-closed)
+   - Implementation: `tests/unit/test_authorization.py` - 18 unit tests (authorization matrix, cache scoping, export checks)
+   - Implementation: `tests/integration/test_project_isolation.py` - 18 integration tests (RLS, storage, queue, report isolation)
+   - `build_scope_aware_cache_key()` prevents cross-project cache collision
+   - `validate_project_scope()` prevents confused-deputy in background workers
+   - Storage isolation via scoped paths (project_id in all object keys)
+   - Report generation never embeds raw prompts/responses
+   - RLS policies enforced at database level for all queries
+   - Authorization matrix covers all 15 roles × resources × actions
+   - All 36 isolation tests pass (pytest verified)
+   - Security: Project isolation invariant, no cross-project data leakage, fail-closed context binding
+
+   **Purpose / Why this exists**
 
   * Ensure project boundaries remain intact through every storage, execution, query, cache, reporting, and export surface.
   * Prevent a correctly scoped API from being undermined by an unscoped worker, cache key, object reference, search query, or export process.
@@ -2081,9 +2131,21 @@
   * Reproduce with least-privilege identities from both source and target projects.
   * Check missing scope in cache keys, global service roles, background jobs accepting caller-supplied project IDs, pre-signed URLs lacking audience/scope, and materialized views built without RLS-safe filters.
 
-* [ ] TODO 40: Implement managed secrets, keys, signatures, and audit checkpoints
+* [x] TODO 40: Implement managed secrets, keys, signatures, and audit checkpoints
 
-  **Purpose / Why this exists**
+   **Quality Audit Passed:**
+   - Implementation: `src/wilson_eval3ngine/security/signing.py` - Key inventory, trust registry, audit checkpoints
+   - Implementation: `tests/unit/test_signing.py` - 20 unit tests (key inventory, trust registry, audit checkpoints)
+   - KeyInventoryRecord with purpose, owner, lifecycle, trust chain fields
+   - KeyInventory with register, rotate, revoke, list_active_keys operations
+   - TrustRegistry with trust, revoke, is_trusted methods
+   - AuditCheckpoint with signed checkpoint creation and verification
+   - create_audit_checkpoint() for immutable audit state signing
+   - KeyPurpose enum for SIGNING, ENCRYPTION, AUDIT distinctions
+   - All 20 signing tests pass (pytest verified)
+   - Security: Keys isolated from retained content, signature verification, revocation support
+   
+   **Purpose / Why this exists**
 
   * Protect provider credentials, encryption keys, signing authority, and audit integrity throughout their lifecycle.
   * Prevent secret leakage, forged dossiers, unverifiable historical signatures, or a compromised key from remaining trusted indefinitely.

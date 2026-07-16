@@ -1,11 +1,18 @@
 """Security module for Wilson Eval3ngine.
 
 Exports OIDC authentication, signing, database context, and authorization utilities.
+T6.1 - Security & Identity foundation for production-grade platform.
 """
 
 # Signing is always available
 from .signing import (
+    AuditCheckpoint,
+    KeyInventory,
+    KeyInventoryRecord,
+    KeyPurpose,
     SignatureEnvelope,
+    TrustRegistry,
+    create_audit_checkpoint,
     generate_private_key,
     load_private_key,
     sign_bytes,
@@ -68,6 +75,12 @@ __all__ = [
     "create_oidc_authenticator",
     # Signing
     "SignatureEnvelope",
+    "AuditCheckpoint",
+    "KeyInventory",
+    "KeyInventoryRecord",
+    "KeyPurpose",
+    "TrustRegistry",
+    "create_audit_checkpoint",
     "generate_private_key",
     "load_private_key",
     "sign_bytes",

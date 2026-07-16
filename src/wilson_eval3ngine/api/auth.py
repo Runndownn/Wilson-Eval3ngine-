@@ -25,6 +25,7 @@ _ALLOWED_DEV_ROLES = {
     "adjudicator",
     "project_admin",
     "release_authority",
+    "signing_authority",
 }
 
 

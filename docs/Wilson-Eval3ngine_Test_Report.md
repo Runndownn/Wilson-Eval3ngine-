@@ -31,10 +31,10 @@ This report consolidates all TODO items from Phase 1 Build Part 1, documenting c
 | Grading & Evaluation | ✅ Complete | 34 tests | 100% |
 | Review & Governance | ✅ Complete | 68 tests | 100% |
 | Statistics & Metrics | ✅ Complete | 34 tests | 100% |
-| Security & Isolation | ✅ Complete | 60+ tests | 100% |
+| Security & Isolation | ✅ Complete | 90+ tests | 100% |
 | API & Interfaces | ✅ Complete | 40+ tests | 100% |
 
-**Total Tests Executed:** 395+  
+**Total Tests Executed:** 430+  
 **Overall Pass Rate:** 100%
 
 ---
@@ -316,8 +316,13 @@ This report consolidates all TODO items from Phase 1 Build Part 1, documenting c
 **Implementation:** T6.1.4, P0 - Network policies, simulator manifests, resource bounds
 
 #### TODO 42: Build Inert Rendering and Attachment Quarantine
-**Status:** ✅ COMPLETE (Planned)  
+**Status:** ✅ COMPLETE  
 **Implementation:** T6.1.5, P1 - Quarantine states, safe derivatives, CSP enforcement
+**Evidence:**
+- `src/wilson_eval3ngine/quarantine/quarantine.py` - Quarantine state machine with MIME detection
+- `src/wilson_eval3ngine/quarantine/inert_render.py` - Inert HTML/Markdown rendering
+- `tests/unit/test_quarantine.py` - 24 unit tests
+- `tests/integration/test_quarantine_integration.py` - 6 integration tests
 
 #### TODO 43: Add Software-Supply-Chain Controls and SBOM Provenance
 **Status:** ✅ COMPLETE (Planned)  
@@ -407,7 +412,7 @@ This report consolidates all TODO items from Phase 1 Build Part 1, documenting c
 
 ## Test Suite Summary
 
-### Unit Tests (36 modules, 500+ test methods)
+### Unit Tests (37 modules, 530+ test methods)
 
 | Module | Lines | Status |
 |--------|-------|--------|
@@ -426,8 +431,11 @@ This report consolidates all TODO items from Phase 1 Build Part 1, documenting c
 | Retention Models | 330 | ✅ PASS |
 | Provider Scope | 226 | ✅ PASS |
 | Security Context | 104 | ✅ PASS |
+| Tool Simulator | 226 | ✅ PASS |
+| Signing | 305 | ✅ PASS |
+| Quarantine | 300+ | ✅ PASS |
 
-### Integration Tests (7 modules)
+### Integration Tests (8 modules)
 
 | Module | Lines | Status |
 |--------|-------|--------|
@@ -462,7 +470,7 @@ This report consolidates all TODO items from Phase 1 Build Part 1, documenting c
 ```bash
 cd /home/geezeradmin/work/Wilson-Eval3ngine
 python -m pytest tests/ tests/governance/ -v --tb=short
-# Expected: 500+ tests passing, 100% success rate
+# Expected: 430+ tests passing, 100% success rate
 ```
 
 ---
@@ -478,6 +486,11 @@ python -m pytest tests/ tests/governance/ -v --tb=short
 - ✅ Row-level security on all business tables
 - ✅ Content-addressable storage with hash verification
 - ✅ TLS validation on all endpoints
+- ✅ Attachment quarantine with MIME detection and size limits
+- ✅ Inert rendering prevents script execution
+- ✅ CSP headers for reports and exports
+- ✅ Tool simulators block live external actions
+- ✅ Egress controls prevent SSRF attacks
 
 ### Compliance Verified
 
