@@ -278,7 +278,7 @@ gantt
 
 ---
 
-### Not Started / Production Blockers
+## Not Started / Production Blockers
 
 | Component | Status | Dependencies | Production Impact |
 |-----------|--------|--------------|-------------------|
