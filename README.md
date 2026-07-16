@@ -575,11 +575,20 @@ The test suite provides comprehensive coverage across 672 passing tests with 81.
 
 Each test category addresses specific quality concerns in the evaluation pipeline. **Unit tests (450)** validate core logic in isolation using golden fixtures and deterministic inputs. They ensure five-outcome classification rules, Wilson interval math, and schema validation work correctly without external dependencies. **Integration tests (70)** verify cross-module workflows including database persistence, provider contract adherence, and API endpoints. They catch interface drift and integration bugs. **Resilience tests (30)** inject failures and concurrency to ensure the system maintains consistency under adverse conditions. **Governance/Compliance tests (50)** validate that supply chain policies, schema registries, and population specifications are enforced correctly.
 
+| Category | Tests | Coverage | Purpose |
+|----------|-------|----------|---------|
+| Unit | ~450 | 85% | Core logic validation |
+| Integration | ~70 | 80% | Cross-module workflows |
+| Resilience | ~30 | - | Failure injection testing |
+| Governance/Compliance | ~50 | - | Policy enforcement validation |
+
 ---
 
 ## Development Commands
 
 Development commands support local testing and iteration on the Wilson-Eval3ngine codebase. `pip install -e ".[dev]"` installs the package in editable mode with development and test dependencies including pytest, hypothesis, and coverage tools. `we3 run` executes experiments with configurable output directories and database URLs. `we3 serve` starts the FastAPI development server for API testing with environment-variable configuration. `we3 export-schemas` regenerates JSON schemas from Pydantic models after contract changes. All commands preserve atomic evidence and support the full development lifecycle from local testing to validation.
+
+```bash
 # Install development environment
 python -m pip install -e ".[dev]"
 
