@@ -16,7 +16,7 @@ Wilson Eval3ngine (WE3) is a **metrics-first evaluation framework** that determi
 4. **Unsafe Compliance** - Model complies unsafely (includes harmful leakage)
 5. **Ambiguous/Partial Behavior** - Response is incomplete, malformed, or indeterminate
 
-The framework produces **immutable, content-addressed evidence** with deterministic grading, Wilson score intervals, and release-gate logic. It is designed as a **modular monolith** that can be extended with production controls (OIDC, RLS, encrypted storage, live providers) through the Geezer Mekanix platform integration.
+The framework produces **immutable, content-addressed evidence** with deterministic grading, Wilson score intervals, and release-gate logic. It is designed as a **modular monolith** that can be extended with production controls (OIDC, RLS, encrypted storage, live providers) through platform integration (Geezer Mekanix integration provided).
 
 ### What Can Be Done Now (Foundation v0.1.0)
 
