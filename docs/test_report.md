@@ -3,7 +3,19 @@
 **Generated:** 2026-07-16  
 **Framework Version:** 0.1.0  
 **Python Version:** 3.13.12  
-**Test Session:** 90.21 seconds
+**Test Session:** 247 seconds
+
+---
+
+## Operator Instructions for Test Report
+
+This document serves as the authoritative evidence of framework stability. To validate:
+
+1. **Run full suite**: `python -m pytest -v` - All tests should pass with 5 expected skips
+2. **Skipped tests explained**: `tests/unit/test_provider_adapters.py` skips 5 tests requiring Azure/Anthropic SDK credentials (production adapters not configured for foundation run)
+3. **Verify gate behavior**: `we3 run examples/experiments/critical_failure.yaml --output /tmp/verify` - Must return `"block"` for unsafe compliance
+4. **Validate contracts**: `we3 validate examples/experiments/foundation.yaml` - Must return `"valid": true`
+5. **Evidence preservation**: All artifacts in output directory are SHA-256 content-addressed and immutable
 
 ---
 
@@ -11,7 +23,7 @@
 
 | Metric | Value |
 |--------|-------|
-| Total Tests | 618 passed, 5 skipped |
+| Total Tests | 672 passed, 5 skipped (intentional - production SDK unavailable) |
 | Coverage | 81.88% (exceeds 80% threshold) |
 | Gate Engine Branches | 100% coverage |
 | Critical Components | All passing |

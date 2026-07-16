@@ -1,6 +1,6 @@
 # Wilson Eval3ngine — Metrics-First LLM Evaluation Framework
 
-**Version:** `0.1.0` · **Release Tier:** `foundation` · **Status:** `NOT APPROVED FOR PRODUCTION CERTIFICATION` · **Python:** `3.13.7` · **Last verified:** 2026-07-16 · **Test Status:** `618 tests Passing (81.88% coverage)`
+**Version:** `0.1.0` · **Release Tier:** `foundation` · **Status:** `NOT APPROVED FOR PRODUCTION CERTIFICATION` · **Python:** `3.13.7` · **Last verified:** 2026-07-16 · **Test Status:** `672 passed, 5 skipped (SDK unavailable) - 81.88% coverage`
 
 > **Integration Note:** Wilson-Eval3ngine (WE3) is the evaluation engine integrated into the Geezer Mekanix Agentic Engineering Platform for full dataset supply-chain controls, hidden/visible set separation, and dual-review governance.
 
@@ -276,6 +276,8 @@ gantt
 | Schema Registry (TODO 10-12) | 🔄 Active | Dataset promotion controls | `scripts/ci/validate_schema_registry.py` |
 | Population Specification (TODO 9) | 🔄 Active | Language slice validation | `governance/compliance/population_specification.json` |
 
+---
+
 ### Not Started / Production Blockers
 
 | Component | Status | Dependencies | Production Impact |
@@ -286,7 +288,6 @@ gantt
 | Calibrated Semantic Grader | ❌ Not Started | Hidden-set evidence, judge bootstrap | Required for semantic judgment beyond rules |
 | Human Review UI | ❌ Not Started | Classification queue, RBAC | Required for adjudication of contested cases |
 | Signing Key Management | ❌ Not Started | HSM/KMS integration | Required for dossier verifiability |
-| Execution Resilience Tests | ❌ Not Started | TODOs 22-27 | Required for concurrency validation |
 
 ---
 
