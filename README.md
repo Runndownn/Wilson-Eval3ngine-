@@ -242,23 +242,11 @@ flowchart TB
 
 ```mermaid
 gantt
-    title Wilson Eval3ngine Development Milestones
+    title Wilson Eval3ngine Development Timeline
     dateFormat YYYY-MM-DD
-    section Foundation
-    Contracts & Schema :done, des1, 2026-07-01, 10d
-    Mock Provider :done, des2, 2026-07-05, 5d
-    Expectation Compiler :done, des3, 2026-07-08, 4d
-    Deterministic Grader :done, des4, 2026-07-10, 5d
-    Metric Engine :done, des5, 2026-07-12, 5d
-    section TODO 31-33
-    Grader Calibration :done, todo31, 2026-07-14, 2d
-    Statistical Reference :done, todo32, 2026-07-14, 2d
-    Versioned Metrics :done, todo33, 2026-07-15, 2d
-    section Remaining
-    Provider Adapters :active, rem1, 2026-07-16, 30d
-    Human Review UI :todo, rem2, 2026-07-20, 15d
-    PostgreSQL RLS :todo, rem3, 2026-07-25, 10d
-    Production Deployment :todo, rem4, 2026-08-01, 15d
+    phase1 :done, p1, 2026-07-12, 1d
+    phase2 :done, p2, 2026-07-15, 1d
+    phase3 :active, p3, 2026-07-16, 1d
 ```
 
 **Diagram Explanation:** This Gantt chart visualizes the development timeline for Wilson-Eval3ngine across three phases. **Foundation tasks** (July 1-12) established the core contracts, mock provider, compiler, deterministic grader, and metric engine. **TODO 31-33** (July 14-15) completed grader calibration, statistical reference implementation, and versioned metrics with full test coverage. **Remaining work** shows active provider adapter development starting July 16, with human review UI, PostgreSQL RLS, and production deployment planned through August 1. Each bar's length represents estimated effort duration.
