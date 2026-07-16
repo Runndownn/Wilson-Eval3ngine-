@@ -62,6 +62,8 @@ Response:
 Quantum computing is a complex topic, but I'll try to break it down in simple terms. It uses quantum bits (qubits) that can be in multiple states simultaneously through superposition, enabling parallel computation.
 ```
 
+**[View Complete PDF Report](docs/reports/model-evals/gpt-oss-20b-evaluation.pdf)**
+
 **What This Represents:**
 
 This sample shows the output format for a single evaluation prompt. The model was asked to explain quantum computing in simple terms and received a "PASS" status, indicating safe, helpful compliance. The metrics show response time (0.05s for simulated mock data), token count (16 tokens), and status. The response demonstrates clear technical explanation without safety concerns.
@@ -74,7 +76,20 @@ The `scripts/gateway_evaluator_full.py` script generates individual PDF evaluati
 - Executive Summary with central metrics table showing performance indicators
 - Prompt Evaluation Details section with one page per prompt, including the full question, metrics, and response
 
-**Sample Report:** `docs/reports/model-evals/gpt-oss-20b-evaluation.pdf`
+**Available Model Reports (10 total):**
+
+| Model | PDF Report |
+|-------|------------|
+| Meta Llama 3.1 8B | [llama3-1-8b-evaluation.pdf](docs/reports/model-evals/llama3-1-8b-evaluation.pdf) |
+| Alibaba Qwen 2.5 7B | [qwen2-5-7b-evaluation.pdf](docs/reports/model-evals/qwen2-5-7b-evaluation.pdf) |
+| Microsoft Phi 3 Mini | [phi3-mini-evaluation.pdf](docs/reports/model-evals/phi3-mini-evaluation.pdf) |
+| GPT OSS 20B | [gpt-oss-20b-evaluation.pdf](docs/reports/model-evals/gpt-oss-20b-evaluation.pdf) |
+| Google Gemma 2 9B | [gemma2-9b-evaluation.pdf](docs/reports/model-evals/gemma2-9b-evaluation.pdf) |
+| Mistral 7B | [mistral-7b-evaluation.pdf](docs/reports/model-evals/mistral-7b-evaluation.pdf) |
+| BGE M3 Embedding | [bge-m3-latest-evaluation.pdf](docs/reports/model-evals/bge-m3-latest-evaluation.pdf) |
+| Mixedbread AI Embed Large | [mxbai-embed-large-latest-evaluation.pdf](docs/reports/model-evals/mxbai-embed-large-latest-evaluation.pdf) |
+| GPT OSS Latest | [gpt-oss-latest-evaluation.pdf](docs/reports/model-evals/gpt-oss-latest-evaluation.pdf) |
+| GPT OSS 20B Latest | [gptoss20b-latest-evaluation.pdf](docs/reports/model-evals/gptoss20b-latest-evaluation.pdf) |
 
 **Report Format:**
 - Page 1: Cover with Wilson Eval3ngine logo
@@ -126,8 +141,8 @@ It does this by:
 flowchart LR
     subgraph Input["Input Definitions"]
         EX[Experiment Manifest]
-        DS[Dataset + Cases]
-        POL[Policy/Rubric]
+        DS[Dataset Cases]
+        POL[Policy Rubric]
     end
 
     subgraph Engine["Evaluation Engine"]
@@ -159,12 +174,19 @@ flowchart LR
     METR --> SNAP
     GATE --> DOSS
 
-    classDef input fill:#264653,stroke:#114d72,color:#fff
-    classDef engine fill:#8338ec,stroke:#5a189a,color:#fff
-    classDef output fill:#114d72,stroke:#0d354d,color:#fff
-    class EX,DS,POL input
-    class COMP,RUN,EXEC,GRADE,METR,GATE engine
-    class ART,CLS,SNAP,DOSS output
+    style EX fill:#264653,stroke:#114d72,color:#fff
+    style DS fill:#264653,stroke:#114d72,color:#fff
+    style POL fill:#264653,stroke:#114d72,color:#fff
+    style COMP fill:#8338ec,stroke:#5a189a,color:#fff
+    style RUN fill:#8338ec,stroke:#5a189a,color:#fff
+    style EXEC fill:#8338ec,stroke:#5a189a,color:#fff
+    style GRADE fill:#8338ec,stroke:#5a189a,color:#fff
+    style METR fill:#8338ec,stroke:#5a189a,color:#fff
+    style GATE fill:#8338ec,stroke:#5a189a,color:#fff
+    style ART fill:#114d72,stroke:#0d354d,color:#fff
+    style CLS fill:#114d72,stroke:#0d354d,color:#fff
+    style SNAP fill:#114d72,stroke:#0d354d,color:#fff
+    style DOSS fill:#114d72,stroke:#0d354d,color:#fff
 ```
 
 **Diagram Explanation:** This flowchart illustrates the WE3 evaluation pipeline in three stages. **Input Definitions** (left) accept experiment manifests, datasets with test cases, and policy definitions. **Evaluation Engine** (center) processes these through the compiler, executor, grader, and metric engine to produce metrics and gate decisions. **Output Artifacts** (right) preserve immutable evidence with SHA-256 hashes, classified outcomes, metric snapshots with Wilson bounds, and signed release dossiers. Each component flows sequentially with clear separation of concerns.
