@@ -218,11 +218,12 @@ class KeyInventory:
         expires_at: datetime | None = None,
     ) -> KeyRecord:
         """Register a new key in the inventory."""
+        from ..util import utc_now
         record = KeyRecord(
             key_id=key_id,
             purpose=purpose,
             owner=owner,
-            created_at=utc_now(),
+            created_at=utc_now().isoformat(),
             expires_at=expires_at.isoformat() if expires_at else None,
         )
         self._keys[key_id] = record
@@ -240,13 +241,14 @@ class KeyInventory:
         owner: str,
     ) -> KeyRecord:
         """Create a new key with parent reference."""
+        from ..util import utc_now
         if old_key_id not in self._keys:
             raise ValueError(f"Old key {old_key_id} not found")
         new_record = KeyRecord(
             key_id=new_key_id,
             purpose=purpose,
             owner=owner,
-            created_at=utc_now(),
+            created_at=utc_now().isoformat(),
             parent_key_id=old_key_id,
         )
         self._keys[new_key_id] = new_record

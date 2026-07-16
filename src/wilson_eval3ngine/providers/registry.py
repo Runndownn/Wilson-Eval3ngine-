@@ -26,7 +26,7 @@ class ProviderRegistry:
         except KeyError as exc:
             raise KeyError(
                 f"provider {name!r} is not registered; "
-                "available: mock (default), azure_openai, anthropic"
+                "available: mock (default), azure_openai, anthropic, ollama"
             ) from exc
 
     def register_azure_openai(
@@ -40,6 +40,11 @@ class ProviderRegistry:
         """Register Anthropic adapter with optional explicit configuration."""
         from .anthropic import AnthropicAdapter
         self.register("anthropic", AnthropicAdapter(api_key))
+
+    def register_ollama(self, endpoint: str | None = None, api_key: str | None = None) -> None:
+        """Register Ollama adapter with optional explicit configuration."""
+        from .ollama import OllamaAdapter
+        self.register("ollama", OllamaAdapter(endpoint, api_key))
 
     def available(self) -> list[str]:
         """List registered provider names."""
