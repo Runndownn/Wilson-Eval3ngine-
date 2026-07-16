@@ -103,26 +103,26 @@ flowchart LR
 ```mermaid
 flowchart TB
     subgraph WE3["Wilson Eval3ngine Core"]
-        WE3_API[WE3 API\n/Foundation]
-        WE3_RUN[Run Engine\n(mock provider)]
-        WE3_GRADE[Grading Engine\n(deterministic)]
-        WE3_METR[Metrics Engine\n(Wilson intervals)]
+        WE3_API[WE3 API]
+        WE3_RUN[Run Engine]
+        WE3_GRADE[Grading Engine]
+        WE3_METR[Metrics Engine]
     end
 
     subgraph GE["Geezer Mekanix Extensions"]
-        GE_RAG[RAG Knowledge\nIntegration]
-        GE_OSINT[White Rabbit OSINT\nEnrichment]
-        GE_RUDI[RUDI AI Assistant\nOrchestration]
-        GE_DASH[Real-time\nDashboards]
-        GE_MCP[MCP Tool\nProtocol]
-        GE_GOV[Governed\nCompliance]
+        GE_RAG[RAG Knowledge]
+        GE_OSINT[OSINT Enrichment]
+        GE_RUDI[RUDI Orchestration]
+        GE_DASH[Real-time Dashboards]
+        GE_MCP[MCP Tools]
+        GE_GOV[Governed Compliance]
     end
 
     subgraph EXT["Production Controls"]
-        EXT_OIDC[OIDC Authentication]
-        EXT_RLS[Row-Level Security]
-        EXT_OBJ[Immutable Object Store]
-        EXT_SIG[Dossier Signing\n(Ed25519)]
+        EXT_OIDC[OIDC Auth]
+        EXT_RLS[PostgreSQL RLS]
+        EXT_OBJ[Immutable Storage]
+        EXT_SIG[Ed25519 Signing]
         EXT_AUDIT[Audit Ledger]
     end
 
@@ -168,24 +168,24 @@ Through integration with the Geezer Mekanix platform, WE3 gains:
 ```mermaid
 flowchart TB
     subgraph ROOT["Repository Root"]
-        CONTRACTS[contracts/\nJSON schemas + OpenAPI]
-        SRC[src/wilson_eval3ngine/\nCore modules]
-        TESTS[tests/\nUnit/integration/resilience]
-        DOCS[docs/\nBlueprint + architecture]
-        EX[examples/\nyaml experiments + output]
-        INF[infrastructure/\nDockerfile + compose]
-        GOV[governance/compliance/\nExtended controls]
-        SCRIPTS[scripts/\nCI + validation tools]
+        CONTRACTS[contracts/]
+        SRC[src/wilson_eval3ngine/]
+        TESTS[tests/]
+        DOCS[docs/]
+        EX[examples/]
+        INF[infrastructure/]
+        GOV[governance/compliance/]
+        SCRIPTS[scripts/]
     end
 
     subgraph CORE["Core Modules"]
-        DOMAIN[domain/\nContracts + enums + state]
-        PROVIDER[providers/\nbase + mock + registry]
-        GATE[gates/\nengine + defaults]
-        METRICS[metrics/\nengine + intervals]
-        GRADE[grading/\nclassifier + pipeline]
-        LIFECYCLE[lifecycle/\nworkflows + state]
-        STORAGE[storage/\nobject_store + evidence]
+        DOMAIN[domain/]
+        PROVIDER[providers/]
+        GATE[gates/]
+        METRICS[metrics/]
+        GRADE[grading/]
+        LIFECYCLE[lifecycle/]
+        STORAGE[storage/]
     end
 
     ROOT --> CONTRACTS
@@ -206,7 +206,7 @@ flowchart TB
 
     classDef root fill:#f4a261,stroke:#e76f51,color:#fff
     classDef core fill:#8338ec,stroke:#5a189a,color:#fff
-    class CONTRACTS,DOCS,EX,INF,GOV,SCRIPTS,TESTS root
+    class CONTRACTS,EX,INF,GOV,SCRIPTS,TESTS root
     class DOMAIN,PROVIDER,GATE,METRICS,GRADE,LIFECYCLE,STORAGE core
 ```
 
