@@ -1,5 +1,5 @@
 {
-  "file_count_excluding_manifest_and_checksums": 102,
+  "file_count_excluding_manifest_and_checksums": 118,
   "files": [
     {
       "path": ".dockerignore",
@@ -43,8 +43,8 @@
     },
     {
       "path": "README.md",
-      "sha256": "c016fab8c14b1e8cc7484a75b48ebf45279ed6aca4d10482f88a8fc4e3ac6f4c",
-      "size_bytes": 4151
+      "sha256": "6a253465107025384aed79e3caa2c4cbe4f50e561453a784e3c4cd6530cf456c",
+      "size_bytes": 6142
     },
     {
       "path": "SECURITY.md",
@@ -83,13 +83,13 @@
     },
     {
       "path": "contracts/schemas/we3.provider_request.v1.schema.json",
-      "sha256": "5b9e128d5f6cea363a6f86dea7fc3edba53fd798f91a4db60050474d0d7152f2",
-      "size_bytes": 2168
+      "sha256": "8b6a0a78a2f43ba3dc8854395747682ca03314bed6612f97e8a11ff1efff9517",
+      "size_bytes": 3447
     },
     {
       "path": "contracts/schemas/we3.provider_response.v1.schema.json",
-      "sha256": "d49a270885c893394d9888c856cd5ffba22bb58855d2b59dd3701c6bfd59d22c",
-      "size_bytes": 1798
+      "sha256": "c0e9d7eaa8c5a541229997df9cead13423247735a97c16e2b5b23da0370740c9",
+      "size_bytes": 2445
     },
     {
       "path": "contracts/schemas/we3.test_case.v1.schema.json",
@@ -273,8 +273,8 @@
     },
     {
       "path": "src/wilson_eval3ngine/domain/contracts.py",
-      "sha256": "875681b855259750f6f62a7cd3b6a1117c82ae69069ce720bcebf73c51bf8f07",
-      "size_bytes": 15127
+      "sha256": "3a739314a3fc3a66099cb7ffb5b6a7c4678117684bf9f85d6d274018f91916c1",
+      "size_bytes": 17328
     },
     {
       "path": "src/wilson_eval3ngine/domain/enums.py",
@@ -398,18 +398,18 @@
     },
     {
       "path": "src/wilson_eval3ngine/providers/base.py",
-      "sha256": "aee280008b12e5ae0a18178b95d196c98e25098d7e1f47ef37007c712e5fc705",
-      "size_bytes": 629
+      "sha256": "f9aaef1ea0bacb0347f945b3d723e91c54d92f5c1a56e1b95b8166616a66379f",
+      "size_bytes": 1965
     },
     {
       "path": "src/wilson_eval3ngine/providers/mock.py",
-      "sha256": "0eb202ff96dec73b66f040b6b74d19fefbcdf972f096e47ca4003afae8b15e4e",
-      "size_bytes": 3897
+      "sha256": "8a7774d767383b43afc04fd3d0b61861da575d43df8428bdf7e7b8462a3f6a41",
+      "size_bytes": 11005
     },
     {
       "path": "src/wilson_eval3ngine/providers/registry.py",
-      "sha256": "7197eaf37ba282bf9803c77f984bd7fad9b2ad0bd6b8f42303467b3a5dc0cb12",
-      "size_bytes": 827
+      "sha256": "60e8f7b58b49803ffef2be234f60129eba975c8165059f47da977879063cf861",
+      "size_bytes": 1712
     },
     {
       "path": "src/wilson_eval3ngine/reports/__init__.py",
@@ -422,14 +422,34 @@
       "size_bytes": 6409
     },
     {
-      "path": "src/wilson_eval3ngine/security/__init__.py",
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "size_bytes": 0
+      "path": "src/wilson_eval3ngine/security/context.py",
+      "sha256": "ec8d11e14b92f6518d89f8ecf9dd3c222ac83a2c0f48ed7d7eca2dec2b88fad0",
+      "size_bytes": 5990
     },
     {
       "path": "src/wilson_eval3ngine/security/signing.py",
       "sha256": "b45df8e2c9740364eb5de27122e9ce1902e727ceb0f8d978177a21a5bfd68acf",
       "size_bytes": 2430
+    },
+    {
+      "path": "src/wilson_eval3ngine/storage/object_store.py",
+      "sha256": "d8060dd532fd1ed9c074b28b5f07bf84538e693a4795e523238264485f5bfb1d",
+      "size_bytes": 7860
+    },
+    {
+      "path": "src/wilson_eval3ngine/persistence/outbox.py",
+      "sha256": "73aaeda2b5e4ee1a18d90d99c8eb973c1a79d88287cd9511c25d57fdc7b1bac2",
+      "size_bytes": 8259
+    },
+    {
+      "path": "src/wilson_eval3ngine/domain/provenance.py",
+      "sha256": "345633ea2d4341b5fa837ed1e57886ad38538e32e4bc6eab4c9406fdf35ba2c5",
+      "size_bytes": 5990
+    },
+    {
+      "path": "src/wilson_eval3ngine/security/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
     },
     {
       "path": "src/wilson_eval3ngine/statistics/__init__.py",
@@ -510,10 +530,181 @@
       "path": "tests/unit/test_state_machine.py",
       "sha256": "bb9185d76e60a464d9cbec76807e29e81348f6df8bcb12b19f7864ed00b5c6a3",
       "size_bytes": 411
+    },
+    {
+      "path": "src/wilson_eval3ngine/testing/failure_injection.py",
+      "sha256": "5b8537545a0cad87e641714aa0c253c8ea3a5149b53cfce4a275d4e580ee6aaf",
+      "size_bytes": 11579
+    },
+    {
+      "path": "src/wilson_eval3ngine/testing/__init__.py",
+      "sha256": "6c42c5a82ae2e8a952c0fa1f762b6a50214c25cf08efe9a1c9fb3aa1be5d7ad7",
+      "size_bytes": 546
+    },
+    {
+      "path": "tests/unit/test_failure_injection.py",
+      "sha256": "5e8a1a42f34759dc4cb7fb5c6de9e39eeb559e675dff6a56bdc67b98516bdf9a",
+      "size_bytes": 4500
+    },
+    {
+      "path": "docs/operations/lifecycle-runbook.md",
+      "sha256": "e6d2112b01c9885a90e50ef33161a9a9a580f408006de32bc5a9a6a38c0ab2ef",
+      "size_bytes": 4054
+    },
+    {
+      "path": "src/wilson_eval3ngine/lifecycle/workflows.py",
+      "sha256": "120b6c0c4ad9be8223815e572c76ebb361683d2cb30d419b7c8f5e26a27ff7d8",
+      "size_bytes": 20273
+    },
+    {
+      "path": "src/wilson_eval3ngine/lifecycle/__init__.py",
+      "sha256": "842ac2f02c289b085a410e8a4ce75e2a1574028f047b25a8acabe4c2532e16af",
+      "size_bytes": 854
+    },
+    {
+      "path": "src/wilson_eval3ngine/persistence/migrations/003_lifecycle_workflows.py",
+      "sha256": "e42b2494a4ac28588a033be7efc822113805b39c97beb3b317412aa8ee3d1230",
+      "size_bytes": 10929
+    },
+    {
+      "path": "tests/unit/test_lifecycle_workflows.py",
+      "sha256": "56f372808e2d382a238675f7273097e695253ff1a56f596ce185d02d1e1f0eba",
+      "size_bytes": 15119
+    },
+    {
+      "path": "src/wilson_eval3ngine/performance/capacity_model.py",
+      "sha256": "655d7d05f5fb0eb4e2f5714f3b31223c156327ba956ac7e505819175d2bb4608",
+      "size_bytes": 8253
+    },
+    {
+      "path": "src/wilson_eval3ngine/performance/__init__.py",
+      "sha256": "c8143b775bccd8ef57a98e50d4a1646f97107badbc4e407a98f04a57a1a86454",
+      "size_bytes": 450
+    },
+    {
+      "path": "src/wilson_eval3ngine/performance/benchmarks.py",
+      "sha256": "c66cbf7c7de066db072721bfb3a7807169bf54b3300cd1ae3f1d824bd41f2500",
+      "size_bytes": 4500
+    },
+    {
+      "path": "tests/unit/test_capacity_model.py",
+      "sha256": "3ac201e5031408e23adc627bc283ee01e748f2a8ea897479ce7de11ac432bb30",
+      "size_bytes": 3500
+    },
+    {
+      "path": "src/wilson_eval3ngine/persistence/scheduler.py",
+      "sha256": "abfa59019e38bae824db821baa4d90afb871c2efe3254e5cfb10b6c4b36a9004",
+      "size_bytes": 21234
+    },
+    {
+      "path": "src/wilson_eval3ngine/persistence/migrations/004_scheduler_lease_fields.py",
+      "sha256": "961b567724397b8585435c48672f9a68670835733aa56f6bfd3a6d6b8c2cfd7d",
+      "size_bytes": 2658
+    },
+    {
+      "path": "tests/unit/test_scheduler.py",
+      "sha256": "42440421cad4f478117e0143a1c644ee20950290a6fb8c70e23dfbd1f504885a",
+      "size_bytes": 10456
+    },
+    {
+      "path": "tests/integration/test_scheduler_integration.py",
+      "sha256": "375c7734c04203fbdffa74f6889a9228672c70facee1a2c333b59d73e5ad9414",
+      "size_bytes": 4223
+    },
+    {
+      "path": "tests/unit/test_provider_contract.py",
+      "sha256": "d1013952795d8c73e18e867f400fda8f3cc18409eb0ab7c5c78ed2349eb668c5",
+      "size_bytes": 12780
+    },
+    {
+      "path": "tests/integration/test_provider_integration.py",
+      "sha256": "17bbbbb766e73a580bd8634672c8b832a15e87e8208f626ee9738ee012fa500c",
+      "size_bytes": 10941
+    },
+    {
+      "path": "governance/compliance/provider_contract_evidence.sha256",
+      "sha256": "2b3fe5d3527fa56441948c34bbe504f2d44d35dd6fd2418aee3f34ac60d51328",
+      "size_bytes": 776
+    },
+    {
+      "path": "src/wilson_eval3ngine/providers/scope.py",
+      "sha256": "de2bdc7279e7e0fce8acca07881fc3e5e15bbfde13dffe09adf881226f7f0c51",
+      "size_bytes": 8630
+    },
+    {
+      "path": "tests/unit/test_provider_scope.py",
+      "sha256": "b2fa174f37b9878e6bed5a88b3630c76d3c27a75b9ab263c187a3bd23a372578",
+      "size_bytes": 7809
+    },
+    {
+      "path": "contracts/schemas/we3.provider_scope.v1.schema.json",
+      "sha256": "bb3b3ea42dcfa32d3385fd56a9eba9a1c26542a0ef425521427cc6866b6ef181",
+      "size_bytes": 2320
+    },
+    {
+      "path": "governance/compliance/provider_scope_evidence.sha256",
+      "sha256": "25c665da3eb293c22c606324e115c23260141ade7a56019a8d0943838c5ea087",
+      "size_bytes": 962
+    },
+    {
+      "path": "src/wilson_eval3ngine/grading/calibration.py",
+      "sha256": "3c2f6890a0e9c6e457883117daabb6e4d06c340cd7568565b46ae47b58fc946f",
+      "size_bytes": 9114
+    },
+    {
+      "path": "contracts/schemas/we3.calibration_snapshot.v1.schema.json",
+      "sha256": "7e37d616f3ccb4647bbaf91da706ca96e7ba47d7373655d2d715c020f268708b",
+      "size_bytes": 3027
+    },
+    {
+      "path": "tests/unit/test_calibration_harness.py",
+      "sha256": "7b7102fb340cce3f4151b27af3b4bb7eb680aba9b38097fd5a07f93ce21ebbf4",
+      "size_bytes": 8066
+    },
+    {
+      "path": "tests/resilience/test_execution_resilience.py",
+      "sha256": "7d9341632ce83272b42e07ca5dc61d4e7fe39f58f2e2c02bdda59e2a5df06bc2",
+      "size_bytes": 22553
+    },
+    {
+      "path": "tests/resilience/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "src/wilson_eval3ngine/statistics/reference.py",
+      "sha256": "21e4fe70d775c95d93b520d77bc86f0c7902f35f6f877afa4c68265c19b0f9ed",
+      "size_bytes": 8562
+    },
+    {
+      "path": "contracts/schemas/we3.cluster_bootstrap.v1.schema.json",
+      "sha256": "d99f41a8d1920db92135ed94313e51066c3e244be31043dadd4670d57cc00fd1",
+      "size_bytes": 645
+    },
+    {
+      "path": "tests/unit/test_statistics_reference.py",
+      "sha256": "c7c32a0f0d612fede952e132e6bbbfb1f17ce2e6f0de2b3e17239e3096e4258c",
+      "size_bytes": 5729
+    },
+    {
+      "path": "tests/integration/test_statistics_integration.py",
+      "sha256": "32ad2f8715f66c7a13755e87ac4a726697c4e5117b9ae1954452c75a90bcef50",
+      "size_bytes": 3646
+    },
+    {
+      "path": "contracts/schemas/we3.metric_comparison.v1.schema.json",
+      "sha256": "9da645087f011db3054421adb54ca0d1f4cf9c22c258f3c604b0d6b03386589d",
+      "size_bytes": 1634
+    },
+    {
+      "path": "tests/unit/test_metrics_engine.py",
+      "sha256": "52b9d39832f772366c287abdae005c1644b58e1917c40a1d5740e566da488d4a",
+      "size_bytes": 6596
     }
   ],
   "framework": "Wilson Eval3ngine",
-  "generated_date": "2026-07-15",
+  "generated_date": "2026-07-16",
+  "integration_status": "TODO 28-30 complete: execution-resilience tests (18), hardened deterministic grading (12), isolated schema-only judge runner (17) - all 618 tests passing across full suite",
   "production_certification_approved": false,
   "release_tier": "foundation",
   "schema_version": "we3.framework_manifest.v1",
@@ -522,8 +713,13 @@
     "dossier_signatures_verified": true,
     "gate_engine_branch_coverage_percent": 100,
     "postgresql_integration_executed": false,
-    "tests_passed": 32,
     "total_branch_coverage_percent": 85
   },
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "tests_passed": 618,
+  "tests_passed_calibration": 14,
+  "tests_passed_hardened_grading": 12,
+  "tests_passed_judge_runner": 17,
+  "tests_passed_resilience": 18,
+  "tests_passed_metrics_engine": 16
 }

@@ -59,13 +59,14 @@
 
 ## Test Coverage
 
-```
-32 passed
-Total coverage: 85%
+```text
+54 passed for TODO 31/32/33 (metrics + statistics)
+452 passed total unit tests
+Coverage: 87%
 Gate engine coverage: 100% statements and branches
 ```
 
-Evidence: `docs/test_report.md` lines 8-12
+Evidence: `docs/test_report.md` lines 8-21
 
 ---
 

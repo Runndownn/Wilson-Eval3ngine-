@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+from typing import Any
+
 from .base import ProviderAdapter
 from .mock import DeterministicMockProvider
+
+# Lazy imports for optional providers to avoid import errors when dependencies missing
+# These are only needed when the adapters are explicitly registered
 
 
 class ProviderRegistry:
@@ -21,5 +26,21 @@ class ProviderRegistry:
         except KeyError as exc:
             raise KeyError(
                 f"provider {name!r} is not registered; "
-                "the foundation build ships only the deterministic mock adapter"
+                "available: mock (default), azure_openai, anthropic"
             ) from exc
+
+    def register_azure_openai(
+        self, endpoint: str | None = None, credential: Any = None
+    ) -> None:
+        """Register Azure OpenAI adapter with optional explicit configuration."""
+        from .azure_openai import AzureOpenAIAdapter
+        self.register("azure_openai", AzureOpenAIAdapter(endpoint, credential))
+
+    def register_anthropic(self, api_key: str | None = None) -> None:
+        """Register Anthropic adapter with optional explicit configuration."""
+        from .anthropic import AnthropicAdapter
+        self.register("anthropic", AnthropicAdapter(api_key))
+
+    def available(self) -> list[str]:
+        """List registered provider names."""
+        return list(self._providers.keys())

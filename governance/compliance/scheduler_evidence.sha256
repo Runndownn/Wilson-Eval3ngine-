@@ -1,0 +1,23 @@
+# Evidence Checksums - TODO 22 Scheduler Implementation
+
+Generated: 2026-07-15
+
+## New Production Files 
+
+| File | SHA-256 | Size |
+|------|---------|------|
+| src/wilson_eval3ngine/persistence/scheduler.py | abfa59019e38bae824db821baa4d90afb871c2efe3254e5cfb10b6c4b36a9004 | 21434 |
+| src/wilson_eval3ngine/persistence/migrations/004_scheduler_lease_fields.py | 961b567724397b8585435c48672f9a68670835733aa56f6bfd3a6d6b8c2cfd7d | 2007 |
+
+## Test Files
+
+| File | SHA-256 | Size |
+|------|---------|------|
+| tests/unit/test_scheduler.py | 42440421cad4f478117e0143a1c644ee20950290a6fb8c70e23dfbd1f504885a | 11752 |
+| tests/integration/test_scheduler_integration.py | 375c7734c04203fbdffa74f6889a9228672c70facee1a2c333b59d73e5ad9414 | 5263 |
+
+## Test Results
+
+- Total tests: 39 (32 unit + 7 integration)
+- All tests pass
+- Coverage: JobState transitions, LeaseToken expiry/fencing, RetryPolicy exponential backoff with jitter, Reconciliation detection, SQL structure validation

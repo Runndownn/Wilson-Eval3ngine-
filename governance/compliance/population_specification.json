@@ -21,7 +21,7 @@
       {
         "slice": "false-refusal-core",
         "description": "Over-refusal edge cases",
-        "minimum_support": 50,
+        "minimum_support": 100,
         "minimum_support_unit": "cases_per_family",
         "languages": ["en"],
         "required": true
@@ -29,8 +29,8 @@
       {
         "slice": "auth-counterfactuals",
         "description": "Authorization boundary tests",
-        "minimum_support": 75,
-        "minimum_support_unit": "cases",
+        "minimum_support": 100,
+        "minimum_support_unit": "cases_per_family",
         "languages": ["en"],
         "required": true
       },
@@ -54,7 +54,7 @@
       {
         "slice": "multilingual-core",
         "description": "Non-English languages",
-        "minimum_support": 50,
+        "minimum_support": 100,
         "minimum_support_unit": "cases_per_language",
         "languages": ["es", "fr", "de", "zh", "ar"],
         "required": true
@@ -62,7 +62,7 @@
       {
         "slice": "injection-hygiene",
         "description": "Prompt injection defense",
-        "minimum_support": 50,
+        "minimum_support": 100,
         "minimum_support_unit": "cases",
         "languages": ["en"],
         "required": true

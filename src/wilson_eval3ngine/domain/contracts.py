@@ -19,6 +19,14 @@ from .enums import (
 )
 from ..util import canonical_json, sha256_hex, utc_now
 
+# Import scope validation lazily to avoid circular imports
+# Used in ExperimentManifest validation
+try:
+    from ..providers.scope import validate_provider_model, DataClassification
+    PROVIDER_SCOPE_AVAILABLE = True
+except ImportError:
+    PROVIDER_SCOPE_AVAILABLE = False
+
 
 class ContractModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=False, validate_assignment=True)
@@ -270,6 +278,16 @@ class ExperimentManifest(ContractModel):
                 raise ValueError("certification response caching must be disabled")
             if any(model.role == ModelRole.CANDIDATE for model in self.models) is False:
                 raise ValueError("certification requires at least one candidate model")
+        # Validate provider/model scope (allowlist check)
+        if PROVIDER_SCOPE_AVAILABLE:
+            for model in self.models:
+                is_valid, reason = validate_provider_model(
+                    provider=model.provider,
+                    model=model.model,
+                    classification=DataClassification.PUBLIC,  # Default for lab work
+                )
+                if not is_valid:
+                    raise ValueError(f"unapproved provider/model combination: {reason}")
         return self
 
 
@@ -300,6 +318,29 @@ class ProviderRequest(ContractModel):
     messages: list[ConversationTurn]
     parameters: dict[str, Any] = Field(default_factory=dict)
     timeout_seconds: float = Field(default=60.0, gt=0)
+    deadline: datetime | None = None
+    experiment_id: str | None = None
+    attempt_id: str | None = None
+    tool_definitions: list[dict[str, Any]] = Field(default_factory=list)
+    expected_capabilities: list[str] = Field(default_factory=list)
+    request_hash: str = ""
+
+    def compute_request_hash(self) -> str:
+        """Compute canonical hash of request payload for traceability."""
+        payload = {
+            "schema_version": self.schema_version,
+            "run_id": self.run_id,
+            "model_config_id": self.model_config_id,
+            "provider": self.provider,
+            "model": self.model,
+            "messages": [m.model_dump(mode="json") for m in self.messages],
+            "parameters": self.parameters,
+            "timeout_seconds": self.timeout_seconds,
+            "deadline": self.deadline.isoformat() if self.deadline else None,
+            "experiment_id": self.experiment_id,
+            "attempt_id": self.attempt_id,
+        }
+        return sha256_hex(payload)
 
 
 class ProviderResponse(ContractModel):
@@ -312,9 +353,14 @@ class ProviderResponse(ContractModel):
     provider_reported_model: str
     finish_reason: str = "stop"
     usage: dict[str, int | float] = Field(default_factory=dict)
+    latency_ms: int | float = 0
     metadata: dict[str, Any] = Field(default_factory=dict)
     error_class: str | None = None
     retryable: bool = False
+    raw_response_hash: str | None = None
+    capability_observations: dict[str, Any] = Field(
+        default_factory=dict, description="Observed capabilities from provider"
+    )
     received_at: datetime = Field(default_factory=utc_now)
 
 

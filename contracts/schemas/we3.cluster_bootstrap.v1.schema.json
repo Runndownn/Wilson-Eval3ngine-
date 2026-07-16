@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wilson-eval3ngine.org/schemas/we3.cluster_bootstrap.v1.schema.json",
+  "title": "ClusterBootstrap",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "seed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "resample_count": {
+      "type": "integer",
+      "minimum": 100
+    },
+    "confidence_level": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "min_clusters": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": ["seed", "resample_count", "confidence_level", "min_clusters"]
+}
