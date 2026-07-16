@@ -704,7 +704,7 @@
   ],
   "framework": "Wilson Eval3ngine",
   "generated_date": "2026-07-16",
-  "integration_status": "TODO 28-30 complete: execution-resilience tests (18), hardened deterministic grading (12), isolated schema-only judge runner (17) - all 618 tests passing across full suite",
+  "integration_status": "TODO 31-33 complete: grader-calibration (14), statistical reference (20: 14 unit + 6 integration), versioned metrics (26: 15 unit + 11 integration) - all 54 tests passing",
   "production_certification_approved": false,
   "release_tier": "foundation",
   "schema_version": "we3.framework_manifest.v1",
@@ -716,10 +716,8 @@
     "total_branch_coverage_percent": 85
   },
   "version": "0.1.0",
-  "tests_passed": 618,
+  "tests_passed": 54,
   "tests_passed_calibration": 14,
-  "tests_passed_hardened_grading": 12,
-  "tests_passed_judge_runner": 17,
-  "tests_passed_resilience": 18,
-  "tests_passed_metrics_engine": 16
+  "tests_passed_statistics_reference": 20,
+  "tests_passed_metrics_engine": 26
 }
