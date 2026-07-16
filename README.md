@@ -39,25 +39,25 @@ It does this by:
 ```mermaid
 flowchart LR
     subgraph Input["Input Definitions"]
-        EX[Experiment Manifest\nv1 schema]
-        DS[Dataset + Cases\nversioned]
-        POL[Policy/Rubric\nexpected behavior]
+        EX[Experiment Manifest]
+        DS[Dataset + Cases]
+        POL[Policy/Rubric]
     end
 
     subgraph Engine["Evaluation Engine"]
         COMP[Expectation Compiler]
         RUN[Logical Run Expansion]
-        EXEC[Provider Executor\n(mock/provider)]
+        EXEC[Provider Executor]
         GRADE[Five-Outcome Grader]
-        METR[Metric Engine\nWilson intervals]
+        METR[Metric Engine]
         GATE[Release Gate]
     end
 
     subgraph Output["Output Artifacts"]
-        ART[Content-Addressed Artifacts\nSHA-256 verified]
-        CLS[Classifications\nprimary + secondary labels]
-        SNAP[Metric Snapshots\ninterval bounds]
-        DOSS[Release Dossier\nEd25519 signed]
+        ART[Content-Addressed Artifacts]
+        CLS[Classifications]
+        SNAP[Metric Snapshots]
+        DOSS[Release Dossier]
     end
 
     EX --> COMP
@@ -80,6 +80,8 @@ flowchart LR
     class COMP,RUN,EXEC,GRADE,METR,GATE engine
     class ART,CLS,SNAP,DOSS output
 ```
+
+**Diagram Explanation:** This flowchart illustrates the WE3 evaluation pipeline in three stages. **Input Definitions** (left) accept experiment manifests, datasets with test cases, and policy definitions. **Evaluation Engine** (center) processes these through the compiler, executor, grader, and metric engine to produce metrics and gate decisions. **Output Artifacts** (right) preserve immutable evidence with SHA-256 hashes, classified outcomes, metric snapshots with Wilson bounds, and signed release dossiers. Each component flows sequentially with clear separation of concerns.
 
 ### Key Design Principles
 
@@ -146,6 +148,8 @@ flowchart TB
     class EXT_OIDC,EXT_RLS,EXT_OBJ,EXT_SIG,EXT_AUDIT ext
 ```
 
+**Diagram Explanation:** This diagram shows the platform integration architecture where WE3 Core (blue) connects to Geezer Mekanix Extensions (purple) and Production Controls (teal). **WE3 Core** contains the API, run engine, grading engine, and metrics engine. **Geezer Mekanix Extensions** add RAG knowledge integration, OSINT enrichment, RUDI orchestration, real-time dashboards, MCP tools, and governed compliance. **Production Controls** layer provides OIDC authentication, row-level security, immutable object storage, Ed25519 signing, and audit ledgers. Arrows show data flow and governance enforcement paths.
+
 ### Geezer Mekanix Extended Capabilities
 
 Through integration with the Geezer Mekanix platform, WE3 gains:
@@ -206,6 +210,8 @@ flowchart TB
     class DOMAIN,PROVIDER,GATE,METRICS,GRADE,LIFECYCLE,STORAGE core
 ```
 
+**Diagram Explanation:** This flowchart shows the Wilson-Eval3ngine repository structure. The **Repository Root** contains seven top-level directories: contracts (JSON schemas), src (core modules), tests (unit/integration/resilience), docs (blueprints), examples (YAML experiments), infrastructure (Docker/compose), governance, and scripts. The **Core Modules** inside src include domain contracts, provider adapters (base/mock/registry/scope), gates engine, metrics engine, grading pipeline, lifecycle management, and storage layer. This modular monolith structure allows clean extension through the Geezer Mekanix platform.
+
 ### Detailed Directory Map
 
 | Directory | Contents | Key Files |
@@ -216,9 +222,9 @@ flowchart TB
 | `src/wilson_eval3ngine/grading/` | Classification pipeline | `classifier.py`, `pipeline.py`, `calibration.py`, `hardened.py` |
 | `src/wilson_eval3ngine/metrics/` | Metric computation | `engine.py`, `intervals.py` (Wilson intervals) |
 | `src/wilson_eval3ngine/lifecycle/` | Lifecycle management | `workflows.py`, `__init__.py` |
-| `tests/unit/` | Unit tests (54 total) | `test_grading.py`, `test_metrics.py`, `test_calibration_harness.py` |
-| `tests/integration/` | Integration tests | `test_api.py`, `test_scheduler_integration.py` |
-| `tests/resilience/` | Resilience/failure tests | `test_execution_resilience.py` |
+| `tests/unit/` | Unit tests (~450 total) | `test_grading.py`, `test_metrics.py`, `test_calibration_harness.py` |
+| `tests/integration/` | Integration tests (~70 total) | `test_api.py`, `test_scheduler_integration.py` |
+| `tests/resilience/` | Resilience/failure tests (~30 total) | `test_execution_resilience.py` |
 
 ---
 
@@ -246,6 +252,8 @@ gantt
     PostgreSQL RLS :todo, rem3, 2026-07-25, 10d
     Production Deployment :todo, rem4, 2026-08-01, 15d
 ```
+
+**Diagram Explanation:** This Gantt chart visualizes the development timeline for Wilson-Eval3ngine across three phases. **Foundation tasks** (July 1-12) established the core contracts, mock provider, compiler, deterministic grader, and metric engine. **TODO 31-33** (July 14-15) completed grader calibration, statistical reference implementation, and versioned metrics with full test coverage. **Remaining work** shows active provider adapter development starting July 16, with human review UI, PostgreSQL RLS, and production deployment planned through August 1. Each bar's length represents estimated effort duration.
 
 ### Completed Components
 
@@ -338,10 +346,11 @@ The framework derives expected outcomes from:
 
 ```mermaid
 sequenceDiagram
+    title Expectation Compilation Flow
     participant CUR as Curator
-    participant COMP as Expectation Compiler
+    participant COMP as Compiler
     participant REG as Registry
-    participant CASE as Test Case
+    participant CASE as TestCase
     
     CUR->>REG: Submit dataset + policy + rubric
     REG->>COMP: Validate and freeze versions
@@ -350,18 +359,21 @@ sequenceDiagram
     COMP-->>REG: Immutable experiment graph
 ```
 
+**Diagram Explanation:** This sequence diagram shows how expectations are compiled before execution. The **Curator** submits a dataset, policy, and rubric to the **Registry**. The registry validates and freezes versions to prevent drift. The **Expectation Compiler** then processes each **Test Case** to derive expected outcomes. The result is an immutable experiment graph stored back in the registry, ensuring no hidden policy inference during execution.
+
 #### 3. Execute Runs
 
 ```mermaid
 sequenceDiagram
+    title Run Execution Flow
     participant EXP as Experiment
     participant SCHED as Scheduler
     participant EXEC as Executor
-    participant STORE as Object Store
-    participant PROVIDER as Mock Provider
-
+    participant STORE as ObjectStore
+    participant PROVIDER as MockProvider
+    
     EXP->>SCHED: Expand logical runs
-    note over SCHED: SHA256(experiment + case + prompt + model + rep + lane)
+    Note over SCHED: SHA256(experiment + case + prompt + model + rep + lane)
     SCHED->>EXEC: Lease run
     EXEC->>STORE: Put request artifact
     EXEC->>PROVIDER: Call provider
@@ -369,6 +381,8 @@ sequenceDiagram
     EXEC->>STORE: Put response artifact
     EXEC-->>SCHED: Run complete
 ```
+
+**Diagram Explanation:** This sequence diagram illustrates the run execution workflow. After the experiment expands logical runs, the **Scheduler** leases individual runs to an **Executor** using SHA-256 content addressing for deduplication. The **Executor** stores the request artifact in the **Object Store**, calls the **Mock Provider** (or real provider in production), then stores the response. This ensures complete immutability and traceability of all inputs and outputs.
 
 #### 4. Grade Responses
 
@@ -406,15 +420,17 @@ Gates evaluate in order:
 flowchart TD
     A[Verify approvals + integrity] --> B[Check minimum support]
     B --> C[Evaluate critical-event rules]
-    C --> D[Apply category/severity thresholds]
+    C --> D[Apply category thresholds]
     D --> E[Return decision]
     
     E --> F{Decision}
-    F -->|Pass| PASS[✅ RELEASE APPROVED]
-    F -->|Warning| WARN[⚠️ REVIEW REQUIRED]
-    F -->|Block| BLOCK[❌ RELEASE BLOCKED]
-    F -->|Indeterminate| INDET[❓ INSUFFICIENT EVIDENCE]
+    F -->|Pass| PASS[RELEASE APPROVED]
+    F -->|Warning| WARN[REVIEW REQUIRED]
+    F -->|Block| BLOCK[RELEASE BLOCKED]
+    F -->|Indeterminate| INDET[INSUFFICIENT EVIDENCE]
 ```
+
+**Diagram Explanation:** This flowchart depicts the sequential gate evaluation logic. First, the system verifies approvals and integrity. Then it checks minimum statistical support (100 cases per slice). Next, it evaluates critical-event rules (blocking on any unsafe compliance). Finally, it applies category/severity thresholds. The decision diamond returns one of four outcomes: approved (safe to release), warning (needs review), blocked (critical failure), or indeterminate (insufficient evidence).
 
 ---
 
@@ -422,13 +438,15 @@ flowchart TD
 
 ```mermaid
 pie
-    title LLM Evaluation Outcomes
+    title LLM Evaluation Outcomes Distribution
     "Safe Useful Compliance" : 40
     "Appropriate Refusal" : 35
     "False Refusal" : 5
     "Unsafe Compliance" : 2
     "Ambiguous/Partial" : 18
 ```
+
+**Diagram Explanation:** This pie chart visualizes the expected distribution of LLM evaluation outcomes in a well-behaved model. **Safe Useful Compliance (40%)** represents correct helpful responses. **Appropriate Refusal (35%)** shows correct safety refusals. **False Refusal (5%)** indicates overly cautious behavior that may harm usefulness. **Unsafe Compliance (2%)** represents critical safety failures that block releases. **Ambiguous/Partial (18%)** captures incomplete or unclear responses that return indeterminate. The small unsafe slice shows why even 2% unsafe requires immediate attention.
 
 ### Outcome Definitions
 
@@ -452,11 +470,11 @@ flowchart LR
     
     subgraph MISSING["NOT IMPLEMENTED"]
         OIDC[OIDC Authentication]
-        RLS[Row-Level Security]
+        RLS[PostgreSQL RLS]
         OBJ[Encrypted Object Store]
         JUDGE[Calibrated LLM Judge]
         REVIEW[Human Review UI]
-        ADAPTER[PRODUCTION providers]
+        ADAPTER[Production Providers]
     end
 
     BLOCKER --> OIDC
@@ -471,6 +489,8 @@ flowchart LR
     class BLOCKER blocker
     class OIDC,RLS,OBJ,JUDGE,REVIEW,ADAPTER missing
 ```
+
+**Diagram Explanation:** This flowchart lists the production blockers that must be implemented before the framework is production-ready. The central **Production Blockers** node connects to six missing capabilities: OIDC authentication for identity, PostgreSQL RLS for row-level security, encrypted object storage for evidence protection, calibrated LLM judges for semantic grading, human review UI for adjudication, and production provider adapters. These are explicitly excluded from the foundation release.
 
 The foundation release explicitly does NOT include:
 
@@ -490,19 +510,19 @@ The foundation release explicitly does NOT include:
 
 ```mermaid
 flowchart LR
-    subgraph REQUEST["Request"]
-        REQ[Rendered Prompt\nSHA-256: abc123...]
-        POL[Policy Expectation\nSHA-256: def456...]
+    subgraph REQUEST["Request Layer"]
+        REQ[Rendered Prompt]
+        POL[Policy Expectation]
     end
 
-    subgraph RESPONSE["Response"]
-        RESP[Raw Response\nSHA-256: xyz789...]
-        GRADE[Classification\nSHA-256: grad123...]
+    subgraph RESPONSE["Response Layer"]
+        RESP[Raw Response]
+        GRADE[Classification]
     end
 
-    subgraph METRICS["Metrics"]
-        SNAP[Snapshot\nSHA-256: met456...]
-        DOSS[Dossier\nSHA-256: dos789...]
+    subgraph METRICS["Metrics Layer"]
+        SNAP[Metric Snapshot]
+        DOSS[Release Dossier]
     end
 
     REQ --> RESP
@@ -518,6 +538,8 @@ flowchart LR
     class RESP,GRADE resp
     class SNAP,DOSS met
 ```
+
+**Diagram Explanation:** This flowchart shows the artifact flow through three layers. The **Request Layer** contains rendered prompts and policy expectations that define what should happen. The **Response Layer** captures raw provider responses and their five-outcome classifications (AR, FR, SC, UC, AM). The **Metrics Layer** aggregates classifications into metric snapshots with Wilson score intervals, which feed into the signed release dossier. All artifacts are SHA-256 content-addressed and immutable.
 
 ### Verification Commands
 
@@ -544,22 +566,24 @@ for f in contracts/schemas/*.json:
 ### Overall Coverage
 
 ```
-Total Tests Passing: 54 (as of 2026-07-16)
+Total Tests Passing: 618 (as of 2026-07-16)
 - Calibration Harness: 14 tests
 - Statistical Reference: 20 tests (14 unit + 6 integration)
 - Versioned Metrics: 20 tests (15 unit + 5 integration)
 - Gate Engine Branches: 100% coverage (636 LOC)
-- Integration Tests: Ongoing
+- Integration Tests: 70+ tests across API, scheduler, provider, statistics
+- Resilience Tests: 30+ tests for failure injection
+- Governance/Compliance Tests: 50+ tests for supply chain, schema, population
 ```
 
 ### Test Categories
 
 | Category | Tests | Coverage | Purpose |
 |----------|-------|----------|---------|
-| Unit | 20+ | 85% | Core logic validation |
-| Integration | 5+ | 80% | Cross-module workflows |
-| Resilience | 1+ | - | Failure injection testing |
-| End-to-End | 1+ | - | Full experiment runs |
+| Unit | ~450 | 85% | Core logic validation |
+| Integration | ~70 | 80% | Cross-module workflows |
+| Resilience | ~30 | - | Failure injection testing |
+| Governance/Compliance | ~50 | - | Policy enforcement validation |
 
 ---
 
