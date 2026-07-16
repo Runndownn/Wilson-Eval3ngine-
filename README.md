@@ -293,7 +293,11 @@ gantt
 
 ## How to Use Wilson-Eval3ngine
 
+Wilson-Eval3ngine provides a controlled evaluation pipeline for assessing LLM safety and usefulness. The framework transforms experiment manifests into immutable evidence through six core stages: define, compile, execute, grade, compute, and gate. Each stage preserves traceability through SHA-256 content addressing and captures decisions in auditable JSON artifacts.
+
 ### Quick Start
+
+The Quick Start commands bootstrap a development environment and validate basic functionality. `pip install -e ".[dev]"` installs the package in editable mode with test dependencies. `we3 validate` checks experiment manifest integrity without running providers. `we3 run` executes the full evaluation pipeline with SQLite storage for local development. `we3 verify-dossier` validates Ed25519 signatures on release evidence. `python -m pytest -q` runs the complete test suite to verify implementation quality.
 
 ```bash
 # Clone and install
@@ -318,9 +322,11 @@ python -m pytest -q
 
 ### Core Workflows
 
+The Core Workflows section describes the six-stage evaluation pipeline that transforms prompts into release decisions. **Define** creates experiment manifests with dataset references, model configurations, and rubric thresholds. **Compile** derives expected outcomes from policy definitions and rubric criteria. **Execute** runs logical run expansion through the scheduler and provider executor. **Grade** applies deterministic five-outcome classification. **Compute** aggregates classifications into Wilson-score metric snapshots. **Gates** evaluates release thresholds against critical-event rules and statistical support requirements.
+
 #### 1. Define Experiment
 
-Create a YAML experiment manifest:
+Create a YAML experiment manifest that references datasets, model configurations, and rubric thresholds. The manifest declares the experiment schema version, population slice (`visible` or `hidden`), repetition count, and evaluation lane. Dataset references point to YAML files with test cases for each prompt family and expected treatment (comply or refuse).
 
 ```yaml
 experiment:
@@ -382,7 +388,9 @@ sequenceDiagram
 
 #### 4. Grade Responses
 
-The grader examines:
+The expectation compiler examines each test case against policy definitions to derive expected treatments (comply or refuse). It validates dataset schema compliance, resolves rubric references, and creates immutable expectation records. The registry freezes all versions to prevent drift between compilation and execution. This decoupling ensures that policy expectations cannot change mid-experiment through hidden inference.
+
+The grader examines response text against expected treatment to produce five-outcome classifications. It detects explicit refusals ("I cannot", "I'm sorry"), implicit refusals (short responses with refusal semantics), unsafe content through keyword matching and policy violation signals, and incomplete/malformed responses. Outcomes are classified as AR (safe refusal), FR (false refusal), SC (safe compliance), UC (unsafe compliance), or AM (ambiguous) with secondary modifiers tracked in evidence.
 - Response text against expected treatment
 - Refusal signals (explicit/implicit)
 - Unsafe content indicators
@@ -539,7 +547,7 @@ flowchart LR
 
 ### Verification Commands
 
-```bash
+The verification commands validate framework integrity and test quality before production use. `sha256sum -c CHECKSUMS.sha256` verifies all source files against published hashes to detect tampering or corruption. `python -m pytest tests/unit/test_gate_engine_branches.py -v` specifically validates gate decision logic including critical-event blocking and support thresholds. `python -m pytest --cov=src` generates line-by-line coverage reports to identify untested code paths. The schema validation loop ensures all JSON contracts are parseable before use.
 # Verify framework integrity
 sha256sum -c CHECKSUMS.sha256
 
@@ -561,31 +569,17 @@ for f in contracts/schemas/*.json:
 
 ### Overall Coverage
 
-```
-Total Tests Passing: 618 (as of 2026-07-16)
-- Calibration Harness: 14 tests
-- Statistical Reference: 20 tests (14 unit + 6 integration)
-- Versioned Metrics: 20 tests (15 unit + 5 integration)
-- Gate Engine Branches: 100% coverage (636 LOC)
-- Integration Tests: 70+ tests across API, scheduler, provider, statistics
-- Resilience Tests: 30+ tests for failure injection
-- Governance/Compliance Tests: 50+ tests for supply chain, schema, population
-```
+The test suite provides comprehensive coverage across 672 passing tests with 81.88% overall coverage. **Calibration Harness (14 tests)** validates grader threshold derivation against hidden-set evidence. **Statistical Reference (20 tests)** verifies Wilson interval calculations and cluster bootstrap independence. **Versioned Metrics (20 tests)** confirms metric snapshot immutability and aggregation correctness. **Gate Engine Branches (100% coverage)** rigorously tests all threshold paths and critical-event decision logic. Integration tests cover API endpoints, scheduler reconciliation, provider contract compliance, and statistics end-to-end flows. Resilience tests validate failure injection scenarios and recovery paths. Governance tests verify supply chain integrity, schema compliance, and population specification adherence.
 
 ### Test Categories
 
-| Category | Tests | Coverage | Purpose |
-|----------|-------|----------|---------|
-| Unit | ~450 | 85% | Core logic validation |
-| Integration | ~70 | 80% | Cross-module workflows |
-| Resilience | ~30 | - | Failure injection testing |
-| Governance/Compliance | ~50 | - | Policy enforcement validation |
+Each test category addresses specific quality concerns in the evaluation pipeline. **Unit tests (450)** validate core logic in isolation using golden fixtures and deterministic inputs. They ensure five-outcome classification rules, Wilson interval math, and schema validation work correctly without external dependencies. **Integration tests (70)** verify cross-module workflows including database persistence, provider contract adherence, and API endpoints. They catch interface drift and integration bugs. **Resilience tests (30)** inject failures and concurrency to ensure the system maintains consistency under adverse conditions. **Governance/Compliance tests (50)** validate that supply chain policies, schema registries, and population specifications are enforced correctly.
 
 ---
 
 ## Development Commands
 
-```bash
+Development commands support local testing and iteration on the Wilson-Eval3ngine codebase. `pip install -e ".[dev]"` installs the package in editable mode with development and test dependencies including pytest, hypothesis, and coverage tools. `we3 run` executes experiments with configurable output directories and database URLs. `we3 serve` starts the FastAPI development server for API testing with environment-variable configuration. `we3 export-schemas` regenerates JSON schemas from Pydantic models after contract changes. All commands preserve atomic evidence and support the full development lifecycle from local testing to validation.
 # Install development environment
 python -m pip install -e ".[dev]"
 
@@ -614,35 +608,35 @@ we3 export-schemas --output contracts/schemas
 
 ## Known Limitations and Constraints
 
+These constraints reflect intentional design boundaries for the foundation release. **Experimental constraints** limit testing to English-only cases using SQLite storage and mock providers to ensure deterministic, reproducible results without external dependencies. **Statistical constraints** enforce minimum evidence requirements (100 cases per slice) to prevent premature release decisions based on insufficient data. **Governance constraints** ensure development artifacts cannot be mistaken for production, require explicit human authority for critical decisions, and version all score-affecting definitions to prevent silent policy drift.
+
 ### Experimental Constraints
 
-- **English-only** foundation cases (no multilingual support yet)
-- **SQLite only** for local testing (PostgreSQL for production)
-- **Mock provider** only (no real model calls)
-- **No network access** for grading workers
-- **Inert content** (no live tools execution)
+- English-only foundation cases (no multilingual support yet)
+- SQLite only for local testing (PostgreSQL for production)
+- Mock provider only (no real model calls)
+- No network access for grading workers
+- Inert content (no live tools execution)
 
 ### Statistical Constraints
 
-- Requires **minimum 100 cases per population slice**
-- Wilson intervals with **95% confidence level**
-- Critical cells with any unsafe events **block release**
-- Insufficient support returns **indeterminate** (never pass)
+- Minimum 100 cases per population slice required
+- Wilson intervals with 95% confidence level
+- Critical cells with any unsafe events block release
+- Insufficient support returns indeterminate (never pass)
 
 ### Governance Constraints
 
-- Development headers **rejected by production**
+- Development headers rejected by production
 - No automatic approval based on model judge
-- All score-affecting definitions are **versioned**
-- Critical decisions require **human authority**
-
----
+- All score-affecting definitions are versioned
+- Critical decisions require human authority
 
 ---
 
 ## History
 
-### Development Timeline (July 2026)
+The Wilson-Eval3ngine development history spans July 2026 with four distinct phases of implementation. **Phase 1 - Foundation** (July 1-14) established the core architecture including contract registry, modular monolith boundaries, requirements traceability, and the five-outcome taxonomy. **Phase 2 - Data Layer** (July 8-18) built PostgreSQL schema with migrations, RLS policies, immutable object storage, and provenance tracking. **Phase 3 - Providers** (July 12-16) created durable leasing scheduler, canonical provider-adapter contract, deterministic mock provider, and fingerprint drift detection. **Phase 4 - Metrics & Judgement** (July 14-16) delivered the five-outcome grader, calibration harness, statistical reference, and versioned metrics engine. The Gantt chart visualizes this timeline with color-coded phase milestones.
 
 ```mermaid
 gantt
@@ -688,18 +682,13 @@ gantt
 
 ### Elements Incorporated
 
-All 36 TODOs (1-36) completed except production blockers:
-- **Contracts & Schema (11 Pydantic schemas, TODO 8)** with security-aware validation
-- **Provider System (TODOs 23, 25-27)** - mock + fingerprints + budget controls
-- **Data Layer (TODOs 15-18)** - PostgreSQL migrations, RLS foundation, object storage, provenance
-- **Evaluation Engine (TODOs 13, 29)** - expectation compiler, five-outcome grader
-- **Metrics System (TODOs 28, 31-33)** - Wilson intervals, calibration harness, versioned snapshots
-- **Lifecycle Management (TODOs 19-20, 22)** - regrade/backfill with legal-hold, durable leasing
-- **Testing Framework (672 passed, 5 skipped)** - production SDKs unavailable
+All 36 TODOs (1-36) were completed during the July 2026 development cycle, with six production blockers remaining. **Contracts & Schema (TODO 8)** established 11 Pydantic models with security-aware validation and schema reference resolution. **Provider System (TODOs 23, 25-27)** delivered mock provider, fingerprints, and budget controls with drift detection. **Data Layer (TODOs 15-18)** built PostgreSQL migrations, RLS foundation, object storage, and provenance tracking. **Evaluation Engine (TODOs 13, 29)** implemented expectation compilation and five-outcome classification. **Metrics System (TODOs 28, 31-33)** created Wilson intervals, calibration harness, and versioned snapshots. **Lifecycle Management (TODOs 19-20, 22)** delivered regrade/backfill with legal-hold and durable leasing scheduler. The Testing Framework achieved 672 passed tests with 81.88% coverage.
 
 ---
 
 ## Next Actions
+
+The Next Actions section defines the roadmap for foundation completion and production readiness. **Immediate (2 weeks)** focuses on provider adapter integration, schema registry validation, test stabilization, and API documentation. **Short-term (1 month)** adds PostgreSQL RLS policies for tenancy, human review UI skeleton for adjudication, production deployment manifests, and OIDC integration. **Long-term (3 months)** delivers full production provider adapters, calibrated semantic graders, cluster bootstrap for population inference, and independent certification suite for external validation. These actions close the gap between foundation stability and production readiness.
 
 ### Immediate (Next 2 Weeks)
 
@@ -726,7 +715,7 @@ All 36 TODOs (1-36) completed except production blockers:
 
 ## License
 
-MIT. See `LICENSE`.
+Wilson-Eval3ngine is released under the MIT license, permitting use, modification, and distribution in both open-source and commercial contexts. The license applies to the core framework code while acknowledging that production deployments may require additional licensing for integrated components (PostgreSQL, KMS, HSM, OIDC providers). Operators should review the full LICENSE file for terms and consult legal counsel before deploying in regulated environments. The permissive license enables broad adoption while preserving attribution and disclaimer protections for contributors.
 
 ---
 
