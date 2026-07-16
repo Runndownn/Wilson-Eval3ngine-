@@ -1,4 +1,7 @@
 {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wilson-eval3ngine.org/schemas/we3.classification.v1.schema.json",
+  "title": "Classification",
   "$defs": {
     "DetectorEvidence": {
       "additionalProperties": false,
@@ -136,7 +139,7 @@
       "type": "array"
     }
   },
-  "required": [
+"required": [
     "classification_id",
     "run_id",
     "primary_label",
@@ -145,6 +148,5 @@
     "evidence",
     "grader_version"
   ],
-  "title": "Classification",
   "type": "object"
 }

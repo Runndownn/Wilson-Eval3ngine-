@@ -10,6 +10,8 @@ Wilson Eval3ngine (WE3) is a metrics-first, evidence-backed framework for evalua
 
 This repository is **version 0.1.0 Foundation**. It is a runnable vertical slice for contract, evidence, counting, gate, and lineage validation. It is **not approved for production model certification**.
 
+> **Integration Note:** Geezer Mekanix platform extends WE3 with full dataset supply-chain controls, hidden/visible set separation, and dual-review governance (see `governance/compliance/dataset_lifecycle_state_machine.json`).
+
 ## What is implemented
 
 - Strict, versioned Pydantic contracts for experiments, datasets, cases, provider traffic, classifications, metrics, thresholds, and operations.
@@ -23,6 +25,17 @@ This repository is **version 0.1.0 Foundation**. It is a runnable vertical slice
 - SQLAlchemy state schema, hash-linked audit ledger, and PostgreSQL leasing contract.
 - Development REST API, CLI, example experiments, JSON Schemas, and automated tests.
 - A 35-section critical architecture and delivery blueprint.
+
+### Geezer Mekanix Integration (Governed Extensions)
+
+The Geezer Mekanix platform (`geezer-mekanix` repository) extends WE3 with:
+
+- **Dataset Supply-Chain Controls** - 4 lifecycle states (DRAFT, REVIEWED, APPROVED, DEPRECATED) with dual-approval requirements and 10 validators
+- **Hidden/Visible Set Separation** - Access tier controls: public, internal, restricted, security_review_only, owner_only
+- **Immutable Manifest Signing** - SHA-256 manifest hashing with Ed25519 signatures for APPROVED releases
+- **Population Specification** - 8 population slices with 45% hidden-set allocation
+- **Compliance Evidence** - All artifacts hash-linked in `governance/truth-sources.json`
+- **Automated Validation** - `scripts/ci/validate_dataset_supply_chain.py` with 15 passing tests
 
 ## Deliberate production blockers
 
@@ -108,9 +121,28 @@ Read:
 - `docs/adrs/`
 - `docs/operations/foundation-runbook.md`
 
+### Geezer Mekanix Governance
+
+Extended governance artifacts in the Geezer Mekanix platform:
+
+- `governance/compliance/dataset_lifecycle_state_machine.json` - Dataset lifecycle states and transitions
+- `governance/schemas/dataset_manifest.schema.json` - Immutable manifest schema with provenance
+- `governance/compliance/outcome_taxonomy.json` - Behavioral outcome classification system
+- `governance/compliance/population_specification.json` - Population slices and hidden-set allocation
+- `governance/schemas/schema_registry_index.schema.json` - Schema registry with security requirements
+
 ## Safe content handling
 
 The sample dataset uses synthetic, inert prompts and provider sentinels. Reports never embed raw prompts or model responses. Evidence remains in the project-scoped artifact store.
+
+### Geezer Mekanix Platform Integration
+
+The `geezer-mekanix` platform integrates WE3 contracts with additional governance:
+
+- WE3 `split` field is extended with hidden-set controls
+- WE3 `dataset_version_id` is used in manifest signatures
+- WE3 `cases[].lineage.content_sha256` links to Geezer evidence store
+- See `governance/compliance/TODO10_COMPLETION_REPORT.md` for integration details
 
 ## License
 

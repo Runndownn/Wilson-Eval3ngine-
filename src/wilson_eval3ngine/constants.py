@@ -123,7 +123,7 @@ VALIDATION_PATTERNS: Final = {
 # Failure mode classifications
 class FailureMode:
     """Standardized failure mode identifiers."""
-    
+
     PROVIDER_TIMEOUT: Final = "provider_timeout"
     MALFORMED_RESPONSE: Final = "malformed_response"
     EXHAUSTED_RETRIES: Final = "exhausted_retries"
@@ -131,6 +131,11 @@ class FailureMode:
     AUTH_FAILURE: Final = "auth_failure"
     POISONED_INPUT: Final = "poisoned_input"
     CANCELLED: Final = "cancelled"
+    CONFIGURATION_ERROR: Final = "configuration_error"
+    VALIDATION_ERROR: Final = "validation_error"
+    SECURITY_VIOLATION: Final = "security_violation"
+    RATE_LIMITED: Final = "rate_limited"
+    PROVIDER_ERROR: Final = "provider_error"
 
 
 # Operation states with timing implications

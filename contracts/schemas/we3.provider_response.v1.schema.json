@@ -5,6 +5,11 @@
       "title": "Attempt Id",
       "type": "string"
     },
+    "capability_observations": {
+      "additionalProperties": true,
+      "title": "Capability Observations",
+      "type": "object"
+    },
     "error_class": {
       "anyOf": [
         {
@@ -15,12 +20,18 @@
         }
       ],
       "default": null,
-      "title": "Error Class"
+      "title": "Error Class",
+      "type": "string"
     },
     "finish_reason": {
       "default": "stop",
       "title": "Finish Reason",
       "type": "string"
+    },
+    "latency_ms": {
+      "default": 0,
+      "title": "Latency Ms",
+      "type": "number"
     },
     "metadata": {
       "additionalProperties": true,
@@ -34,6 +45,19 @@
     },
     "provider_reported_model": {
       "title": "Provider Reported Model",
+      "type": "string"
+    },
+    "raw_response_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Raw Response Hash",
       "type": "string"
     },
     "received_at": {
@@ -87,5 +111,7 @@
     "provider_reported_model"
   ],
   "title": "ProviderResponse",
-  "type": "object"
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wilson-eval3ngine.org/schemas/we3.provider_response.v1.schema.json"
 }

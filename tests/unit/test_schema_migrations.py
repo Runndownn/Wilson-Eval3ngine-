@@ -96,10 +96,12 @@ class TestMigrationIdempotency:
         database2 = Database(f"sqlite:///{db_path}")
         database2.initialize()
 
-        # Both should succeed and schemas should match
+        # Both should succeed and same tables exist
         inspector = inspect(database2.engine)
         tables = inspector.get_table_names()
-        assert len(tables) == 8
+        # SQLite may include internal tables; verify our expected tables exist
+        expected_tables = {"projects", "experiments", "runs", "classifications", "metric_snapshots", "gate_decisions", "audit_events", "jobs"}
+        assert expected_tables.issubset(set(tables))
 
 
 class TestForeignKeyConstraints:

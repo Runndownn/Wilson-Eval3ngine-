@@ -102,5 +102,7 @@
     "rules"
   ],
   "title": "ThresholdSet",
-  "type": "object"
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wilson-eval3ngine.org/schemas/we3.threshold_set.v1.schema.json"
 }

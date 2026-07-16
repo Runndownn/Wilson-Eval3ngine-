@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wilson-eval3ngine.org/schemas/we3.provider_scope.v1.schema.json",
+  "title": "ProviderScope",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "provider_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tier": {
+      "enum": ["approved", "fallback", "experimental"],
+      "type": "string"
+    },
+    "regions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "models": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ModelScope"
+      }
+    },
+    "enterprise_auth_required": {
+      "type": "boolean"
+    },
+    "short_lived_credentials": {
+      "type": "boolean"
+    },
+    "requires_processing_terms": {
+      "type": "string"
+    },
+    "retention_days": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "training_use_prohibited": {
+      "type": "boolean"
+    }
+  },
+  "required": ["provider_name", "tier"],
+  "$defs": {
+    "ModelScope": {
+      "title": "ModelScope",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "alias_forbidden": {
+          "type": "boolean"
+        },
+        "context_limit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "supports_tools": {
+          "type": "boolean"
+        },
+        "supports_json": {
+          "type": "boolean"
+        },
+        "supports_streaming": {
+          "type": "boolean"
+        },
+        "input_token_price": {
+          "type": "number",
+          "minimum": 0
+        },
+        "output_token_price": {
+          "type": "number",
+          "minimum": 0
+        },
+        "deprecation_notice": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "replacement_model_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requires_identity_fingerprint": {
+          "type": "boolean"
+        }
+      },
+      "required": ["model_id"]
+    }
+  }
+}

@@ -185,7 +185,7 @@
       "gate_id": "ci/governance-check",
       "evidence_artifact": "governance/compliance/outcome_taxonomy.json.sha256",
       "status": "verified",
-      "last_verification_timestamp": "2026-07-15T05:26:00Z",
+      "last_verification_timestamp": "2026-07-15T20:54:00Z",
       "verification_proof": "pytest tests/governance/compliance/test_outcome_taxonomy.py -v --tb=short"
     },
     {
@@ -217,7 +217,7 @@
       "gate_id": "ci/architecture-check",
       "evidence_artifact": "governance/compliance/schema_registry_index.json.sha256",
       "status": "verified",
-      "last_verification_timestamp": "2026-07-15T05:26:00Z",
+      "last_verification_timestamp": "2026-07-15T20:54:00Z",
       "verification_proof": "pytest tests/governance/compliance/test_schema_registry.py -v --tb=short"
     },
     {
@@ -247,8 +247,206 @@
       "gate_id": "ci/governance-check",
       "evidence_artifact": "governance/compliance/population_specification.json.sha256",
       "status": "verified",
-      "last_verification_timestamp": "2026-07-15T05:26:00Z",
+      "last_verification_timestamp": "2026-07-15T20:54:00Z",
       "verification_proof": "pytest tests/governance/compliance/test_population_validation.py -v --tb=short"
+    },
+    {
+      "requirement_id": "REQ-EVAL-004",
+      "source": "TODO 13 - Expectation Compilation",
+      "source_version": "T2.1.7",
+      "normative_level": "MUST",
+      "owner": "grading-team",
+      "component": "expectations/compiler",
+      "implementation_ref": [
+        "src/wilson_eval3ngine/expectations/compiler.py"
+      ],
+      "test_ids": [
+        "tests/unit/test_expectation_compiler.py::TestExpectationCompilerDeterministic::test_identical_inputs_produce_identical_expectations",
+        "tests/unit/test_expectation_compiler.py::TestExpectationCompilerDeterministic::test_deterministic_hash_for_same_case",
+        "tests/unit/test_expectation_compiler.py::TestCompilationFailureStates::test_missing_policy_returns_error",
+        "tests/unit/test_expectation_compiler.py::TestCompilationFailureStates::test_missing_rubric_returns_error",
+        "tests/unit/test_expectation_compiler.py::TestDeprecatedCase::test_deprecated_case_returns_error",
+        "tests/unit/test_expectation_compiler.py::TestInvalidCase::test_compiler_rejects_unsupported_version",
+        "tests/unit/test_expectation_compiler.py::TestInvalidCase::test_invalid_severity_returns_error",
+        "tests/unit/test_expectation_compiler.py::TestAmbiguousRule::test_ambiguous_rule_detection",
+        "tests/unit/test_expectation_compiler.py::TestVersionCompatibility::test_unsupported_compiler_version",
+        "tests/unit/test_expectation_compiler.py::TestVersionCompatibility::test_policy_rubric_version_mismatch",
+        "tests/unit/test_expectation_compiler.py::TestObservationLeakagePrevention::test_compiler_accepts_only_case_inputs",
+        "tests/unit/test_expectation_compiler.py::TestObservationLeakagePrevention::test_no_response_in_compilation_inputs"
+      ],
+      "gate_id": "ci/governance-check",
+      "evidence_artifact": "src/wilson_eval3ngine/expectations/compiler.py.sha256",
+      "status": "verified",
+      "last_verification_timestamp": "2026-07-15T20:54:00Z",
+      "verification_proof": "pytest tests/unit/test_expectation_compiler.py -v --tb=short"
+    },
+    {
+      "requirement_id": "REQ-EVAL-005",
+      "source": "TODO 14 - Hostile-Input Tests",
+      "source_version": "T2.1.8",
+      "normative_level": "MUST",
+      "owner": "security-team",
+      "component": "parser_sandbox, tests/unit",
+      "implementation_ref": [
+        "src/wilson_eval3ngine/parser_sandbox/parser_sandbox.py",
+        "tests/unit/test_hostile_inputs.py"
+      ],
+      "test_ids": [
+        "tests/unit/test_hostile_inputs.py::TestYAMLHostileInputs::test_duplicate_key_handling",
+        "tests/unit/test_hostile_inputs.py::TestYAMLHostileInputs::test_yaml_anchor_expansion_depth_limit",
+        "tests/unit/test_hostile_inputs.py::TestJSONHostileInputs::test_unknown_fields_rejected",
+        "tests/unit/test_hostile_inputs.py::TestJSONHostileInputs::test_type_confusion_rejected",
+        "tests/unit/test_hostile_inputs.py::TestJSONHostileInputs::test_null_bytes_in_strings",
+        "tests/unit/test_hostile_inputs.py::TestCanonicalizationInvariants::test_unicode_normalization_consistency",
+        "tests/unit/test_hostile_inputs.py::TestCanonicalizationInvariants::test_json_key_order_independence",
+        "tests/unit/test_hostile_inputs.py::TestMalformedInputSizes::test_huge_string_rejected",
+        "tests/unit/test_hostile_inputs.py::TestMalformedInputSizes::test_large_list_handled",
+        "tests/unit/test_hostile_inputs.py::TestHashTamperingDetection::test_sha256_hash_changes_on_content_change",
+        "tests/unit/test_hostile_inputs.py::TestHashTamperingDetection::test_dataset_hash_verification",
+        "tests/unit/test_hostile_inputs.py::TestYAMLSecurityRequirements::test_yaml_duplicate_key_rejection_enforced",
+        "tests/unit/test_hostile_inputs.py::TestYAMLSecurityRequirements::test_yaml_tag_restriction",
+        "tests/unit/test_hostile_inputs.py::TestJSONSecurityRequirements::test_json_duplicate_key_detection",
+        "tests/unit/test_hostile_inputs.py::TestParserSecurityIntegration::test_all_security_parsers_defined"
+      ],
+      "gate_id": "ci/governance-check",
+      "evidence_artifact": "tests/unit/test_hostile_inputs.py.sha256",
+      "status": "verified",
+      "last_verification_timestamp": "2026-07-15T20:54:00Z",
+      "verification_proof": "pytest tests/unit/test_hostile_inputs.py -v --tb=short"
+    },
+    {
+      "requirement_id": "REQ-EVAL-006",
+      "source": "TODO 15 - PostgreSQL Schema",
+      "source_version": "T2.1.9",
+      "normative_level": "MUST",
+      "owner": "platform-team",
+      "component": "infrastructure/postgres",
+      "implementation_ref": [
+        "src/wilson_eval3ngine/persistence/migrations/001_initial_core_schema.py",
+        "infrastructure/postgres/001_project_rls.sql"
+      ],
+      "test_ids": [
+        "tests/unit/test_schema_migrations.py"
+      ],
+      "gate_id": "ci/governance-check",
+      "evidence_artifact": "infrastructure/postgres/001_project_rls.sql.sha256",
+      "status": "verified",
+      "last_verification_timestamp": "2026-07-15T20:54:00Z",
+      "verification_proof": "pytest tests/unit/test_schema_migrations.py -v --tb=short"
+    },
+    {
+      "requirement_id": "REQ-EVAL-007",
+      "source": "TODO 16 - Security Context",
+      "source_version": "T3.1.2",
+      "normative_level": "MUST",
+      "owner": "platform-team",
+      "component": "src/wilson_eval3ngine/security/context.py",
+      "implementation_ref": [
+        "src/wilson_eval3ngine/security/context.py"
+      ],
+      "test_ids": [
+        "tests/unit/test_security_context.py::TestProjectContextConstants::test_context_key_defined",
+        "tests/unit/test_security_context.py::TestProjectContextConstants::test_empty_project_id_rejected",
+        "tests/unit/test_security_context.py::TestDatabaseRoleConstants::test_application_role_constant_exists",
+        "tests/unit/test_security_context.py::TestDatabaseRoleConstants::test_migration_role_constant_exists",
+        "tests/unit/test_security_context.py::TestDatabaseRoleConstants::test_administrative_role_constant_exists",
+        "tests/unit/test_security_context.py::TestApplicationRoleAssertion::test_assert_application_role_exists",
+        "tests/unit/test_security_context.py::TestRLSPolicyVerification::test_enforce_rls_function_exists",
+        "tests/unit/test_security_context.py::TestRLSPolicyVerification::test_rls_sql_file_exists",
+        "tests/unit/test_security_context.py::TestRLSPolicyVerification::test_validate_context_bound_raises_on_missing"
+      ],
+      "gate_id": "ci/governance-check",
+      "evidence_artifact": "governance/compliance/context.sha256",
+      "status": "verified",
+      "last_verification_timestamp": "2026-07-15T21:13:00Z",
+      "verification_proof": "pytest tests/unit/test_security_context.py -v --tb=short"
+    },
+    {
+      "requirement_id": "REQ-EVAL-008",
+      "source": "TODO 17 - Object Store",
+      "source_version": "T3.1.3",
+      "normative_level": "MUST",
+      "owner": "platform-team",
+      "component": "src/wilson_eval3ngine/storage/object_store.py",
+      "implementation_ref": [
+        "src/wilson_eval3ngine/storage/object_store.py",
+        "src/wilson_eval3ngine/evidence/store.py"
+      ],
+      "test_ids": [
+        "tests/unit/test_object_store.py::TestArtifactRef::test_artifact_ref_has_required_fields",
+        "tests/unit/test_object_store.py::TestLocalArtifactStore::test_put_bytes_creates_content_addressed_path",
+        "tests/unit/test_object_store.py::TestLocalArtifactStore::test_path_traversal_blocked",
+        "tests/unit/test_object_store.py::TestScopedPathPattern::test_scoped_path_pattern_exists"
+      ],
+      "gate_id": "ci/governance-check",
+      "evidence_artifact": "governance/compliance/object_store.sha256",
+      "status": "verified",
+      "last_verification_timestamp": "2026-07-15T21:13:00Z",
+      "verification_proof": "pytest tests/unit/test_object_store.py -v --tb=short"
+    },
+    {
+      "requirement_id": "REQ-EVAL-009",
+      "source": "TODO 18 - Provenance/Outbox",
+      "source_version": "T3.1.4",
+      "normative_level": "MUST",
+      "owner": "platform-team",
+      "component": "src/wilson_eval3ngine/persistence/outbox.py, src/wilson_eval3ngine/domain/provenance.py",
+      "implementation_ref": [
+        "src/wilson_eval3ngine/persistence/outbox.py",
+        "src/wilson_eval3ngine/domain/provenance.py",
+        "src/wilson_eval3ngine/persistence/migrations/002_outbox_and_provenance.py"
+      ],
+      "test_ids": [
+        "tests/unit/test_outbox_and_provenance.py::TestOutboxEventEnvelope::test_event_envelope_has_required_fields",
+        "tests/unit/test_outbox_and_provenance.py::TestOutboxEventEnvelope::test_event_payload_hash_computed",
+        "tests/unit/test_outbox_and_provenance.py::TestOutboxEventType::test_all_event_types_exist",
+        "tests/unit/test_outbox_and_provenance.py::TestProvenanceEdge::test_provenance_edge_has_immutable_hash",
+        "tests/unit/test_outbox_and_provenance.py::TestProvenanceEdgeType::test_all_edge_types_exist"
+      ],
+      "gate_id": "ci/governance-check",
+      "evidence_artifact": "governance/compliance/outbox.sha256",
+      "status": "verified",
+      "last_verification_timestamp": "2026-07-15T21:13:00Z",
+      "verification_proof": "pytest tests/unit/test_outbox_and_provenance.py -v --tb=short"
+    },
+    {
+      "requirement_id": "REQ-EVAL-010",
+      "source": "TODO 19 - Lifecycle Management",
+      "source_version": "T3.1.5",
+      "normative_level": "MUST",
+      "owner": "platform-team",
+      "component": "src/wilson_eval3ngine/persistence/lifecycle.py",
+      "implementation_ref": [
+        "src/wilson_eval3ngine/persistence/lifecycle.py",
+        "src/wilson_eval3ngine/persistence/migrations/003_lifecycle_tombstones.py"
+      ],
+      "test_ids": [
+        "tests/unit/test_lifecycle.py::TestLifecycleState::test_active_state_exists",
+        "tests/unit/test_lifecycle.py::TestLifecycleState::test_superseded_state_exists",
+        "tests/unit/test_lifecycle.py::TestLifecycleState::test_deleted_state_exists",
+        "tests/unit/test_lifecycle.py::TestLifecycleState::test_crypto_erase_marked_state_exists",
+        "tests/unit/test_lifecycle.py::TestHoldState::test_none_state_exists",
+        "tests/unit/test_lifecycle.py::TestHoldState::test_held_state_exists",
+        "tests/unit/test_lifecycle.py::TestHoldState::test_pending_review_state_exists",
+        "tests/unit/test_lifecycle.py::TestDeletionTombstone::test_tombstone_has_required_fields",
+        "tests/unit/test_lifecycle.py::TestDeletionTombstone::test_tombstone_hash_is_deterministic",
+        "tests/unit/test_lifecycle.py::TestGradeVersion::test_grade_version_has_audit_payload",
+        "tests/unit/test_lifecycle.py::TestGradeVersion::test_grade_version_superseded_by_optional",
+        "tests/unit/test_lifecycle.py::TestLifecycleJob::test_job_has_checkpoint_key",
+        "tests/unit/test_lifecycle.py::TestLifecycleJob::test_job_dry_run_default_false",
+        "tests/unit/test_lifecycle.py::TestLifecycleJob::test_job_hold_state_default_none",
+        "tests/unit/test_lifecycle.py::TestLifecycleJob::test_job_batch_size_default_sensible",
+        "tests/unit/test_lifecycle.py::TestLifecycleManager::test_validate_lifecycle_safety_returns_violations",
+        "tests/unit/test_lifecycle.py::TestLifecycleManager::test_validate_deletion_requires_reason",
+        "tests/unit/test_lifecycle.py::TestLifecycleManager::test_dry_run_no_violations",
+        "tests/unit/test_lifecycle.py::TestCreateDeletionTombstone::test_factory_creates_tombstone",
+        "tests/unit/test_lifecycle.py::TestCreateDeletionTombstone::test_tombstone_hash_derived_from_data"
+      ],
+      "gate_id": "ci/governance-check",
+      "evidence_artifact": "governance/compliance/lifecycle.sha256",
+      "status": "verified",
+      "last_verification_timestamp": "2026-07-15T21:50:00Z",
+      "verification_proof": "pytest tests/unit/test_lifecycle.py -v --tb=short"
     }
   ]
 }

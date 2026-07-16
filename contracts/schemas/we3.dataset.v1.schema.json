@@ -477,5 +477,7 @@
     "cases"
   ],
   "title": "DatasetManifest",
-  "type": "object"
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wilson-eval3ngine.org/schemas/we3.dataset.v1.schema.json"
 }

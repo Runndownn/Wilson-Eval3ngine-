@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wilson-eval3ngine.org/schemas/we3.metric_comparison.v1.schema.json",
+  "title": "MetricComparison",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "baseline_metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "metric_id": {"type": "string"},
+        "numerator": {"type": "integer", "minimum": 0},
+        "denominator": {"type": "integer", "minimum": 0},
+        "value": {"type": "number"},
+        "direction": {"type": "string", "enum": ["higher", "lower", "descriptive"]}
+      },
+      "required": ["metric_id", "numerator", "denominator"]
+    },
+    "candidate_metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "metric_id": {"type": "string"},
+        "numerator": {"type": "integer", "minimum": 0},
+        "denominator": {"type": "integer", "minimum": 0},
+        "value": {"type": "number"},
+        "direction": {"type": "string", "enum": ["higher", "lower", "descriptive"]}
+      },
+      "required": ["metric_id", "numerator", "denominator"]
+    },
+    "difference": {"type": "number"},
+    "confidence_interval": {
+      "type": "array",
+      "items": {"type": "number"},
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "p_value": {"type": "number"},
+    "status": {"type": "string", "enum": ["valid", "pending", "indeterminate", "incompatible"]},
+    "incompatibility_reason": {"type": "string"}
+  },
+  "required": ["baseline_metric", "candidate_metric", "difference", "confidence_interval", "status"]
+}

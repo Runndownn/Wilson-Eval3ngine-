@@ -90,6 +90,28 @@
       "critical_fields": ["response_id", "request_id", "messages"]
     },
     {
+      "schema_name": "we3.provider_scope",
+      "version": "v1",
+      "schema_path": "contracts/schemas/we3.provider_scope.v1.schema.json",
+      "schema_hash": "sha256:computed_on_write",
+      "owner": "provider-team",
+      "lifecycle_state": "active",
+      "producers": ["providers/scope"],
+      "consumers": ["contracts/validation", "execution/scheduler"],
+      "critical_fields": ["provider_name", "tier", "models"]
+    },
+    {
+      "schema_name": "we3.calibration_snapshot",
+      "version": "v1",
+      "schema_path": "contracts/schemas/we3.calibration_snapshot.v1.schema.json",
+      "schema_hash": "sha256:computed_on_write",
+      "owner": "grading-team",
+      "lifecycle_state": "active",
+      "producers": ["grading/calibration"],
+      "consumers": ["grading/registry", "reports/dossier"],
+      "critical_fields": ["snapshot_id", "grader_version", "metrics"]
+    },
+    {
       "schema_name": "we3.threshold_set",
       "version": "v1",
       "schema_path": "contracts/schemas/we3.threshold_set.v1.schema.json",
@@ -99,6 +121,28 @@
       "producers": ["gates/defaults"],
       "consumers": ["gates/engine", "reports/dossier"],
       "critical_fields": ["thresholds", "version"]
+    },
+    {
+      "schema_name": "we3.cluster_bootstrap",
+      "version": "v1",
+      "schema_path": "contracts/schemas/we3.cluster_bootstrap.v1.schema.json",
+      "schema_hash": "sha256:computed_on_write",
+      "owner": "statistics-team",
+      "lifecycle_state": "active",
+      "producers": ["statistics/reference"],
+      "consumers": ["metrics/engine", "reports/dossier"],
+      "critical_fields": ["seed", "resample_count", "confidence_level"]
+    },
+    {
+      "schema_name": "we3.metric_comparison",
+      "version": "v1",
+      "schema_path": "contracts/schemas/we3.metric_comparison.v1.schema.json",
+      "schema_hash": "sha256:computed_on_write",
+      "owner": "metrics-team",
+      "lifecycle_state": "active",
+      "producers": ["metrics/engine"],
+      "consumers": ["gates/engine", "reports/dossier"],
+      "critical_fields": ["baseline_metric", "candidate_metric", "difference"]
     }
   ],
   "compatibility_policy": {

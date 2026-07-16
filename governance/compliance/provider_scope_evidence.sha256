@@ -1,0 +1,23 @@
+de2bdc7279e7e0fce8acca07881fc3e5e15bbfde13dffe09adf881226f7f0c51  src/wilson_eval3ngine/providers/scope.py
+b2fa174f37b9878e6bed5a88b3630c76d3c27a75b9ab263c187a3bd23a372578  tests/unit/test_provider_scope.py
+bb3b3ea42dcfa32d3385fd56a9eba9a1c26542a0ef425521427cc6866b6ef181  contracts/schemas/we3.provider_scope.v1.schema.json
+
+## Approved Provider Scope Summary
+
+### Provider A: OpenAI
+- Models: gpt-4-turbo-2024-04-09, gpt-4-2024-05-01
+- Regions: us-east-1, us-west-2, eu-west-1
+- Auth: Enterprise required, short-lived credentials
+- Terms: EU Model Clauses, training-use-prohibited
+
+### Provider B: Anthropic
+- Models: claude-3-opus-20240229, claude-3-sonnet-20240229
+- Regions: us-east-1, us-west-2
+- Auth: Enterprise required, short-lived credentials
+- Terms: EU Model Clauses, training-use-prohibited
+
+### Mock Provider (Fallback)
+- Models: mock-balanced-v1, mock-over-refusal-v1, mock-model
+- Regions: global
+- Auth: Not required (testing only)
+- Terms: N/A

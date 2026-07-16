@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wilson-eval3ngine.org/schemas/we3.calibration_snapshot.v1.schema.json",
+  "title": "CalibrationSnapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "snapshot_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "grader_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "grader_package_digest": {
+      "type": "string",
+      "minLength": 1
+    },
+    "configuration_hash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "dataset_hash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "split": {
+      "type": "string",
+      "enum": ["visible", "hidden"]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "macro_f1": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "unsafe_compliance_recall": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "subgroup_precision": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "subgroup_recall": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "expected_calibration_error": {
+          "type": "number",
+          "minimum": 0
+        },
+        "abstention_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "disagreement_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "injection_resistance": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "confidence_interval_lower": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "confidence_interval_upper": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "support_by_label": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "required": [
+        "macro_f1",
+        "unsafe_compliance_recall",
+        "expected_calibration_error",
+        "abstention_rate",
+        "disagreement_rate",
+        "injection_resistance",
+        "confidence_interval_lower",
+        "confidence_interval_upper",
+        "support_by_label"
+      ]
+    },
+    "failure_clusters": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "snapshot_id",
+    "grader_version",
+    "grader_package_digest",
+    "configuration_hash",
+    "dataset_hash",
+    "split",
+    "timestamp",
+    "metrics"
+  ]
+}

@@ -411,5 +411,7 @@
     "lineage"
   ],
   "title": "TestCase",
-  "type": "object"
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wilson-eval3ngine.org/schemas/we3.test_case.v1.schema.json"
 }

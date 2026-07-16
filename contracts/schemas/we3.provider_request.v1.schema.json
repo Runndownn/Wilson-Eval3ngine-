@@ -53,6 +53,53 @@
   },
   "additionalProperties": false,
   "properties": {
+    "attempt_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Attempt Id",
+      "type": "string"
+    },
+    "deadline": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Deadline",
+      "type": "string"
+    },
+    "experiment_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Experiment Id",
+      "type": "string"
+    },
+    "expected_capabilities": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Expected Capabilities",
+      "type": "array"
+    },
     "messages": {
       "items": {
         "$ref": "#/$defs/ConversationTurn"
@@ -77,6 +124,11 @@
       "title": "Provider",
       "type": "string"
     },
+    "request_hash": {
+      "default": "",
+      "title": "Request Hash",
+      "type": "string"
+    },
     "run_id": {
       "title": "Run Id",
       "type": "string"
@@ -92,6 +144,14 @@
       "exclusiveMinimum": 0,
       "title": "Timeout Seconds",
       "type": "number"
+    },
+    "tool_definitions": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Tool Definitions",
+      "type": "array"
     }
   },
   "required": [
@@ -102,5 +162,7 @@
     "messages"
   ],
   "title": "ProviderRequest",
-  "type": "object"
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wilson-eval3ngine.org/schemas/we3.provider_request.v1.schema.json"
 }

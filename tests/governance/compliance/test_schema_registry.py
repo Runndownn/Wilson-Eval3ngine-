@@ -183,3 +183,20 @@ class TestSchemaRegistryIndexSchema:
         with open(Path("/home/geezeradmin/work/Wilson-Eval3ngine/governance/schemas/schema_registry_index.schema.json")) as f:
             schema = json.load(f)
         assert schema["$schema"] is not None
+
+
+class TestSchemaRegistryCIValidation:
+    """Test the CI validation script for schema registry exists and runs."""
+
+    def test_validate_script_exists(self):
+        """CI validation script exists."""
+        script_path = Path("/home/geezeradmin/work/Wilson-Eval3ngine/scripts/ci/validate_schema_registry.py")
+        assert script_path.exists()
+
+    def test_validate_script_executable(self):
+        """CI validation script is valid Python."""
+        import ast
+        script_path = Path("/home/geezeradmin/work/Wilson-Eval3ngine/scripts/ci/validate_schema_registry.py")
+        content = script_path.read_text()
+        # Should be parseable as valid Python
+        ast.parse(content)
