@@ -704,7 +704,7 @@
   ],
   "framework": "Wilson Eval3ngine",
   "generated_date": "2026-07-16",
-  "integration_status": "TODO 31-33 complete: grader-calibration (14), statistical reference (20: 14 unit + 6 integration), versioned metrics (26: 15 unit + 11 integration) - all 54 tests passing",
+  "integration_status": "TODO 31-33 complete: grader-calibration (14), statistical reference (20: 14 unit + 6 integration), versioned metrics (20: 15 unit + 5 integration) - total 54 tests passing",
   "production_certification_approved": false,
   "release_tier": "foundation",
   "schema_version": "we3.framework_manifest.v1",
@@ -719,5 +719,5 @@
   "tests_passed": 54,
   "tests_passed_calibration": 14,
   "tests_passed_statistics_reference": 20,
-  "tests_passed_metrics_engine": 26
+  "tests_passed_metrics_engine": 20
 }
