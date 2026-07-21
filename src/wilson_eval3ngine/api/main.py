@@ -3,7 +3,7 @@ from __future__ import annotations
 from threading import Lock
 from typing import Any
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, status
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..application.service import EvaluationService
@@ -14,6 +14,11 @@ from ..domain.enums import OperationState
 from ..persistence.database import Database, Repository
 from ..util import new_id, utc_now
 from .auth import RequestContext, make_context_dependency
+from .operations import (
+    add_operation_endpoints,
+    compute_etag,
+    get_idempotency_store,
+)
 
 
 class RunRequest(BaseModel):
@@ -63,6 +68,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     database = Database(runtime.database_url)
     database.initialize()
     repository = Repository(database)
+    idempotency_store = get_idempotency_store()
 
     app = FastAPI(
         title="Wilson Eval3ngine API",
@@ -75,6 +81,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = runtime
     app.state.operations = operations
     app.state.repository = repository
+    app.state.idempotency_store = idempotency_store
 
     @app.get("/health")
     def health() -> dict[str, Any]:
@@ -96,6 +103,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "code": "project_context_mismatch",
                     "retryable": False,
                     "safe_detail": "manifest project does not match request context",
+                    "schema_version": "we3.error.v1",
+                    "trace_id": new_id("trc"),
                 },
             )
         return {
@@ -137,10 +146,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/v1/experiments:run", status_code=status.HTTP_202_ACCEPTED)
     def run_experiment(
-        request: RunRequest,
+        run_request: RunRequest,
+        request: Request,
         background_tasks: BackgroundTasks,
         context: RequestContext = Depends(context_dependency),
     ) -> dict[str, Any]:
+        """Run an experiment with idempotent operation handling."""
+        # Check role
         if context.role not in {"evaluation_engineer", "project_admin"}:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -148,9 +160,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "code": "insufficient_role",
                     "retryable": False,
                     "safe_detail": "evaluation_engineer or project_admin is required",
+                    "schema_version": "we3.error.v1",
+                    "trace_id": new_id("trc"),
                 },
             )
-        manifest = load_experiment(request.manifest_path)
+
+        # Idempotency check
+        idempotency_key = request.headers.get("Idempotency-Key")
+        if idempotency_key:
+            existing = idempotency_store.get(idempotency_key, context.project_id)
+            if existing:
+                operation = operations.get(existing.operation_id, project_id=context.project_id)
+                if operation:
+                    return {
+                        "schema_version": "we3.operation_ack.v1",
+                        "trace_id": new_id("trc"),
+                        "project_id": context.project_id,
+                        "operation": operation.model_dump(mode="json"),
+                        "idempotent": True,
+                    }
+
+        manifest = load_experiment(run_request.manifest_path)
         if manifest.project != context.project_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -158,15 +188,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "code": "project_context_mismatch",
                     "retryable": False,
                     "safe_detail": "manifest project does not match request context",
+                    "schema_version": "we3.error.v1",
+                    "trace_id": new_id("trc"),
                 },
             )
-        operation = operations.create(request, project_id=context.project_id)
+        operation = operations.create(
+            run_request,
+            project_id=context.project_id,
+        )
         background_tasks.add_task(
             execute_operation,
             operation.operation_id,
-            request,
+            run_request,
             context,
         )
+
+        # Store idempotency if key was provided
+        if idempotency_key:
+            try:
+                import json
+                request_bytes = json.dumps(run_request.model_dump()).encode()
+                idempotency_store.create(idempotency_key, context.project_id, request_bytes)
+            except Exception:
+                pass  # Don't fail on idempotency storage errors
+
         return {
             "schema_version": "we3.operation_ack.v1",
             "trace_id": new_id("trc"),
@@ -187,13 +232,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "code": "operation_not_found",
                     "retryable": False,
                     "safe_detail": "operation does not exist",
+                    "schema_version": "we3.error.v1",
+                    "trace_id": new_id("trc"),
                 },
             )
+        # Include ETag for state verification
+        etag = compute_etag(operation_id, operation.state.value)
         return {
             "schema_version": "we3.operation.v1",
             "trace_id": new_id("trc"),
             "project_id": context.project_id,
             "operation": operation.model_dump(mode="json"),
+            "etag": etag,
         }
 
     @app.get("/v1/experiments/{experiment_id}")
@@ -209,14 +259,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "code": "experiment_not_found",
                     "retryable": False,
                     "safe_detail": "experiment does not exist in this project",
+                    "schema_version": "we3.error.v1",
+                    "trace_id": new_id("trc"),
                 },
             )
+        etag = compute_etag(experiment_id, "experiment")
         return {
             "schema_version": "we3.experiment_view.v1",
             "trace_id": new_id("trc"),
             "project_id": context.project_id,
             "experiment": experiment,
+            "etag": etag,
         }
+
+    # Add extended operation endpoints
+    add_operation_endpoints(
+        app,
+        context_dependency,
+        operations,
+        repository,
+        idempotency_store,
+    )
 
     return app
 

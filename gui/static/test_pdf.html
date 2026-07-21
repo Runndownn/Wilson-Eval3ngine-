@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+</head>
+<body>
+  <canvas id="pdf-canvas"></canvas>
+  <div id="status"></div>
+  <script>
+    async function render() {
+      const status = document.getElementById('status');
+      const canvas = document.getElementById('pdf-canvas');
+      try {
+        const task = pdfjsLib.getDocument('/reports/poolside-laguna-xs-2-1-free-evaluation.pdf');
+        const doc = await task.promise;
+        status.textContent = `Pages: ${doc.numPages}`;
+        const page = await doc.getPage(1);
+        const viewport = page.getViewport({ scale: 1.0 });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext('2d');
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        status.textContent += ' - Rendered';
+      } catch (e) {
+        status.textContent = 'Error: ' + e;
+      }
+    }
+    render();
+  </script>
+</body>
+</html>

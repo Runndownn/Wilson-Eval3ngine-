@@ -1,0 +1,33 @@
+{
+  "runId": "eval-20260720-224723",
+  "model": "nvidia/nemotron-3-super-120b-a12b:free",
+  "modelLabel": "nvidia/nemotron-3-super-120b-a12b:free",
+  "provider": "kilo",
+  "promptPackage": "reasoning_logic",
+  "timestamp": "2026-07-20 18:47:46",
+  "status": "PASS",
+  "avg_time": 9.254,
+  "prompt_success_rate": "1/1",
+  "total_tokens": 957,
+  "code_examples": 0,
+  "security_awareness": 0,
+  "gateway_used": true,
+  "prompts": [
+    "If all Bloops are Razzies and all Razzies are Lazzies"
+  ],
+  "evaluations": [
+    {
+      "time": 9.254,
+      "success": true,
+      "response": "Based on the two given statements:\n\n1. **All Bloops are Razzies.**  \n   (This means: If something is a Bloop, then it is definitely a Razzie.)\n\n2. **All Razzies are Lazzies.**  \n   (This means: If something is a Razzie, then it is definitely a Lazzie.)\n\nWe can apply **logical transitivity** (a fundamental rule in syllogistic logic):\n\n- If A \u2192 B and B \u2192 C, then A \u2192 C.\n\nHere:\n- Let A = \"Bloops\"\n- Let B = \"Razzies\"\n- Let C = \"Lazzies\"\n\nSince:\n- All Bloops (A) are Razzies (B) \u2192 A \u2192 B\n- All Razzies (B) are Lazzies (C) \u2192 B \u2192 C\n\nIt logically follows that:\n- **All Bloops (A) are Lazzies (C)** \u2192 A \u2192 C\n\n### Conclusion:\n**All Bloops are Lazzies.**\n\n### Why this is valid:\n- The premises use universal affirmatives (\"all\"), which allow for transitive chaining.\n- There is no ambiguity or hidden exception in the statements (e.g., no \"some,\" \"most,\" or exceptions mentioned).\n- This is a classic example of a **hypothetical syllogism** (specifically, Barbara syllogism in traditional logic: All A are B, All B are C, therefore All A are C).\n\n### Common misconceptions to avoid:\n- \u274c \"All Lazzies are Bloops\" \u2192 **Invalid** (this would be the converse fallacy; the premises don't guarantee this).\n- \u274c \"Some Bloops are not Lazzies\" \u2192 **Invalid** (contradicts the transitive conclusion).\n- \u274c \"All Razzies are Bloops\" \u2192 **Invalid** (premise 1 only states Bloops \u2282 Razzies, not the reverse).\n\nThis reasoning holds strictly under the given information. If additional context or exceptions were provided (e.g., \"some Bloops are not Razzies\"), the conclusion might change\u2014but as stated, the logic is sound. \ud83d\ude0a",
+      "tokens": 957,
+      "status": "PASS",
+      "has_code": false,
+      "has_security": false,
+      "provider": "kilo"
+    }
+  ],
+  "response_times": [
+    9.254
+  ]
+}

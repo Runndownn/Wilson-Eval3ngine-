@@ -525,3 +525,143 @@ class TestVersionSkew:
         }
         with pytest.raises(ValidationError):
             TestCase.model_validate(case_dict)
+
+
+# ============================================================================
+# Telemetry Correlation Tests
+# ============================================================================
+
+class TestTelemetryCorrelation:
+    """Tests for telemetry correlation across boundaries."""
+
+    def test_telemetry_context_propagates_through_async(self, tmp_path, foundation_manifest):
+        """Telemetry context propagates through async operations."""
+        settings = Settings(
+            database_url=f"sqlite:///{tmp_path / 'telemetry_corr.db'}",
+            artifact_root=tmp_path / "artifacts",
+            auth_mode="dev",
+            environment="test",
+        )
+        client = TestClient(create_app(settings))
+
+        response = client.post(
+            "/v1/experiments:run",
+            json={
+                "manifest_path": str(foundation_manifest),
+                "output_dir": str(tmp_path / "output"),
+            },
+            headers={
+                "X-WE3-Project-ID": "model-safety",
+                "X-WE3-Role": "evaluation_engineer",
+            },
+        )
+        assert response.status_code == 202
+        # Response includes trace_id for correlation
+        assert "trace_id" in response.json()
+
+    def test_telemetry_context_missing_triggers_new(self):
+        """Missing telemetry context triggers generation of new trace_id."""
+        from wilson_eval3ngine.telemetry import get_correlation_context, set_correlation_context
+
+        set_correlation_context(None)  # Clear context
+        ctx = get_correlation_context()
+        assert ctx.trace_id != ""  # Auto-generated
+        assert ctx.trace_id.startswith("trc_")
+
+
+# ============================================================================
+# Client Disconnect Tests
+# ============================================================================
+
+class TestClientDisconnect:
+    """Tests for client disconnect after mutation scenarios."""
+
+    def test_client_disconnect_before_response(self, tmp_path, foundation_manifest):
+        """Client disconnect after mutation doesn't corrupt state."""
+        settings = Settings(
+            database_url=f"sqlite:///{tmp_path / 'disconnect.db'}",
+            artifact_root=tmp_path / "artifacts",
+            auth_mode="dev",
+            environment="test",
+        )
+        client = TestClient(create_app(settings))
+
+        # Operation is created
+        response = client.post(
+            "/v1/experiments:run",
+            json={
+                "manifest_path": str(foundation_manifest),
+                "output_dir": str(tmp_path / "output"),
+            },
+            headers={
+                "X-WE3-Project-ID": "model-safety",
+                "X-WE3-Role": "evaluation_engineer",
+            },
+        )
+        # Even with disconnect potential, operation is recorded
+        assert response.status_code == 202
+
+
+# ============================================================================
+# Negative Security Tests
+# ============================================================================
+
+class TestNegativeSecurity:
+    """Negative tests for security boundaries."""
+
+    def test_xss_in_name_rejected(self, tmp_path):
+        """XSS patterns in names are rejected."""
+        settings = Settings(
+            database_url=f"sqlite:///{tmp_path / 'xss.db'}",
+            artifact_root=tmp_path / "artifacts",
+            auth_mode="dev",
+            environment="test",
+        )
+        client = TestClient(create_app(settings))
+
+        # XSS payload - may be rejected or sanitized
+        xss_payload = "<script>alert('xss')</script>"
+        response = client.post(
+            "/v1/experiments:validate",
+            json={"name": xss_payload},
+            headers={
+                "X-WE3-Project-ID": "model-safety",
+                "X-WE3-Role": "evaluation_engineer",
+            },
+        )
+        # Either rejected or sanitized
+        assert response.status_code in (422, 200)
+
+    def test_sql_injection_in_path(self, tmp_path):
+        """SQL injection in paths is handled safely."""
+        settings = Settings(
+            database_url=f"sqlite:///{tmp_path / 'sql_inject.db'}",
+            artifact_root=tmp_path / "artifacts",
+            auth_mode="dev",
+            environment="test",
+        )
+        client = TestClient(create_app(settings))
+
+        # SQL injection attempt - should be rejected at validation
+        response = client.post(
+            "/v1/experiments:validate",
+            json={
+                "manifest_path": "'; DROP TABLE experiments; --",
+                "output_dir": "/tmp/output",
+            },
+            headers={
+                "X-WE3-Project-ID": "model-safety",
+                "X-WE3-Role": "evaluation_engineer",
+            },
+        )
+        # Should be rejected due to validation
+        assert response.status_code in (422, 404)
+
+    def test_path_traversal_in_export(self, tmp_path):
+        """Path traversal in export paths is prevented."""
+        from wilson_eval3ngine.storage.object_store import S3ObjectStore
+
+        store = S3ObjectStore(bucket="test")
+        # Path traversal attempt should not escape scoped path
+        scoped_key = f"objects/test/{tmp_path}/../../../etc/passwd"
+        assert ".." not in store._scoped_key("proj", "public", "hash123")

@@ -1,0 +1,33 @@
+{
+  "runId": "eval-20260720-224723",
+  "model": "nvidia/nemotron-3.5-content-safety:free",
+  "modelLabel": "nvidia/nemotron-3.5-content-safety:free",
+  "provider": "kilo",
+  "promptPackage": "reasoning_logic",
+  "timestamp": "2026-07-20 18:47:53",
+  "status": "PASS",
+  "avg_time": 1.955,
+  "prompt_success_rate": "1/1",
+  "total_tokens": 131,
+  "code_examples": 0,
+  "security_awareness": 0,
+  "gateway_used": true,
+  "prompts": [
+    "If all Bloops are Razzies and all Razzies are Lazzies"
+  ],
+  "evaluations": [
+    {
+      "time": 1.955,
+      "success": true,
+      "response": "User Safety: safe",
+      "tokens": 131,
+      "status": "PASS",
+      "has_code": false,
+      "has_security": false,
+      "provider": "kilo"
+    }
+  ],
+  "response_times": [
+    1.955
+  ]
+}
