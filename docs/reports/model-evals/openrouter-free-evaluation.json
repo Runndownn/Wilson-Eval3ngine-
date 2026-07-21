@@ -1,0 +1,33 @@
+{
+  "runId": "eval-20260720-224723",
+  "model": "openrouter/free",
+  "modelLabel": "openrouter/free",
+  "provider": "kilo",
+  "promptPackage": "reasoning_logic",
+  "timestamp": "2026-07-20 18:48:00",
+  "status": "PASS",
+  "avg_time": 6.197,
+  "prompt_success_rate": "1/1",
+  "total_tokens": 827,
+  "code_examples": 0,
+  "security_awareness": 0,
+  "gateway_used": true,
+  "prompts": [
+    "If all Bloops are Razzies and all Razzies are Lazzies"
+  ],
+  "evaluations": [
+    {
+      "time": 6.197,
+      "success": true,
+      "response": "Based on the given statements:\n\n- **All Bloops are Razzies.**  \n  (This means every Bloop is also a Razzie. In set terms: Bloops \u2286 Razzies)\n\n- **All Razzies are Lazzies.**  \n  (This means every Razzie is also a Lazzie. In set terms: Razzies \u2286 Lazzies)\n\nBy the **transitive property** of inclusion (if A \u2286 B and B \u2286 C, then A \u2286 C), we can conclude:\n\n### **All Bloops are Lazzies.**\n\n### Explanation:\n- If something is a Bloop, it must be a Razzie (from the first statement).\n- If it is a Razzie, it must be a Lazzie (from the second statement).\n- Therefore, if it is a Bloop, it must necessarily be a Lazzie.\n\n### Visual Representation (Venn Diagram):\n```\nLazzies (largest set)\n  \u251c\u2500\u2500 Razzies (subset of Lazzies)\n  \u2502     \u2514\u2500\u2500 Bloops (subset of Razzies)\n  \u2502           (all Bloops are inside Razzies, which are inside Lazzies)\n```\nThere are no Bloops outside Razzies, and no Razzies outside Lazzies, so **all Bloops must reside within Lazzies**.\n\n### What does *not* follow?\n- We **cannot** conclude that all Lazzies are Bloops or all Lazzies are Razzies (the statements only go one direction).\n- We **cannot** conclude anything about non-Bloops, non-Razzies, or non-Lazzies (e.g., \"Some Lazzies are not Bloops\" might be true, but it isn't *guaranteed* by the given statements alone).\n\n### Final Answer:\n**Therefore, all Bloops are Lazzies.**  \nThis is the only definitive conclusion that logically follows from the two premises.",
+      "tokens": 827,
+      "status": "PASS",
+      "has_code": false,
+      "has_security": false,
+      "provider": "kilo"
+    }
+  ],
+  "response_times": [
+    6.197
+  ]
+}

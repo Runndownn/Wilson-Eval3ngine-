@@ -1,0 +1,33 @@
+{
+  "runId": "eval-20260720-224723",
+  "model": "stepfun/step-3.7-flash:free",
+  "modelLabel": "stepfun/step-3.7-flash:free",
+  "provider": "kilo",
+  "promptPackage": "reasoning_logic",
+  "timestamp": "2026-07-20 18:48:52",
+  "status": "PASS",
+  "avg_time": 10.369,
+  "prompt_success_rate": "1/1",
+  "total_tokens": 1392,
+  "code_examples": 0,
+  "security_awareness": 0,
+  "gateway_used": true,
+  "prompts": [
+    "If all Bloops are Razzies and all Razzies are Lazzies"
+  ],
+  "evaluations": [
+    {
+      "time": 10.369,
+      "success": true,
+      "response": "This is a classic valid syllogism (specifically a *Barbara* syllogism, a standard logically sound form in categorical logic). We can draw a clear core conclusion, and also clarify what cannot be inferred from the given premises:\n---\n### Valid core conclusion\nAll Bloops are Lazzies.\n#### Reasoning:\n1. The first premise tells us the set of all Bloops is a *subset* of the set of Razzies: every Bloop is also a Razzie, no exceptions.\n2. The second premise tells us the set of all Razzies is a *subset* of the set of Lazzies: every Razzie is also a Lazzie, no exceptions.\n3. By the transitive property of subsets: if A \u2286 B and B \u2286 C, then A \u2286 C. This means the entire Bloop group is fully contained within the Lazzie group, so every Bloop is also a Lazzie.\n---\n### What we *cannot* conclude from these premises alone:\n1. We cannot say all Razzies are Bloops: The Razzie set is larger than the Bloop set, so there may be Razzies that are not Bloops.\n2. We cannot say all Lazzies are Razzies (or all Lazzies are Bloops): The Lazzie set is larger than the Razzie set, so there may be Lazzies that are not Razzies, and thus not Bloops.\n3. We cannot confirm that any Bloops, Razzies, or Lazzies actually exist: Universal \"all X are Y\" statements are true even if there are no members of set X at all (e.g., \"all unicorns are magical\" is true even if unicorns do not exist, because there is no unicorn that is not magical).",
+      "tokens": 1392,
+      "status": "PASS",
+      "has_code": false,
+      "has_security": false,
+      "provider": "kilo"
+    }
+  ],
+  "response_times": [
+    10.369
+  ]
+}

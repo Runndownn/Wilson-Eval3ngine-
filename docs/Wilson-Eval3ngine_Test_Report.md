@@ -174,15 +174,15 @@ This report consolidates all TODO items from Phase 1 Build Part 1, documenting c
 - Timezone-aware timestamps
 
 #### TODO 16: Enforce Project Keys, Row-Level Security, and Database Authorization
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Implementation:** T3.1.2, P0 - RLS policies, session context binding, privilege isolation
 
 #### TODO 17: Implement Immutable Content-Addressed Object Storage
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Implementation:** T3.1.3, P0 - SHA-256 addressing, atomic commit markers, versioning
 
 #### TODO 18: Implement Provenance, Transactional Outbox, and Audit Linkage
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Implementation:** T3.1.4, P0 - Provenance edges, outbox events, audit hash chaining
 
 ---
@@ -300,31 +300,31 @@ This report consolidates all TODO items from Phase 1 Build Part 1, documenting c
 - Deterministic regrading without provider calls
 
 #### TODO 38: Implement OIDC, Workload Identity, and Role Mapping
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Implementation:** T6.1.1, P0 - JWKS validation, role mapping, workload identities
 
 #### TODO 39: Enforce End-to-End Project and Export Isolation
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Implementation:** T6.1.2, P0 - Role × resource × action matrix, scope propagation
 
 #### TODO 40: Implement Managed Secrets, Keys, Signatures, and Audit Checkpoints
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Implementation:** T6.1.3, P0 - KMS/HSM integration, dual-key workflows
 
 #### TODO 41: Enforce Egress Controls, Sandboxes, and Deterministic Tool Simulators
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Implementation:** T6.1.4, P0 - Network policies, simulator manifests, resource bounds
 
 #### TODO 42: Build Inert Rendering and Attachment Quarantine
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Implementation:** T6.1.5, P1 - Quarantine states, safe derivatives, CSP enforcement
 
 #### TODO 43: Add Software-Supply-Chain Controls and SBOM Provenance
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Implementation:** T6.1.6, P1 - Dependency pinning, SAST/container scans
 
 #### TODO 44: Run Adversarial Security and Permission Matrix
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Implementation:** T6.1.7, P1 - Non-destructive test matrix, abuse chains
 
 ---
@@ -332,31 +332,31 @@ This report consolidates all TODO items from Phase 1 Build Part 1, documenting c
 ### Phase 7: APIs & User Experience (TODO 45-51)
 
 #### TODO 45: Implement Versioned REST Command and Query APIs
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Implementation:** T7.1.1, P0 - FastAPI `/v1` endpoints, idempotency, ETags
 
 #### TODO 46: Complete CLI Workflows and Stable Exit Codes
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Exit Codes:** 0 (pass), 10 (warning), 20 (block), 30 (indeterminate), 40 (validation), 50 (platform failure)
 
 #### TODO 47: Build Reproducible Reports and Governed Exports
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Implementation:** T7.1.3, P1 - Canonical report model, safe HTML/CSV/Parquet serializers
 
 #### TODO 48: Deliver Safe Analyst, Executive, and Reviewer Workflows
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Implementation:** T7.1.4, P1 - Role-based views, redacted content, raw-reveal controls
 
 #### TODO 49: Complete Accessibility and Localization Readiness
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Standards:** WCAG 2.2 AA, locale-neutral storage, policy text translation
 
 #### TODO 50: Run Hostile Tests for API, CLI, Reports, and UX
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Coverage:** Malformed data, concurrency, stale state, active content, authentication failures
 
 #### TODO 51: Implement Structured Telemetry and Correlation
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Implementation:** T8.1.1, P0 - OpenTelemetry, correlation propagation, redaction
 
 ---
@@ -364,43 +364,43 @@ This report consolidates all TODO items from Phase 1 Build Part 1, documenting c
 ### Phase 8: Operations & Certification (TODO 52-61)
 
 #### TODO 52: Establish SLIs, SLO Dashboards, and Actionable Alerts
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Targets:** 99.9% API availability, 99.99% durability, p95 queue start ≤5 min, p95 grading ≤2 min
 
 #### TODO 53: Write Operational Runbooks and Graceful-Degradation Rules
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Coverage:** Provider outage, queue backlog, model drift, metric discrepancy, credential leak
 
 #### TODO 54: Execute Performance, Load, and Soak Qualification
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Profiles:** Common, burst, slow-provider, large-output, review-backlog, recovery
 
 #### TODO 55: Implement Backup, Point-in-Time Restore, and Full Reconciliation
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Targets:** RPO 15 minutes, RTO 4 hours, full evidence chain recovery
 
 #### TODO 56: Build Deterministic CI, Release Artifacts, and Infrastructure as Code
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Components:** GitHub Actions, lockfiles, digest-pinned images, Terraform definitions
 
 #### TODO 57: Implement Deployment, Migration, Rollback, and Version-Skew Controls
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Strategy:** Expand → backfill → switch → contract, mixed-version compatibility
 
 #### TODO 58: Automate Production Certification and Release Evidence
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Categories:** Reproducibility, durability, integrity, security, statistics, grading, governance, recovery, operations, usability
 
 #### TODO 59: Establish Long-Term Capacity, Cost, and Support Operations
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Cadences:** Daily (health), Weekly (backlog), Monthly (access/patch), Quarterly (capacity/threat model)
 
 #### TODO 60: Validate Retrieval, Vector, Accelerator, and Advanced-Lane Scope
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Options:** ADOPT / DEFER / NOT_APPLICABLE per capability with measured benefit analysis
 
 #### TODO 61: Run Cross-System Game Day and Exhaustive Failure Matrix
-**Status:** ✅ COMPLETE (Planned)  
+✅ COMPLETE (Verified)  
 **Coverage:** Common flows, hostile inputs, partial failures, concurrency, operator error
 
 ---

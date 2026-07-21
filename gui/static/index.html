@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wilson Eval3ngine GUI</title>
+  <link rel="icon" type="image/png" href="/static/we3-logo.png">
+  <link rel="stylesheet" href="/static/styles.css?v=20260720-0630">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+</head>
+<body>
+  <header class="app-header">
+    <img class="logo" src="/static/we3-logo.png" alt="Wilson Eval3ngine" />
+    <div class="title">
+      <h1>Wilson Eval3ngine</h1>
+      <p class="subtitle">Model Evaluation &amp; Reporting</p>
+    </div>
+    <div class="status">
+      <span id="connection-status" class="badge badge-offline">Offline</span>
+      <span id="host-url" class="host-url"></span>
+    </div>
+  </header>
+
+  <nav class="tab-nav">
+    <button class="tab-link" data-tab="tab-endpoints">Endpoints</button>
+    <button class="tab-link" data-tab="tab-models">Models</button>
+    <button class="tab-link" data-tab="tab-generate">Generate Reports</button>
+    <button class="tab-link" data-tab="tab-reports">Reports</button>
+  </nav>
+
+  <main class="app-main">
+    <!-- ENDPOINTS -->
+    <section id="tab-endpoints" class="tab-panel">
+      <div class="direction-block">
+        <button class="direction-btn" data-target="endpoints-help">How to use Endpoints</button>
+        <div id="endpoints-help" class="direction-text">
+          <p>The Endpoints tab is where you register the model providers you want to evaluate against. Add an Ollama server, an OpenAI-compatible API, or a Kilo Gateway instance here so the GUI knows where to send prompts. Each endpoint stores its base URL, optional API key, and provider type, and you can test connectivity with one click. Once saved, endpoints appear in the list below and can be selected when registering models or generating reports.</p>
+        </div>
+      </div>
+      <form id="endpoint-form" class="form">
+        <div class="field">
+          <label for="endpoint-name">Name <span class="optional">friendly label</span>
+            <span class="help-icon" data-help="endpoint-name-help">i</span>
+          </label>
+          <div id="endpoint-name-help" class="help-tooltip">Pick a memorable label like "Local Ollama" or "Prod OpenAI". This is only for display in the GUI; it does not affect the API request.</div>
+          <input id="endpoint-name" placeholder="My Ollama / OpenAI / Kilo endpoint" />
+        </div>
+        <div class="field">
+          <label for="endpoint-url">Endpoint URL
+            <span class="help-icon" data-help="endpoint-url-help">i</span>
+          </label>
+          <div id="endpoint-url-help" class="help-tooltip">Select the SSH gateway endpoint. All Ollama models are on the gateway at 10.133.7.211 with 8GB GPU. Available models: gpt-oss, gemma3:4b, qwen3:4b, llama3.2:1b, tinyllama, bge-m3. Choose an auto-discovered endpoint or pick Custom to type a URL manually.</div>
+          <select id="endpoint-url">
+            <option value="">-- Select an endpoint type or enter URL --</option>
+            <option value="http://10.133.7.211:11434">SSH Gateway Ollama (http://10.133.7.211:11434)</option>
+            <option value="http://10.133.7.211:8000">SSH Gateway OpenAI Compatible (http://10.133.7.211:8000)</option>
+            <option value="http://10.133.7.211:5000">SSH Gateway OpenAI Compatible (http://10.133.7.211:5000)</option>
+            <option value="http://10.133.7.211:3000">SSH Gateway OpenAI Compatible (http://10.133.7.211:3000)</option>
+            <option value="__custom__">Custom...</option>
+          </select>
+          <input id="endpoint-url-custom" class="custom-input hidden" placeholder="Enter custom endpoint URL (e.g., http://host:11434)" />
+        </div>
+        <div class="field">
+          <label for="endpoint-api-key">API Key <span class="optional">optional</span>
+            <span class="help-icon" data-help="endpoint-api-key-help">i</span>
+          </label>
+          <div id="endpoint-api-key-help" class="help-tooltip">Paste a bearer token or API key if the provider requires authentication. Leave blank for unauthenticated gateway endpoints. Keys are stored locally in the GUI data directory and never sent to external servers.</div>
+          <input id="endpoint-api-key" type="password" placeholder="sk-..." />
+        </div>
+        <div class="field">
+          <label for="endpoint-provider">Provider
+            <span class="help-icon" data-help="endpoint-provider-help">i</span>
+          </label>
+          <div id="endpoint-provider-help" class="help-tooltip">Select the provider type so the GUI knows which API paths to query. Ollama uses /api/tags, OpenAI-compatible and Kilo Gateway use /models. Changing this after saving does not update existing connections; remove and re-add the endpoint if needed.</div>
+          <select id="endpoint-provider">
+            <option value="ollama">Ollama</option>
+            <option value="openai">OpenAI Compatible</option>
+            <option value="kilo">Kilo Gateway</option>
+          </select>
+        </div>
+        <div class="actions">
+          <button type="submit" class="primary">Save Endpoint</button>
+          <button type="button" id="test-endpoint" class="secondary">Test Connection</button>
+          <button type="button" id="auto-detect-endpoints" class="secondary">Auto-Detect Gateway</button>
+          <button type="button" id="kilo-login" class="secondary">Kilo Login</button>
+        </div>
+        <div id="kilo-login-status" class="status-message"></div>
+      </form>
+      <div id="endpoints-list" class="list"></div>
+    </section>
+
+    <!-- MODELS -->
+    <section id="tab-models" class="tab-panel">
+      <div class="direction-block">
+        <button class="direction-btn" data-target="models-help">How to use Models</button>
+        <div id="models-help" class="direction-text">
+          <p>The Models tab lets you register the specific model IDs you want to evaluate. You can either add them manually or click Auto-Detect to query your saved endpoints and pull the model list automatically. Each model is linked to an endpoint so the GUI knows where to send requests. Models added here appear as selectable chips in the Generate Reports tab and can be removed at any time.</p>
+        </div>
+      </div>
+      <form id="model-form" class="form">
+        <div class="field">
+          <label for="model-id">Model ID
+            <span class="help-icon" data-help="model-id-help">i</span>
+          </label>
+          <div id="model-id-help" class="help-tooltip">Select a model from the dropdown populated by your configured endpoints, or choose Custom... to enter a model ID manually. The exact identifier is sent directly to the provider without modification.</div>
+          <select id="model-id">
+            <option value="">-- Select a model --</option>
+          </select>
+          <input id="model-id-custom" class="custom-input hidden" placeholder="Enter custom model ID..." />
+        </div>
+        <div class="field">
+          <label for="model-endpoint">Endpoint
+            <span class="help-icon" data-help="model-endpoint-help">i</span>
+          </label>
+          <div id="model-endpoint-help" class="help-tooltip">Choose which saved endpoint this model should use. Endpoints are automatically tested for availability; grayed-out options are currently unreachable. You can add more endpoints in the Endpoints tab if needed.</div>
+          <select id="model-endpoint"></select>
+        </div>
+        <div class="actions">
+          <button type="submit" class="primary">Add Model</button>
+          <button type="button" id="auto-detect-models" class="secondary">Auto-Detect from Endpoints</button>
+        </div>
+      </form>
+      <div id="models-grouped-container" class="models-grouped-container"></div>
+      <div id="models-rate-limit-status" class="rate-limit-status hidden">
+        <span class="rate-limit-indicator"></span>
+        <span class="rate-limit-text">Rate limit detected</span>
+      </div>
+    </section>
+
+    <!-- GENERATE REPORTS -->
+    <section id="tab-generate" class="tab-panel">
+      <div class="direction-block">
+        <button class="direction-btn" data-target="generate-help">How to generate reports</button>
+        <div id="generate-help" class="direction-text">
+          <p>Use the Generate Reports tab to run the standard evaluation prompt suite against your selected models. First pick one or more models, then choose a pre-built prompt package or customize prompts. Click Generate Reports to start the run; the backend will execute the evaluation script and save PDFs plus raw telemetry. Output appears in the console below the form and is also recorded in the Telemetry Wall.</p>
+        </div>
+      </div>
+      <form id="report-form" class="form">
+        <div class="generate-layout">
+          <div class="generate-left">
+            <div class="field">
+              <label for="report-models">Selected Models
+                <span class="help-icon" data-help="selected-models-help">i</span>
+              </label>
+              <div id="selected-models-help" class="help-tooltip">Click model chips to add or remove them from the current run. Selected models appear highlighted. Use Select All/None for bulk actions. Models are drawn from the Models tab.</div>
+              <div class="model-chip-container" id="model-chips-container">
+                <div class="model-chip-header">
+                  <span class="model-chip-count" id="model-chip-count">0 selected</span>
+                  <div class="model-chip-actions">
+                    <button type="button" id="open-models-selector" class="secondary">Select Models...</button>
+                    <button type="button" id="select-all-models" class="secondary">Select All</button>
+                    <button type="button" id="select-none-models" class="secondary">Select None</button>
+                  </div>
+                </div>
+                <div id="model-chips" class="model-chips"></div>
+                <div id="model-overflow-container" class="model-overflow-container hidden">
+                  <select id="model-overflow-dropdown" class="model-overflow-dropdown" multiple>
+                    <option value="">-- Additional models --</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="generate-right">
+            <div class="field">
+              <label for="report-prompt-package">Prompt Package
+                <span class="help-icon" data-help="report-prompt-package-help">i</span>
+              </label>
+              <div id="report-prompt-package-help" class="help-tooltip">Choose a pre-built prompt package that covers a specific evaluation dimension. Selecting a package populates the prompts panel. You can also click Edit to customize individual prompts.</div>
+              <select id="report-prompt-package" class="thin-dropdown">
+                <option value="">-- Select a prompt package --</option>
+              </select>
+              <div id="prompt-packages-loading" class="loading-message" style="display:none;">Loading prompt packages...</div>
+              <div id="prompt-packages-error" class="error-message" style="display:none;"></div>
+            </div>
+            <div class="form-row">
+              <div class="field">
+                <label for="prompt-count">
+                  Prompt Count <span id="prompt-count-value" class="prompt-count-value">5</span>
+                  <span class="help-icon" data-help="prompt-count-help">i</span>
+                </label>
+                <div id="prompt-count-help" class="help-tooltip">Drag slider to select count. Single run: up to 20. Batch mode: up to 100.</div>
+                <input type="range" id="prompt-count" min="1" max="20" value="5" class="prompt-count-slider" />
+              </div>
+              <div class="field">
+                <label for="batch-mode">Execution Mode
+                  <span class="help-icon" data-help="batch-mode-help">i</span>
+                </label>
+                <div id="batch-mode-help" class="help-tooltip">Single-run: All models process all selected prompts. Batch mode: Each model processes a subset of prompts sequentially, reducing concurrent load.</div>
+                <select id="batch-mode">
+                  <option value="single">Single Run</option>
+                  <option value="batch">Batch Mode</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <label for="report-prompts">Prompts
+                <span class="optional">customizable</span>
+                <span class="help-icon" data-help="report-prompts-help">i</span>
+              </label>
+              <div id="report-prompts-help" class="help-tooltip">Click Edit to open the prompt editor modal. Or enter custom prompts separated by commas to override the package defaults. Leave empty to use package prompts.</div>
+              <div class="prompts-edit-container">
+                <textarea id="report-prompts" rows="4" placeholder="Click Edit to customize prompts or use package defaults..."></textarea>
+                <button type="button" id="edit-prompts" class="secondary prompts-edit-btn">Edit</button>
+              </div>
+            </div>
+          <div class="actions">
+            <button type="submit" class="primary">Generate Reports</button>
+            <button type="button" id="stop-reports" class="danger">Stop</button>
+          </div>
+          <div id="generate-rate-limit-status" class="rate-limit-status hidden">
+            <span class="rate-limit-indicator"></span>
+            <span class="rate-limit-text">Rate limit detected</span>
+          </div>
+          
+          <!-- Progress Dashboard -->
+          <div id="progress-dashboard" class="progress-dashboard hidden">
+            <div class="progress-overall">
+              <div class="progress-header">
+                <div class="progress-title">
+                  <span id="progress-status-label" class="progress-status-label">Queued</span>
+                  <span id="progress-step" class="progress-step">Waiting to start...</span>
+                </div>
+                <div class="progress-stats">
+                  <span id="progress-percentage" class="progress-percentage">0%</span>
+                </div>
+              </div>
+              <div class="progress-bar-container">
+                <div id="progress-bar" class="progress-bar" style="width: 0%"></div>
+              </div>
+              <div class="progress-meta">
+                <span id="progress-completed">0 completed</span>
+                <span id="progress-failed" class="progress-failed-text hidden">0 failed</span>
+                <span id="progress-processing">0 processing</span>
+                <span id="progress-queued">0 queued</span>
+                <span id="progress-elapsed">Elapsed: 0s</span>
+                <span id="progress-eta" class="hidden">ETA: calculating...</span>
+              </div>
+            </div>
+            
+            <div id="progress-models" class="progress-models"></div>
+            
+            <details id="progress-reports-details" class="progress-reports-details">
+              <summary class="progress-reports-summary">Report Details</summary>
+              <div id="progress-reports-list" class="progress-reports-list"></div>
+            </details>
+            
+          </div>
+          
+          <!-- Progress Actions (outside dashboard so they remain visible after completion) -->
+          <div id="progress-actions" class="progress-actions hidden">
+            <button type="button" id="cancel-reports" class="danger">Cancel</button>
+            <button type="button" id="retry-reports" class="secondary hidden">Retry Failed</button>
+            <a id="view-reports-link" href="/reports/" target="_blank" class="secondary hidden">View Reports</a>
+          </div>
+          
+          <pre id="report-output" class="output"></pre>
+        </div>
+      </div>
+    </form>
+
+      <!-- Models Selector Modal -->
+      <div id="models-selector-modal" class="prompts-modal">
+        <div class="prompts-modal-content">
+          <div class="prompts-modal-header">
+            <span id="models-selector-title">Select Models</span>
+            <button id="models-selector-close" class="run-window-close" title="Close selector">×</button>
+          </div>
+          <div class="prompts-modal-body">
+            <div class="models-search-container">
+              <input type="text" id="models-search" placeholder="Search models..." class="models-search" />
+              <div class="models-search-actions">
+                <button type="button" id="models-select-all" class="secondary">All</button>
+                <button type="button" id="models-select-visible" class="secondary">Visible</button>
+                <button type="button" id="models-select-none" class="secondary">None</button>
+              </div>
+            </div>
+            <div id="models-selector-list" class="model-chips selector-mode">
+              <!-- Dynamic model list with checkboxes will be populated here -->
+            </div>
+            <div class="prompts-modal-actions">
+              <span id="models-selected-count">0 selected</span>
+              <button type="button" id="models-confirm" class="primary">Confirm Selection</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Prompts Editor Modal -->
+      <div id="prompts-modal" class="prompts-modal">
+        <div class="prompts-modal-content">
+          <div class="prompts-modal-header">
+            <span id="prompts-modal-title">Edit Prompts</span>
+            <button id="prompts-modal-close" class="run-window-close" title="Close editor">×</button>
+          </div>
+          <div class="prompts-modal-body">
+            <div class="prompts-modal-list" id="prompts-modal-list">
+              <!-- Dynamic prompt inputs will be populated here -->
+            </div>
+            <div class="prompts-modal-actions">
+              <button type="button" id="prompts-add" class="secondary">Add Prompt</button>
+              <button type="button" id="prompts-save" class="primary">Save Changes</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- REPORTS -->
+    <section id="tab-reports" class="tab-panel">
+      <div class="direction-block">
+        <button class="direction-btn" data-target="reports-help">How to use Reports</button>
+        <div id="reports-help" class="direction-text">
+          <p>The Reports tab lists every PDF generated by the Generate Reports action and stores them for in-browser viewing. Use the search box to filter by filename, then click View PDF to open the built-in PDF.js viewer with page navigation. You can also open the original PDF in a new browser tab or download it for offline review. Reports are served directly from the server and persist across reboots as long as the file remains in the reports directory.</p>
+        </div>
+      </div>
+      <div class="toolbar">
+        <button id="refresh-reports" class="secondary">Refresh</button>
+        <input id="report-search" placeholder="Search reports..." />
+        <button id="regenerate-reports" class="primary">Regenerate All</button>
+        <button id="clear-wall-o-docs" class="danger">Clear Wall-o-Docs</button>
+      </div>
+      <div id="reports-grid" class="reports-grid"></div>
+      <div id="pdf-viewer" class="pdf-viewer">
+        <div class="pdf-header">
+          <span id="pdf-title">Select a report to view</span>
+          <button id="pdf-back" class="secondary">Back to Grid</button>
+          <div class="pdf-controls">
+            <button id="pdf-prev" class="secondary">Previous</button>
+            <span id="pdf-page">Page -</span>
+            <button id="pdf-next" class="secondary">Next</button>
+            <a id="pdf-open" class="secondary" href="/reports/" target="_blank">Open Original</a>
+            <button id="pdf-export" class="primary">Export PDF</button>
+          </div>
+        </div>
+        <canvas id="pdf-canvas"></canvas>
+      </div>
+    </section>
+  </main>
+
+  <div id="pdf-modal" class="pdf-modal">
+    <div class="pdf-modal-header">
+      <span id="pdf-modal-title">PDF Viewer</span>
+      <button id="pdf-modal-close" class="run-window-close" title="Close viewer">×</button>
+    </div>
+    <div class="pdf-modal-body">
+      <div class="pdf-modal-controls">
+        <button id="pdf-modal-zoom-out" class="secondary">−</button>
+        <span id="pdf-modal-zoom">100%</span>
+        <button id="pdf-modal-zoom-in" class="secondary">+</button>
+      </div>
+      <div id="pdf-modal-container" class="pdf-modal-container"></div>
+    </div>
+  </div>
+
+  <script src="/static/app.js?v=20260720-0630"></script>
+</body>
+</html>

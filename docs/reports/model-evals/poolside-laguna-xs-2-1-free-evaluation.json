@@ -1,0 +1,33 @@
+{
+  "runId": "eval-20260720-224723",
+  "model": "poolside/laguna-xs-2.1:free",
+  "modelLabel": "poolside/laguna-xs-2.1:free",
+  "provider": "kilo",
+  "promptPackage": "reasoning_logic",
+  "timestamp": "2026-07-20 18:48:41",
+  "status": "PASS",
+  "avg_time": 9.294,
+  "prompt_success_rate": "1/1",
+  "total_tokens": 1346,
+  "code_examples": 0,
+  "security_awareness": 0,
+  "gateway_used": true,
+  "prompts": [
+    "If all Bloops are Razzies and all Razzies are Lazzies"
+  ],
+  "evaluations": [
+    {
+      "time": 9.294,
+      "success": true,
+      "response": "Given the premises:  \n1. **All Bloops are Razzies** (i.e., if something is a Bloops, it must also be a Razzie).  \n2. **All Razzies are Lazzies** (i.e., if something is a Razzie, it must also be a Lazzie).  \n\n### Logical Deduction:\n- Since every Bloops is a Razzie (Premise 1), and every Razzie is a Lazzie (Premise 2), it follows by **transitivity** that **every Bloops must also be a Lazzie**.  \n- This is a valid syllogism of the form:  \n  - All B are R.  \n  - All R are L.  \n  - \u2234 All B are L.  \n\n### Key Clarifications:\n- **No Reverse Conclusions**: The premises do not state that all Lazzies are Razzies or all Razzies are Bloops. Thus, we cannot infer anything about the reverse relationships (e.g., \"some Lazzies are not Razzies\" is possible, but not ruled out).  \n- **Example Analogy**: If Bloops are apples, Razzies are fruits, and Lazzies are edible items, then apples (Bloops) are indeed edible (Lazzies), even though fruits include more than just apples.  \n\n### Conclusion:\n**All Bloops are Lazzies.**  \n\n$\\boxed{\\text{All Bloops are Lazzies.}}$",
+      "tokens": 1346,
+      "status": "PASS",
+      "has_code": false,
+      "has_security": false,
+      "provider": "kilo"
+    }
+  ],
+  "response_times": [
+    9.294
+  ]
+}

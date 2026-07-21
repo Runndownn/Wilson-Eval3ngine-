@@ -591,20 +591,32 @@ This report consolidates the Phase 1 TODOs for the Wilson Eval3ngine platform bu
 ---
 
 ### TODO 43: Add software-supply-chain controls and SBOM provenance
-**Status:** ⚠️ PENDING  
+**Status:** ✅ VERIFIED (Implemented)  
 **Task Classification:** T6.1.6 | Priority P1  
 
 **Purpose:** Reduce risk from vulnerable, malicious, unlicensed, or untraceable dependencies, build images, and infrastructure modules.
+
+**Evidence:**
+- `src/wilson_eval3ngine/supply_chain/__init__.py` - Core supply chain scanning with SBOM, vulnerability, SAST, secrets, license compliance
+- `.github/workflows/ci.yml` - Supply chain CI job with Trivy, SAST, secrets scanning
+- `tests/unit/test_supply_chain_core.py` - 64 unit tests passing
+- `tests/integration/test_supply_chain_integration.py` - 88 integration tests passing
+- Test run: 152 tests passed
 
 **Dependencies:** TODOs 3, 40
 
 ---
 
 ### TODO 44: Run the adversarial security and permission matrix
-**Status:** ⚠️ PENDING  
+**Status:** ✅ VERIFIED (Implemented)  
 **Task Classification:** T6.1.7 | Priority P1  
 
 **Purpose:** Validate the complete security model against realistic abuse chains and every role/resource/action denial.
+
+**Evidence:**
+- `tests/governance/adversarial/test_adversarial_security_matrix.py` - 45 tests covering SSRF, XXE, command injection, cache poisoning, malicious dependencies, workflow tampering
+- `tests/governance/adversarial/test_adversarial_permissions.py` - 28 auth tests covering impersonation, escalation, confused-deputy, cross-tenant
+- Test run: 73 tests passed
 
 **Dependencies:** TODOs 39-43
 
@@ -613,14 +625,20 @@ This report consolidates the Phase 1 TODOs for the Wilson Eval3ngine platform bu
 ## 7. APIs & User Interfaces (T7.1)
 
 ### TODO 45: Implement versioned REST command and query APIs
-**Status:** ⚠️ PENDING  
+**Status:** ✅ VERIFIED (Implemented)  
 **Task Classification:** T7.1.1 | Priority P0  
 
 **Purpose:** Expose stable, authorized, retry-safe workflows for validation, execution, lifecycle, comparison, export, and evidence retrieval.
 
+**Evidence:**
+- `src/wilson_eval3ngine/api/operations.py` - Idempotency, ETag, cursor pagination, operation endpoints
+- `src/wilson_eval3ngine/api/main.py` - FastAPI app integration
+- `tests/unit/test_api_operations.py` - 21 unit tests passing
+- `tests/integration/test_api_operations_integration.py` - 8 integration tests passing
+- Test run: 29 tests passed
+
 **Dependencies:** TODOs 8, 16, 22, 38
 
----
 
 ### TODO 46: Complete CLI workflows and stable exit codes
 **Status:** ⚠️ PENDING  

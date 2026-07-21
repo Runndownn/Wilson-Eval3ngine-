@@ -75,3 +75,11 @@ release_dossier.json
 experiment_result.json
 report.safe.html
 *.pem
+
+# Local runtime credentials, generated state, and downloaded dependencies
+.kilo/kilo.jsonc
+infrastructure/terraform/.terraform/
+gui/data/endpoints.json
+gui/data/jobs.json
+gui/data/telemetry.json
+gui/static/charts/

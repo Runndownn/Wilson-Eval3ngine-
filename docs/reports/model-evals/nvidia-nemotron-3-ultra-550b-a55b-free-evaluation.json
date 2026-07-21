@@ -1,0 +1,33 @@
+{
+  "runId": "eval-20260720-224723",
+  "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "modelLabel": "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "provider": "kilo",
+  "promptPackage": "reasoning_logic",
+  "timestamp": "2026-07-20 18:47:50",
+  "status": "PASS",
+  "avg_time": 2.507,
+  "prompt_success_rate": "1/1",
+  "total_tokens": 109,
+  "code_examples": 0,
+  "security_awareness": 0,
+  "gateway_used": true,
+  "prompts": [
+    "If all Bloops are Razzies and all Razzies are Lazzies"
+  ],
+  "evaluations": [
+    {
+      "time": 2.507,
+      "success": true,
+      "response": "**Therefore, all Bloops are Lazzies.**\n\nThis is a classic syllogism (transitive property):\n1.  All Bloops are Razzies.\n2.  All Razzies are Lazzies.\n3.  **Conclusion: All Bloops are Lazzies.**",
+      "tokens": 109,
+      "status": "PASS",
+      "has_code": false,
+      "has_security": false,
+      "provider": "kilo"
+    }
+  ],
+  "response_times": [
+    2.507
+  ]
+}

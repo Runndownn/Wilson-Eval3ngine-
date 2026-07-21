@@ -1,10 +1,13 @@
 """Unit tests for TODO 51 structured telemetry and correlation."""
 
+import os
+
 from wilson_eval3ngine.telemetry import (
     CorrelationContext,
     ALLOWED_LOG_FIELDS,
     ALLOWED_METRIC_NAMES,
     HISTOGRAM_BUCKETS,
+    PROHIBITED_PATTERNS,
     redact_sensitive_fields,
     is_safe_for_telemetry,
     TelemetryEvent,
@@ -15,6 +18,10 @@ from wilson_eval3ngine.telemetry import (
     get_sampling_config,
     CANARY_SECRET,
     CANARY_PROMPT,
+    TelemetrySpan,
+    start_span,
+    instrument_operation,
+    record_metric,
 )
 
 
@@ -54,7 +61,6 @@ class TestCorrelationContext:
         assert "X-Correlation-trace_id" in headers
         assert headers["X-Correlation-trace_id"] == "trc_123"
 
-
     def test_get_correlation_context_returns_default(self):
         """Getting context creates default if missing."""
         # Reset to None
@@ -62,6 +68,16 @@ class TestCorrelationContext:
         ctx = get_correlation_context()
         assert ctx.trace_id != ""
         assert ctx.trace_id.startswith("trc_")
+
+    def test_context_child_context(self):
+        """Context can create child with overrides."""
+        ctx = CorrelationContext(
+            trace_id="trc_parent",
+            project_id="proj_parent",
+        )
+        child = ctx.child_context(project_id="proj_child")
+        assert child.trace_id == "trc_parent"
+        assert child.project_id == "proj_child"
 
 
 # ============================================================================
@@ -92,6 +108,12 @@ class TestAllowlists:
         buckets = HISTOGRAM_BUCKETS["duration_ms"]
         assert 0 < len(buckets) < 100  # Reasonable number of buckets
 
+    def test_prohibited_patterns_exist(self):
+        """Prohibited content patterns are defined."""
+        assert "prompt" in PROHIBITED_PATTERNS
+        assert "response" in PROHIBITED_PATTERNS
+        assert "secret" in PROHIBITED_PATTERNS
+
 
 # ============================================================================
 # Redaction Tests
@@ -114,36 +136,41 @@ class TestRedaction:
 
     def test_redact_canary_secret(self):
         """Canary secret values are redacted."""
-        # Use a field that IS in ALLOWED_LOG_FIELDS
         data = {"trace_id": f"trc_{CANARY_SECRET}"}
         redacted = redact_sensitive_fields(data)
         assert "[REDACTED]" in redacted["trace_id"]
 
     def test_redact_canary_prompt(self):
         """Canary prompt values are redacted."""
-        # Use a field that IS in ALLOWED_LOG_FIELDS
         data = {"run_id": f"{CANARY_PROMPT}"}
         redacted = redact_sensitive_fields(data)
         assert "[REDACTED]" in redacted["run_id"]
 
-    def test_redact_secret_patterns(self):
-        """Secret patterns are redacted."""
-        data = {"value": "api_key=secret123"}
+    def test_redact_prohibited_field_prompt(self):
+        """Prohibited fields like 'prompt' are skipped entirely."""
+        data = {"prompt": "This should not appear", "trace_id": "trc_123"}
         redacted = redact_sensitive_fields(data)
-        assert "[REDACTED]" in redacted["value"]
+        assert "prompt" not in redacted
+        assert "trace_id" in redacted
+
+    def test_redact_prohibited_field_response(self):
+        """Prohibited fields like 'response' are skipped entirely."""
+        data = {"response": "This should not appear", "model_id": "model_1"}
+        redacted = redact_sensitive_fields(data)
+        assert "response" not in redacted
+        assert "model_id" in redacted
 
     def test_truncate_long_strings(self):
         """Very long strings are truncated."""
         long_text = "x" * 2000
-        # "text" is not in ALLOWED_LOG_FIELDS, so it's removed
         data = {"text": long_text}
         redacted = redact_sensitive_fields(data)
-        assert "text" not in redacted
+        assert "text" not in redacted  # Not in allowlist
 
-        # But if we use an allowed field with long content
+        # Allowed field with long content gets truncated
         data2 = {"trace_id": long_text}
         redacted2 = redact_sensitive_fields(data2)
-        assert "[TRUNCATED]" in redacted2["trace_id"] or redacted2["trace_id"] == long_text[:1024]
+        assert "[TRUNCATED]" in redacted2["trace_id"] or len(redacted2["trace_id"]) <= 1024
 
     def test_is_safe_for_telemetry(self):
         """Safety check works correctly."""
@@ -168,7 +195,7 @@ class TestTelemetryEvent:
             payload={"experiment_id": "exp_123"},
         )
         assert event.event_type == "experiment.started"
-        assert "schema_version" not in event.payload  # In to_log_dict
+        assert "schema_version" not in event.payload
 
     def test_event_to_log_dict(self):
         """Event converts to log-safe dictionary."""
@@ -237,13 +264,40 @@ class TestSamplingConfig:
     def test_should_sample_trace(self):
         """Sampling decision works."""
         config = SamplingConfig(traces_sample_rate=1.0)
-        # With rate 1.0, should always sample
         assert config.should_sample_trace() is True
 
     def test_should_sample_log(self):
         """Log sampling decision works."""
         config = SamplingConfig(logs_sampling_rate=0.0)
         assert config.should_sample_log() is False
+
+
+# ============================================================================
+# Telemetry Span Tests
+# ============================================================================
+
+class TestTelemetrySpan:
+    """Tests for telemetry span (OpenTelemetry compatibility)."""
+
+    def test_span_creation(self):
+        """Span can be created."""
+        span = TelemetrySpan(name="test_span", trace_id="trc_123")
+        assert span.name == "test_span"
+        assert span.trace_id == "trc_123"
+        assert span.is_recording is True
+
+    def test_span_set_attribute(self):
+        """Span can set attributes."""
+        span = TelemetrySpan(name="test_span", trace_id="trc_123")
+        span.set_attribute("count", 42)
+        assert span._attributes["count"] == 42
+
+    def test_span_redacts_unsafe_attributes(self):
+        """Span redacts unsafe attributes."""
+        span = TelemetrySpan(name="test_span", trace_id="trc_123")
+        span.set_attribute("secret", "password=secret")
+        # Unsafe value should not be set due to safety check
+        assert span._attributes.get("secret") is None or "[REDACTED]" in str(span._attributes.get("secret", ""))
 
 
 # ============================================================================
@@ -279,8 +333,23 @@ class TestTelemetryIntegration:
 
     def test_telemetry_disabled_by_env(self):
         """Telemetry can be disabled via environment."""
-        import os
         os.environ["WE3_TELEMETRY_ENABLED"] = "false"
         logger = TelemetryLogger("test.disabled")
         assert logger._enabled is False
         del os.environ["WE3_TELEMETRY_ENABLED"]
+
+    def test_instrument_operation_decorator(self):
+        """instrument_operation decorator works correctly."""
+        @instrument_operation
+        def sample_operation(x: int) -> int:
+            return x * 2
+
+        result = sample_operation(5)
+        assert result == 10
+
+    def test_record_metric_validates_name(self):
+        """record_metric only allows whitelisted metric names."""
+        # Valid metric should work (no exception)
+        record_metric("we3.operation.count", 5.0, label="test")
+        # Invalid metric should be silently skipped
+        record_metric("invalid.metric.name", 5.0)

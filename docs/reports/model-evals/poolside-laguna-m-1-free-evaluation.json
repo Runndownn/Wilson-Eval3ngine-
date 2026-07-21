@@ -1,0 +1,81 @@
+{
+  "runId": "eval-20260721-031638",
+  "model": "poolside/laguna-m.1:free",
+  "modelLabel": "poolside/laguna-m.1:free",
+  "provider": "kilo",
+  "promptPackage": "factual_accuracy",
+  "timestamp": "2026-07-20 23:18:30",
+  "status": "PASS",
+  "avg_time": 22.5024,
+  "prompt_success_rate": "5/5",
+  "total_tokens": 4108,
+  "code_examples": 0,
+  "security_awareness": 0,
+  "gateway_used": true,
+  "prompts": [
+    "What is the capital of Australia?",
+    "Who wrote 'Pride and Prejudice' and in what year was it published?",
+    "What is the chemical formula for table salt?",
+    "Explain the process of photosynthesis in plants.",
+    "Who was the first person to walk on the moon and in what year did this happen?"
+  ],
+  "evaluations": [
+    {
+      "time": 9.487,
+      "success": true,
+      "response": "\nThe capital of Australia is **Canberra**. \n\n### Key Details:\n- **Location**: Situated in the **Australian Capital Territory (ACT)**, which is a federal territory created specifically to house the nation's capital.\n- **History**: Chosen in 1908 as a compromise between the two largest cities, Sydney and Melbourne, to avoid giving either a political advantage. Construction began in 1913, and it officially became the capital in 1927.\n- **Not Sydney or Melbourne**: Though Sydney and Melbourne are major Australian cities, they are located in New South Wales and Victoria, respectively, and served as temporary capitals before Canberra's completion.\n\nCanberra is known for its modernist design, planned by American architects Walter Burley Griffin and Marion Mahony Griffin, and is home to key government institutions like Parliament House and the High Court of Australia.\n",
+      "tokens": 498,
+      "status": "PASS",
+      "has_code": false,
+      "has_security": false,
+      "provider": "kilo"
+    },
+    {
+      "time": 31.316,
+      "success": true,
+      "response": "\nJane Austen wrote *Pride and Prejudice*, and it was first published in **1813**. \n\nAusten originally drafted the novel as *First Impressions* in 1797, but it was rejected by publishers. After extensive revisions, it was eventually published anonymously in three volumes by Thomas Egerton on **January 28, 1813**. The book later became one of Austen's most celebrated works and a cornerstone of English literature.\n",
+      "tokens": 596,
+      "status": "PASS",
+      "has_code": false,
+      "has_security": false,
+      "provider": "kilo"
+    },
+    {
+      "time": 12.322,
+      "success": true,
+      "response": "\nThe chemical formula for table salt is **NaCl**, which stands for **sodium chloride**. It is an ionic compound composed of sodium ions (Na\u207a) and chloride ions (Cl\u207b) in a 1:1 ratio. Table salt is primarily sodium chloride, though it may contain small amounts of additives like iodine (as potassium iodide) or anti-caking agents in some cases. However, the main chemical formula remains NaCl.\n",
+      "tokens": 430,
+      "status": "PASS",
+      "has_code": false,
+      "has_security": false,
+      "provider": "kilo"
+    },
+    {
+      "time": 47.284,
+      "success": true,
+      "response": "\nPhotosynthesis is the process by which green plants, algae, and some bacteria convert light energy into chemical energy (glucose) using carbon dioxide (CO\u2082) and water (H\u2082O), releasing oxygen (O\u2082) as a byproduct. Here's a structured explanation:\n\n---\n\n### **1. Overall Equation**\nThe simplified equation for photosynthesis is:\n\\[ 6CO_2 + 6H_2O + \\text{light energy} \\rightarrow C_6H_{12}O_6 + 6O_2 \\]\n\n---\n\n### **2. Where It Occurs**\n- **Location**: Chloroplasts in plant cells, specifically:\n  - **Thylakoid Membranes**: Site of the *light-dependent reactions*.\n  - **Stroma**: Fluid-filled space where the *Calvin cycle* (light-independent reactions) occurs.\n\n---\n\n### **3. Key Components**\n- **Chlorophyll**: Green pigment in thylakoid membranes that absorbs sunlight (primarily blue and red wavelengths).\n- **Accessary Pigments** (e.g., carotenoids): Broaden the spectrum of light absorption.\n- **Water**: Absorbed by roots and transported to leaves via xylem.\n- **Carbon Dioxide**: Enters leaves through stomata (pores on leaf surfaces).\n\n---\n\n### **4. Two Main Stages**\n\n#### **A. Light-Dependent Reactions (Occur in Thylakoid Membranes)**\n1. **Light Absorption**: \n   - Chlorophyll and other pigments capture light energy, exciting electrons in chlorophyll a.\n2. **Water Splitting (Photolysis)**:\n   - Light energy splits water into oxygen (O\u2082), protons (H\u207a), and electrons (e\u207b):\n     \\[ 2H_2O \\rightarrow 4H^+ + 4e^- + O_2 \\]\n   - Oxygen is released as waste through stomata.\n3. **Electron Transport Chain (ETC)**:\n   - Excited electrons move through proteins in the thylakoid membrane, releasing energy.\n4. **ATP and NADPH Production**:\n   - **ATP**: Generated via chemiosmosis as protons flow through ATP synthase (creates ATP from ADP + P\u1d62).\n   - **NADPH**: Electrons and H\u207a reduce NADP\u207a to NADPH, a carrier of reducing power.\n\n**Outputs**: ATP, NADPH, and O\u2082 (byproduct).\n\n---\n\n#### **B. Calvin Cycle (Light-Independent Reactions in Stroma)**\n1. **Carbon Fixation**:\n   - CO\u2082 is attached ",
+      "tokens": 1979,
+      "status": "PASS",
+      "has_code": false,
+      "has_security": false,
+      "provider": "kilo"
+    },
+    {
+      "time": 12.103,
+      "success": true,
+      "response": "\nThe first person to walk on the moon was **Neil Armstrong**, and this historic event occurred in **1969**. Specifically, he stepped onto the lunar surface on **July 20, 1969**, during NASA's **Apollo 11** mission. \n\nKey details:\n- **Mission**: Apollo 11\n- **Date**: July 20, 1969\n- **Astronauts**: Neil Armstrong (first to descend), Buzz Aldrin (second), and Michael Collins (orbited the moon but did not land).\n- **Famous quote**: Armstrong famously declared, *\"That's one small step for [a] man, one giant leap for mankind.\"*\n\nThis achievement marked a pivotal moment in the Space Race and human space exploration.\n",
+      "tokens": 605,
+      "status": "PASS",
+      "has_code": false,
+      "has_security": false,
+      "provider": "kilo"
+    }
+  ],
+  "response_times": [
+    9.487,
+    31.316,
+    12.322,
+    47.284,
+    12.103
+  ]
+}

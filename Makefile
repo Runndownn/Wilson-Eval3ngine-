@@ -1,4 +1,4 @@
-.PHONY: install test coverage validate demo critical verify schemas openapi api clean
+.PHONY: install test coverage validate demo critical verify schemas openapi api clean backup backup-create backup-list backup-verify backup-restore-plan
 
 install:
 	python -m pip install -e ".[dev]"
@@ -33,4 +33,23 @@ api:
 
 clean:
 	rm -rf .pytest_cache .coverage htmlcov var build dist *.egg-info src/*.egg-info
+
+# ============================================================================
+# Backup Commands (TODO 55)
+# ============================================================================
+
+backup:
+	we3 backup --help
+
+backup-create:
+	we3 backup-create --key-id we3-db-key-$$(date +%Y%m%d)
+
+backup-list:
+	we3 backup-list --limit 20
+
+backup-verify:
+	we3 backup-verify $(BACKUP_ID)
+
+backup-restore-plan:
+	we3 backup-restore-plan --timestamp "$$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
