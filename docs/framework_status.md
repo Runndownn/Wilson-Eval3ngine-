@@ -13,7 +13,7 @@
 | Dossier signing | Development Ed25519 key | Managed signing identity/KMS |
 | Audit | Local hash chain | External checkpoints and outage policy |
 | Auth | OIDC with MFA validation, JWKS caching, workload identity | Production OIDC with managed IdP |
-| Project isolation | Project fields and scoped paths | API/RLS/object policy negative matrix |
+| Project isolation | PostgreSQL RLS with 14-table policy coverage, session variable context, negative permission matrix | API/RLS/object policy negative matrix |
 | Queue | PostgreSQL lease contract | Scheduler/worker/reconciliation implementation |
 | Observability | Minimal | SLO dashboards, alerts, runbooks |
 | DR | Not implemented | PITR, object recovery, quarterly exercise |
