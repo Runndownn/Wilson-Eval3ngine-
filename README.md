@@ -1,6 +1,6 @@
 # Wilson Eval3ngine — Metrics-First LLM Evaluation Framework
 
-**Version:** `0.1.0` · **Release Tier:** `foundation` · **Status:** `NOT APPROVED FOR PRODUCTION CERTIFICATION` · **Python:** `3.13` · **Last verified:** 2026-07-17 · **Test Status:** `775+ tests (all TODOs 52-61) all passing`
+**Version:** `0.1.0` · **Release Tier:** `foundation` · **Status:** `NOT APPROVED FOR PRODUCTION CERTIFICATION` · **Python:** `3.13` · **Last verified:** 2026-07-29 · **Test Status:** `775+ tests (all TODOs 52-61) all passing`
 
 > **Integration Note:** Wilson-Eval3ngine (WE3) is the evaluation engine integrated into the Geezer Mekanix Agentic Engineering Platform for full dataset supply-chain controls, hidden/visible set separation, and dual-review governance.
 
