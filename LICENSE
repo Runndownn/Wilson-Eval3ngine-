@@ -1,3 +1,18 @@
+# SPDX License Identifier: MIT
+#
+# Wilson Eval3ngine is licensed under the MIT License.
+# To change the license, replace this file with an appropriate LICENSE file
+# and update the following locations:
+#   - pyproject.toml: license = {text = "MIT"}
+#   - README.md: License section
+#   - Any license headers in source files
+#
+# License switching notes:
+# - MIT (default): Permissive open-source license
+# - Apache-2.0: Requires NOTICE file maintenance
+# - BSD-3-Clause: Requires copyright notice retention
+# - GPL-v3: Requires copyleft attribution
+
 MIT License
 
 Copyright (c) 2026 Wilson Eval3ngine contributors
