@@ -5,7 +5,7 @@
 | Contract validation | Implemented | Compatibility governance |
 | Mock provider | Implemented | Retained for tests |
 | Real providers | Not implemented | Two approved adapters |
-| Immutable evidence | Local content-addressed adapter | External encrypted/versioned store |
+| Immutable evidence | Encrypted object store with AES-256-GCM, KMS envelope encryption, retention policies | External encrypted/versioned store |
 | Five labels | Deterministic implementation | Calibrated layered grading |
 | Human review | Escalation flag only | Review/adjudication service |
 | Metrics/Wilson intervals | Implemented | Cluster bootstrap and independent reference |
