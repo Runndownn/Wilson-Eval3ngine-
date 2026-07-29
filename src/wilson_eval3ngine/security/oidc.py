@@ -184,8 +184,18 @@ class JWKSClient:
         
         # Verify MFA if required
         if self._settings.require_mfa_claim:
-            # In production, check amr claim contains MFA method
-            pass
+            amr = payload.get(self._settings.require_mfa_claim, [])
+            if isinstance(amr, list):
+                # Check that MFA method is present in amr claim
+                mfa_methods = {"mfa", "otp", "push", "sms", "hardware", "totp", "webauthn"}
+                if not any(method in mfa_methods for method in amr):
+                    raise TokenValidationError("MFA authentication required but not present in token")
+            elif isinstance(amr, str):
+                # Single string value
+                if amr not in {"mfa", "otp", "push", "sms", "hardware", "totp", "webauthn"}:
+                    raise TokenValidationError("MFA authentication required but not present in token")
+            else:
+                raise TokenValidationError("MFA authentication required but amr claim is invalid")
 
 
 class RoleMapping(BaseModel):
@@ -238,6 +248,19 @@ class OIDCAuthenticator:
             raise TokenValidationError(f"Invalid role in token: {role}")
         
         return project_id, role
+    
+    def get_token_subject(self, token: str) -> str | None:
+        """Extract the subject (sub) claim from a verified token.
+        
+        This must be called after authenticate() to ensure the token
+        has been verified. Returns the subject identifier or None.
+        """
+        try:
+            from jose import jwt  # noqa: PLC0415
+            payload = jwt.get_unverified_claims(token)
+            return payload.get("sub")
+        except Exception:
+            return None
     
     def load_role_mapping(self, mapping: RoleMapping) -> None:
         """Load versioned role mapping policy."""
@@ -304,6 +327,7 @@ __all__ = [
     "OIDCConfigurationError",
     "TokenValidationError",
     "OIDCSettings",
+    "KeyCacheEntry",
     "JWKSClient",
     "RoleMapping",
     "OIDCAuthenticator",

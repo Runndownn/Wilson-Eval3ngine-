@@ -12,7 +12,7 @@
 | Gates | Implemented, provisional thresholds | Approved severity/category thresholds |
 | Dossier signing | Development Ed25519 key | Managed signing identity/KMS |
 | Audit | Local hash chain | External checkpoints and outage policy |
-| Auth | Development headers | OIDC/workload identity |
+| Auth | OIDC with MFA validation, JWKS caching, workload identity | Production OIDC with managed IdP |
 | Project isolation | Project fields and scoped paths | API/RLS/object policy negative matrix |
 | Queue | PostgreSQL lease contract | Scheduler/worker/reconciliation implementation |
 | Observability | Minimal | SLO dashboards, alerts, runbooks |

@@ -61,7 +61,7 @@ def make_context_dependency(settings: Settings):
             )
         
         if settings.auth_mode == "oidc":
-            # Production OIDW authentication
+            # Production OIDC authentication
             if not authorization or not authorization.startswith("Bearer "):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -85,13 +85,10 @@ def make_context_dependency(settings: Settings):
                 )
                 authenticator = OIDCAuthenticator(oidc_settings)
                 project_id, role = authenticator.authenticate(token)
-                # Lazy import to get subject without requiring jose at module load
-                try:
-                    import jose
-                    jwt_header = jose.jwt.get_unverified_header(token)
-                    actor_id = jwt_header.get("sub") if jwt_header else None
-                except ImportError:
-                    actor_id = None
+                
+                # Extract actor_id (subject) from the verified token payload
+                actor_id = authenticator.get_token_subject(token)
+                
             except ImportError as e:
                 logger.error("oidc_dependency_missing", extra={"error": str(e)})
                 raise HTTPException(
