@@ -1,10 +1,9 @@
 """Sanitized evidence envelopes for private production verification.
 
-The private deployment performs probes against its real identities, endpoints,
-certificates, stores, providers, and network policy. This public module accepts
-only bounded outcomes and non-reversible fingerprints. It rejects URLs, IP
-addresses, hostnames, credentials, tokens, certificate bodies, and free-form
-logs so private operational facts cannot leak into public artifacts.
+Private probes operate on real identities, endpoints, certificates, stores,
+providers, and network policy. Public evidence contains only bounded outcomes
+and non-reversible fingerprints; URLs, addresses, credentials, certificate
+bodies, paths, and free-form logs are rejected.
 """
 
 from __future__ import annotations
@@ -14,33 +13,21 @@ import json
 import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable, Literal
+from typing import Iterable, Literal, cast
 
 EvidenceStatus = Literal["passed", "failed", "blocked", "not_run"]
+EnvironmentClass = Literal["isolated", "staging", "production"]
 
 _REQUIRED_CHECKS = frozenset({
-    "oidc.discovery",
-    "oidc.signature",
-    "oidc.audience",
-    "oidc.expiry",
-    "oidc.role_denial",
-    "tls.protocol",
-    "tls.hostname",
-    "tls.chain",
-    "database.connectivity",
-    "database.tls",
-    "database.authorization",
-    "redis.connectivity",
-    "redis.authentication",
-    "provider.allowed_destination",
-    "provider.denied_destination",
-    "network.only_proxy_ingress",
-    "network.egress_default_deny",
-    "network.metadata_denied",
-    "container.readiness",
-    "container.non_root",
-    "container.read_only_root",
+    "oidc.discovery", "oidc.signature", "oidc.audience", "oidc.expiry",
+    "oidc.role_denial", "tls.protocol", "tls.hostname", "tls.chain",
+    "database.connectivity", "database.tls", "database.authorization",
+    "redis.connectivity", "redis.authentication", "provider.allowed_destination",
+    "provider.denied_destination", "network.only_proxy_ingress",
+    "network.egress_default_deny", "network.metadata_denied",
+    "container.readiness", "container.non_root", "container.read_only_root",
 })
+_ENVIRONMENTS = frozenset({"isolated", "staging", "production"})
 _CHECK_ID = re.compile(r"^[a-z][a-z0-9_.-]{2,127}$")
 _FINGERPRINT = re.compile(r"^[a-f0-9]{64}$")
 _SAFE_REASON = re.compile(r"^[A-Za-z0-9 _.,:()/-]{0,240}$")
@@ -81,7 +68,7 @@ class RuntimeCheck:
 class RuntimeEvidenceEnvelope:
     schema_version: str
     source_commit: str
-    environment_class: Literal["isolated", "staging", "production"]
+    environment_class: EnvironmentClass
     checks: tuple[RuntimeCheck, ...]
     bundle_sha256: str
 
@@ -132,25 +119,23 @@ def _bundle_hash(
 def build_runtime_evidence(
     *,
     source_commit: str,
-    environment_class: Literal["isolated", "staging", "production"],
+    environment_class: EnvironmentClass,
     checks: Iterable[RuntimeCheck],
     require_complete: bool = False,
 ) -> RuntimeEvidenceEnvelope:
     if not re.fullmatch(r"[a-f0-9]{40}", source_commit):
         raise ValueError("source_commit must be a full lowercase Git SHA-1")
+    if environment_class not in _ENVIRONMENTS:
+        raise ValueError("environment_class must be isolated, staging, or production")
     ordered = _canonical_checks(checks)
     if require_complete:
         observed = {check.check_id for check in ordered}
         missing = sorted(_REQUIRED_CHECKS - observed)
         if missing:
             raise ValueError("missing required runtime checks: " + ", ".join(missing))
-        incomplete = [
-            check.check_id for check in ordered if check.status != "passed"
-        ]
+        incomplete = [check.check_id for check in ordered if check.status != "passed"]
         if incomplete:
-            raise RuntimeError(
-                "runtime evidence is not complete: " + ", ".join(incomplete)
-            )
+            raise RuntimeError("runtime evidence is not complete: " + ", ".join(incomplete))
     return RuntimeEvidenceEnvelope(
         schema_version="we3.runtime_evidence.v1",
         source_commit=source_commit,
@@ -164,10 +149,13 @@ def verify_runtime_evidence(payload: dict[str, object]) -> RuntimeEvidenceEnvelo
     raw_checks = payload.get("checks")
     if not isinstance(raw_checks, list):
         raise ValueError("runtime evidence checks must be a list")
-    checks = tuple(RuntimeCheck(**item) for item in raw_checks if isinstance(item, dict))
+    if not all(isinstance(item, dict) for item in raw_checks):
+        raise ValueError("every runtime check must be an object")
+    checks = tuple(RuntimeCheck(**item) for item in raw_checks)
+    environment = str(payload.get("environment_class", ""))
     envelope = build_runtime_evidence(
         source_commit=str(payload.get("source_commit", "")),
-        environment_class=str(payload.get("environment_class", "")),  # type: ignore[arg-type]
+        environment_class=cast(EnvironmentClass, environment),
         checks=checks,
     )
     if payload.get("schema_version") != envelope.schema_version:
@@ -178,8 +166,6 @@ def verify_runtime_evidence(payload: dict[str, object]) -> RuntimeEvidenceEnvelo
 
 
 __all__ = [
-    "RuntimeCheck",
-    "RuntimeEvidenceEnvelope",
-    "build_runtime_evidence",
+    "RuntimeCheck", "RuntimeEvidenceEnvelope", "build_runtime_evidence",
     "verify_runtime_evidence",
 ]
