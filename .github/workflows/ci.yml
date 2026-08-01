@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev-mid]
   pull_request:
-    branches: [main]
+    branches: [main, dev-mid]
   schedule:
     - cron: "0 2 * * 0"
 
@@ -122,6 +122,8 @@ jobs:
         run: |
           python -m pytest tests/unit/test_supply_chain_core.py -v
           python -m pytest tests/governance/adversarial/test_adversarial_security_matrix.py -v
+          python -m pytest tests/governance/test_production_deployment_contract.py -v
+          python -m pytest tests/unit/test_gui_secret_transport.py tests/unit/test_gui_ux6.py -v
 
       - name: Upload security evidence
         if: always()

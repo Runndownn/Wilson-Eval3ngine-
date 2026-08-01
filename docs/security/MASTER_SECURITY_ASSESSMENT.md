@@ -5,305 +5,286 @@
 | Field | Value |
 |---|---|
 | Repository | `Runndownn/Wilson-Eval3ngine-` |
-| Visibility | Public |
-| Current base | `main` / `d4c879132cada346f01784ddc9019baa31ef7e18` |
-| Assessment branch | `security/hardening-20260731-wilson-eval3ngine-2` |
-| Assessment date | 2026-07-31, America/New_York |
-| Authorization | Repository assessment, modification, branch publication, and draft PR explicitly authorized by the owner |
-| Completion state | `partial` |
-| Runtime evidence | Deployment state unverified; GitHub Actions execution pending |
-| Report path | `docs/security/MASTER_SECURITY_ASSESSMENT.md` |
+| Requested base | `dev-mid` / `aa82b419572e7bc22dbc042fb390357cb1236d1f` |
+| Integrated ancestor | `main` / `a0c9d80c2afb97905f7bb88f90995b95504cfaae`, 47 linear descendant commits from the requested base |
+| Assessment branch | `security/hardening-20260801-wilson-eval3ngine` |
+| Reviewed code head before this report revision | `2ef25d57a83af41c29021d94fd271fa1aa8c46ce` |
+| Draft pull request | `#25` — `security: Ben Reaper partner hardening and master assessment` |
+| Date | 2026-08-01 |
+| Authorization | Assessment, modification, branch creation, push, and draft PR were explicitly authorized. |
+| State | `partial` — implementation present; full execution evidence incomplete |
 
-### Revision history
-
-| Revision | Summary |
-|---|---|
-| 0.1 | Established authority, architecture, findings, attack paths, and remediation plan. |
-| 0.2 | Enforced loopback-only GUI binding and added negative tests. |
-| 0.3 | Rebased the workstream after PR #17 was merged, implemented connection-time provider egress policy, removed secret-fragment logging, repaired CI trust controls, and added adversarial regression contracts. |
+The branch was created from `dev-mid` and fast-forwarded without force through its reviewed descendant history before new remediation. The PR remains based on `dev-mid`, is draft, mergeable, unmerged, and has no auto-merge.
 
 ## 2. Partner charter and bounded assurance statement
 
-Repository evidence establishes target facts. Supplied security knowledge generated defensive hypotheses only. No production service, real credential, provider account, external identity system, or third-party target was tested. Repository changes do not prove deployed remediation.
-
-The assessment remains partial because a complete local checkout, byte-level inventory, repository-native test execution, dependency/container scans, and runtime HTTP/WebSocket tests were unavailable in the current execution environment. No blocked validation is represented as passing.
+Repository code and configuration are authoritative for implementation claims. Supplied screenshots are visual evidence only. This report does not claim production is fixed, every file was reviewed, or every test passed; local checkout, browser, container, Caddy, and production evidence remain required.
 
 ## 3. Executive narrative
 
-Wilson Eval3ngine contains two materially different trust zones: a project-scoped evaluation API and a local operator GUI. The GUI manages endpoint credentials, model discovery, jobs, subprocesses, reports, charts, and destructive actions. It is therefore an administrative control plane.
+WE3 combines a project-scoped API with a loopback operator GUI that manages provider endpoints, credentials, models, jobs, subprocesses, telemetry, charts, reports, exports, and deletion. The most material gaps in the reviewed branch lineage were direct production service exposure, weak configuration defaults, an internally inconsistent production image, plaintext regular-file report credential handoff, content-dependent report geometry, off-screen chart windows, a body limit that trusted `Content-Length`, a non-stock Caddy configuration, and stale credential documentation.
 
-The first workstream closed accidental remote GUI exposure by enforcing loopback-only binding. The second workstream addresses the remaining highest-value root causes:
-
-1. Provider requests now re-resolve and validate every destination immediately before dispatch. DNS failure fails closed. Metadata, link-local, multicast, unspecified, and reserved ranges are always denied. Private and loopback gateways require the explicit `WE3_GUI_ALLOW_LOCAL_PROVIDERS=1` deployment decision. Automatic redirects are disabled so bearer credentials cannot be silently replayed to a new destination.
-2. API-key masking used by the hardened runtime now returns a constant `[redacted]` marker, eliminating stable secret fragments from logs.
-3. CI no longer suppresses lint failures or installs Trivy through an unverified network pipe. Every referenced action is commit-pinned, security scans fail closed, release artifacts are produced by the tested build, and `main` pushes receive a real signed GitHub build-provenance attestation.
-
-The plaintext owner-only temporary file used for report subprocess credential handoff remains unresolved. It is intentionally retained as an open residual finding rather than being mislabeled as complete.
+The dedicated branch fixes those repository-local root causes while preserving endpoint, model, job, report, chart, and telemetry contracts. Validation code and a branch-local workflow were added, but no tool result is recorded as passed in this report because the connector did not expose a completed run.
 
 ## 4. Scope, methodology, and limitations
 
-Reviewed evidence includes repository history, prior PR #17, the master report supplied by the operator, security policy, environment template, GUI launcher/application/runtime, key vault, report subprocess path, provider HTTP paths, CI workflow, signing/dossier code, and relevant tests.
+In scope: active GUI composition, endpoint/provider boundary, report subprocess, charts/reports, API body limits, Dockerfile, Compose, Caddy, CI, README, provider guide, tests, and this report. Out of scope without separate authorization: live providers, production deployment, real credentials, external OIDC/KMS/secret-manager changes, merge, and auto-merge.
 
-Blocked evidence includes full-tree and byte inventory, local formatter/linter/type/test execution, package and container vulnerability scans, live GitHub Actions results for this branch, and deployment network policy.
+Evidence classes used: `[REPO]`, `[RUNTIME]` for supplied screenshots only, `[INFERENCE]`, and `[BLOCKED]`. A complete byte-level local inventory and runtime deployment validation are blocked by the available environment.
 
 ## 5. Repository and system understanding
 
-- **Primary API:** authenticated project-scoped operations, state, evidence, and release dossiers.
-- **Operator GUI:** endpoint and secret administration, model discovery, jobs, subprocess authority, telemetry, reports, and charts.
-- **Provider boundary:** HTTP SDKs, local gateways, and local authenticated CLI tools.
-- **Evidence boundary:** reports, sidecars, hashes, audit chains, and Ed25519 dossiers.
-- **Supply chain:** package build, tests, security scans, artifacts, and GitHub attestations.
-
 ```text
-browser -> loopback GUI -> endpoint state / jobs / subprocesses / reports
-                         -> policy HTTP client -> provider destination
+browser -> loopback GUI -> endpoints/models -> bounded job -> report child
+                         -> provider policy -> hosted or approved local provider
+                         -> sidecars/PDFs -> charts/exports/hashes
 
-contributor -> pinned GitHub Actions -> lint/test/build/security validation
-            -> tested distributions -> signed build-provenance attestation
+internet -> Caddy TLS -> API -> PostgreSQL / Redis / artifact storage
+                        -> Prometheus -> Grafana
+
+commit -> pinned CI -> tests/scans/build -> validated artifact -> attestation
 ```
+
+The GUI is an administrative control plane even in single-user mode. The report child crosses a process boundary and may receive a provider credential. Production services cross separate ingress, data, and observability trust boundaries.
 
 ## 6. Architecture profile and control expectations
 
-| Expectation | Invariant | Status | Finding/debt |
-|---|---|---|---|
-| WILSON-EVAL3NGINE-EXP-0001 | GUI launcher cannot expose unauthenticated controls beyond loopback. | Satisfied in merged code | SEC-0001 |
-| WILSON-EVAL3NGINE-EXP-0002 | Every provider request is revalidated against current DNS and address policy; redirects never replay credentials automatically. | Implemented in branch; execution pending | SEC-0002 |
-| WILSON-EVAL3NGINE-EXP-0003 | Provider secrets are never logged in stable fragments and subprocess exposure is minimized. | Partially satisfied | SEC-0003 |
-| WILSON-EVAL3NGINE-EXP-0004 | CI gates fail closed and provenance claims are cryptographically true. | Implemented in branch; workflow run pending | SEC-0004 |
-| WILSON-EVAL3NGINE-EXP-0005 | Repository inventory and checksums correspond to the assessed tree. | Blocked | DEBT-0001 |
-| WILSON-EVAL3NGINE-EXP-0006 | OIDC lifecycle failures fail closed. | Partially reviewed | DEBT-0002 |
+Required packs: web/browser, API/service, identity/authorization, data/state, asynchronous workflow, LLM/provider execution, CI/CD, container/IaC, network/transport, file/report rendering, cryptography/secret lifecycle, observability/resilience, and privacy/data governance.
+
+| Expectation | Invariant | Status |
+|---|---|---|
+| EXP-0001 | GUI official launcher is loopback-only | Implemented; runtime pending |
+| EXP-0002 | Provider destinations are policy checked and redirects do not carry credentials | Partially implemented; network egress and report-script unification remain |
+| EXP-0003 | Report credentials are not regular plaintext files | Implemented with one-shot POSIX FIFO; tests pending |
+| EXP-0004 | Only TLS ingress publishes production host ports | Implemented; runtime pending |
+| EXP-0005 | Production image builds the complete package and starts declared software | Implemented; build pending |
+| EXP-0006 | Desktop reports use exactly two equal columns and chart windows remain visible | Implemented; browser pending |
+| EXP-0007 | Actual request bytes are limited before parsing | Implemented; tests pending |
+| EXP-0008 | Documentation matches implemented contracts and validation state | Implemented in README, provider guide, and this report |
 
 ## 7. Asset and security-objective register
 
 | Asset | Objectives |
 |---|---|
-| Provider keys and local CLI identities | Confidentiality, least privilege, revocation, bounded delegation |
-| Prompts, responses, and evaluation evidence | Isolation, integrity, retention control |
-| Job and subprocess authority | Authorization, bounded execution, availability, auditability |
-| Dossiers and release evidence | Integrity, signer authenticity, policy trust |
-| CI and release artifacts | Reproducibility, provenance, integrity, recoverability |
+| Provider credentials | Confidentiality, purpose binding, rotation, revocation |
+| Operator GUI | Reachability control, integrity, availability, auditability |
+| Prompts/responses | Confidentiality, provenance, safe rendering |
+| Reports/charts/sidecars | Integrity, run binding, reproducibility |
+| Database/cache | Isolation, availability, backup/recovery |
+| Monitoring | Confidentiality, bounded administration |
+| CI artifacts | Integrity, reproducibility, signer identity |
 
 ## 8. Identity, privilege, and trust-boundary model
 
-The primary API has an explicit identity model. The GUI still has no built-in actor authentication; loopback binding limits reachability but does not identify a user. Remote GUI access requires an independently authenticated TLS proxy and an explicit authorization contract.
-
-Provider HTTP authority consists of destination selection plus any attached API key. The runtime now treats DNS, address class, and redirects as security decisions at dispatch time.
+The production API has authentication and project authorization. The GUI has no built-in multi-user identity; its repository-enforced boundary is the loopback listener. Remote access therefore requires a separately authenticated TLS proxy. The GUI process may decrypt endpoint credentials and start provider-capable child processes, so same-account compromise remains material residual risk.
 
 ## 9. Data, state, and lifecycle model
 
-Endpoint keys are encrypted in persistent GUI state. Report generation decrypts the selected key and writes it to a short-lived `0600` temporary file for the child process. That file is removed after execution, but plaintext exists on the filesystem during the invocation.
+Endpoint secrets remain encrypted under a local same-account master key; this is not an external vault. The active official launcher replaces regular plaintext report-key files with a mode-0600 FIFO inside a mode-0700 directory, bounds the value to 4096 bytes, serves one reader, clears the parent bytearray, and removes the path on success or cancellation.
 
-CI now separates tested artifacts from attestations: the quality job builds and uploads distributions; the `main`-only attestation job downloads those exact artifacts and generates signed build provenance.
+Production Compose requires independent bootstrap passwords and complete encoded database/Redis URLs. API, PostgreSQL, Redis, Prometheus, and Grafana are internal-only; only Caddy publishes ports.
 
 ## 10. Attack-surface inventory
 
-| Surface | Identity boundary | Side effects | Status |
-|---|---|---|---|
-| GUI listener | Local process / host boundary | Full operator authority | Loopback-only |
-| GUI REST/WebSocket | No built-in actor auth | Endpoints, jobs, reports, telemetry | Architectural debt |
-| Provider HTTP | Stored endpoint and key | Authenticated outbound requests | Policy client added |
-| Local CLI providers | Local OS identity | Executes installed authenticated tools | Loopback constrained |
-| Report subprocess | Parent process and temp key file | Provider calls and artifact creation | SEC-0003 residual |
-| GitHub Actions | Workflow identity | Build, scan, attest, artifact publication | Repaired; run pending |
+| Surface | Side effects | Primary control |
+|---|---|---|
+| GUI listener | Full operator actions | Loopback-only launcher |
+| GUI REST/WebSocket | Mutation, execution, deletion, export | Local boundary, schemas, Origin checks |
+| Provider HTTP/CLI | Authenticated outbound request or local identity use | Destination policy, explicit local opt-in |
+| Report child | Provider call and artifact creation | Bounded job, FIFO secret transport |
+| Reports/charts | Render, delete, export | Path validation, run evidence, same-origin presentation |
+| Production API | Database/artifact operations | OIDC/project controls and middleware |
+| Monitoring | Metrics query/admin | Internal network, Caddy restriction, admin API disabled |
+| CI | Build, scan, publish, attest | Pinned actions, least privilege, fail-closed checks |
 
 ## 11. Web and API expectation assessment
 
-The runtime policy client validates HTTP(S) scheme, forbids embedded credentials, blocks metadata hostnames before DNS, resolves all addresses, rejects the entire destination if any answer violates policy, fails closed on resolution errors, and disables redirects. Local/private providers are denied by default and require an explicit environment setting.
+The GUI launcher rejects non-loopback binds. Public provider endpoints require HTTPS; private/loopback providers require explicit opt-in and permanent unsafe address classes remain blocked. UX6 enforces exact desktop report columns, one-column fallback below 1024 CSS pixels, fluid outer gutters, chart viewport clamping, and a reset control.
 
-Residual limitation: application-layer DNS validation cannot by itself eliminate DNS rebinding between validation and socket connection. Production deployments still require network-level egress controls.
+The API now installs `StreamingBodyLimitMiddleware` at package composition. It validates decimal and consistent `Content-Length` when present and independently counts actual ASGI body bytes for chunked, HTTP/2, or missing-length requests before parsing and side effects.
 
 ## 12. Knowledge-system provenance and synthesis
 
-The supplied assessment and security corpus were used as decision inputs and hypothesis sources. Target conclusions were confirmed against repository code and history. No raw challenge answers, credentials, exploit payloads, or untrusted instructions were committed.
+Repository history, prior assessments, architecture material, tests, and the supplied visual baseline informed expectations and defensive games. Findings were confirmed from target repository evidence. No real credential, personal data, challenge answer, or exploit-ready payload was committed.
 
 ## 13. Defensive security game deck
 
-| Game | Scenario | Result |
+| Game | Scenario | Result state |
 |---|---|---|
-| WILSON-EVAL3NGINE-GAME-0001 | Bind GUI to wildcard/private/public interfaces. | Rejected by merged launcher control. |
-| WILSON-EVAL3NGINE-GAME-0002 | Resolve one provider name to mixed public/private answers. | Entire destination rejected by new tests. |
-| WILSON-EVAL3NGINE-GAME-0003 | Redirect an authenticated request to another target. | Automatic redirect following forced off. |
-| WILSON-EVAL3NGINE-GAME-0004 | Introduce a lint or high-severity scan failure. | CI configured to fail closed. |
-| WILSON-EVAL3NGINE-GAME-0005 | Publish an unsigned artifact while describing it as signed. | Replaced with GitHub signed build-provenance attestation. |
+| GAME-0001 | Wildcard/private GUI bind | Existing tests; execution pending |
+| GAME-0002 | Blocked provider destination and DNS ambiguity | Existing tests; execution pending |
+| GAME-0003 | Secret transport file type, one-shot read, cancellation cleanup | New tests; execution pending |
+| GAME-0004 | Direct API/monitoring host ports and missing secrets | New tests; execution pending |
+| GAME-0005 | Two-column report geometry and viewport escape | Source contracts added; browser blocked |
+| GAME-0006 | Chunked overrun, conflicting lengths, exact boundary | New raw ASGI tests; execution pending |
+| GAME-0007 | Stock Caddy directives and restricted metrics | New deployment tests; execution pending |
 
 ## 14. Individual attack-path analysis
 
-### WILSON-EVAL3NGINE-PATH-0001 — network client to GUI authority
-
-`non-loopback bind -> unauthenticated REST/WebSocket -> administrative action`
-
-The merged launcher blocks the first edge.
-
-### WILSON-EVAL3NGINE-PATH-0002 — provider configuration to internal destination
-
-`stored URL -> stale DNS decision -> later request/redirect -> internal target -> credential forwarding`
-
-The branch adds dispatch-time resolution, all-answer validation, default denial for private ranges, fail-closed DNS behavior, and redirect suppression. Network egress policy remains required to close the final validation/connect race.
-
-### WILSON-EVAL3NGINE-PATH-0003 — CI label to false release trust
-
-`workflow success -> unsigned text digest -> “signed” claim -> downstream trust`
-
-The branch removes the false claim and generates signed provenance over the tested distributions.
+- **PATH-0001:** non-loopback listener → unauthenticated GUI authority. Broken at the official launcher; insecure external proxies remain residual risk.
+- **PATH-0002:** stored endpoint URL → prohibited internal destination → credential-bearing request. Application checks improve the path; network egress and report-script unification remain required.
+- **PATH-0003:** decrypted endpoint secret → regular temp file → same-account/filesystem recovery. Broken on the official path by the one-shot FIFO.
+- **PATH-0004:** direct host port → bypass Caddy/TLS → API or monitoring action. Broken in Compose by internal-only service exposure.
+- **PATH-0005:** incomplete build → missing package/undeclared Gunicorn → unhealthy image. Broken by wheel construction and declared Uvicorn runtime.
+- **PATH-0006:** chunked/missing-length request → parser allocation/side effect beyond configured budget. Broken by receive-channel byte counting.
 
 ## 15. Compound and cross-domain attack-path analysis
 
-The GUI combines secrets, local CLI identities, subprocess execution, reports, and destructive state. Loopback binding and provider egress policy reduce accidental remote and lateral reachability, but built-in GUI identity remains absent.
+GUI reachability, stored credentials, provider egress, subprocess execution, and artifact rendering form one compound control path. The branch adds independent breaks at listener reachability, destination policy, secret handoff, body limits, and evidence presentation.
 
-The CI chain previously combined suppressed quality failures, unverified executable acquisition, and unsupported provenance language. The repaired workflow introduces fail-closed stages and cryptographic evidence.
+Production proxy bypass combined with weak fallback credentials and monitoring administration formed a second compound path. The branch removes direct ports and fallback values, requires Redis authentication and full encoded connection URLs, disables Prometheus administration, uses stock Caddy directives, and makes data/observability networks internal.
 
 ## 16. Findings register
 
-| Finding | Severity | Confidence | Status | Residual risk |
-|---|---|---|---|---|
-| SEC-0001 — fail-open remote GUI binding | High | High | Remediated and merged | External proxies can still expose the unauthenticated app |
-| SEC-0002 — stale/incomplete provider egress decision | High | High | Remediating in branch | DNS validation/connect race; network policy required |
-| SEC-0003 — plaintext temp credential handoff and fragment logging | Medium | High | Partially remediated | Fragments removed; plaintext handoff remains |
-| SEC-0004 — fail-open and unsupported CI trust claims | High | High | Remediating in branch | GitHub run and attestation verification pending |
+| ID | Severity | Confidence | Status |
+|---|---|---|---|
+| SEC-0001 — remote GUI bind exposure | High | High | Remediated in repository; runtime pending |
+| SEC-0002 — ingress bypass and weak production configuration | High | High | Remediating; runtime pending |
+| SEC-0003 — plaintext report credential file | Medium | High | Remediating; focused tests pending |
+| SEC-0004 — incomplete provider destination policy | Medium | Medium | Partially remediated; egress/report-script debt remains |
+| SEC-0005 — report geometry and off-screen chart window | Medium | High | Remediating; browser pending |
+| SEC-0006 — CI trust claims | High | High | Prior remediation preserved; branch workflow added; result unavailable |
+| SEC-0007 — broken production image contract | High | High | Remediating; build pending |
+| SEC-0008 — stale security/inventory documentation | Medium | High | Partially remediated; full inventory pending |
+| SEC-0009 — header-only body limit | Medium | High | Remediating; actual-byte middleware and tests added |
+| SEC-0010 — unsafe/obsolete credential guide | Medium | High | Remediated in documentation; review pending |
 
 ## 17. Detailed findings
 
-### WILSON-EVAL3NGINE-SEC-0001
+### SEC-0002
+Root cause: direct host publications, known fallback credentials, URL construction from raw passwords, and non-stock proxy assumptions. Selected invariant: only Caddy publishes ports; every production secret/configuration input is explicit; connection URLs are independently encoded. Changes: Compose segmentation, mandatory settings, Redis authentication, Prometheus admin removal, stock Caddy, Caddy admin off, and deployment contracts.
 
-The warning-only remote bind was replaced with loopback-only validation and merged in PR #17.
+### SEC-0003
+Root cause: decrypted provider credentials were written to a regular mode-0600 file. Selected invariant: child handoff must not persist plaintext as a regular file. Changes: one-shot FIFO, bounded length, restrictive permissions, one reader, bytearray clearing, cancellation unblocking, cleanup, composition replacement, and tests.
 
-### WILSON-EVAL3NGINE-SEC-0002
+### SEC-0005
+Root cause: `auto-fit`, a full-row exception, fixed centered width, and unbounded drag/resize. Selected invariant: exactly two equal desktop columns, one column below 1024 pixels, aligned outer gutters, and a recoverable viewport-contained chart window. Changes: UX6 CSS/JS and source contracts.
 
-`src/wilson_eval3ngine/gui/runtime.py` now installs a policy-enforcing `httpx.AsyncClient` for legacy endpoint discovery and test paths. Every request revalidates the destination. Private destinations require `WE3_GUI_ALLOW_LOCAL_PROVIDERS=1`; metadata/link-local/multicast/unspecified/reserved destinations remain prohibited. Redirects are disabled.
+### SEC-0007
+Root cause: project installation before source copy and undeclared Gunicorn runtime. Selected invariant: build the full source into a wheel and start declared software. Changes: builder wheelhouse, offline runtime install, non-root Uvicorn, and deployment tests.
 
-Tests cover public success, private denial, explicit private opt-in, never-allowed ranges, mixed DNS answers, DNS failure, metadata names, and redirect suppression.
-
-### WILSON-EVAL3NGINE-SEC-0003
-
-The hardened runtime replaces secret masking with a constant `[redacted]` marker. Stable prefixes and suffixes are no longer emitted by runtime callers. The child-process temp file remains plaintext and owner-only; replacing it safely requires coordinated parent/child descriptor or pipe support and cross-platform lifecycle testing.
-
-### WILSON-EVAL3NGINE-SEC-0004
-
-`.github/workflows/ci.yml` now:
-
-- fails lint, tests, coverage, security scans, and build validation closed;
-- pins all actions to full commit SHAs;
-- replaces unverified Trivy download/extraction with a commit-pinned Trivy action;
-- builds once in the tested job and passes those exact artifacts forward;
-- generates signed GitHub build provenance only on `main` pushes with minimal `id-token` and `attestations` permissions;
-- runs scheduled backup verification independently rather than through a branch-only release job.
-
-A governance test prevents regression to `|| true`, pipe-to-execution downloads, mutable action references, unsigned provenance, or attestation before validation.
+### SEC-0009
+Root cause: body limits trusted a client-declared header. Selected invariant: actual received bytes are authoritative. Changes: protocol-neutral ASGI receive wrapper, malformed/conflicting header rejection, stable 400/413 responses, and raw ASGI tests.
 
 ## 18. Rejected hypotheses and false positives
 
-- The safe HTML dossier renderer escapes identifiers and omits raw prompts/responses; no confirmed XSS finding was established there.
-- CLI provider invocation uses argument arrays rather than `shell=True`; prompt shell metacharacters are not directly interpreted.
-- Primary API project authorization checks were present on reviewed paths; no confirmed cross-project bypass was established.
+No confirmed shell-injection path was established in direct argument-array CLI adapters. No confirmed stored XSS was established in reviewed escaped frontend labels. Fernet itself was not found broken; the concern is the local same-account threat model and historical plaintext child handoff.
 
 ## 19. Remediation implementation narrative
 
-- `adda99322d6d142023e24add8f5b028d39cbfdee` and `354d8d9e5415d6daf101c8fdeca781659820a94e`: fail-closed CI, verified scanner action, tested artifacts, signed provenance, and corrected dependency installation.
-- `b6cbc65998e5605e33b16acf64c287bb19952734`: CI security-contract regression tests.
-- `76899014bcb08acb0fd6d9fad99370a760a7a5c7`: provider dispatch policy and constant secret redaction.
-- `5ade1174eba9d8bbee58fb7d06facbdbbb32a79b`: egress and redaction negative tests.
-- `a36f1198603c0ed4e6fa0fa662d4847b662a0037`: explicit local-provider deployment configuration.
+Implemented layers:
+
+- Wheel-based production image and declared runtime.
+- Internal production service networks, mandatory credentials, independent encoded URLs, Redis authentication, stock Caddy, and restricted metrics.
+- One-shot FIFO report credential transport installed at the official GUI composition boundary.
+- Exact report geometry, fluid page gutters, chart viewport guard, and reset action.
+- Actual streamed-body enforcement at the API receive boundary.
+- Focused deployment, secret, UI, body-limit, bind, egress, and CI contracts.
+- Branch-local hardening workflow for `security/**` pushes.
+- Current README, provider credential guide, and master report.
 
 ## 20. Validation and assurance
 
-Completed:
+Added tests:
 
-- Confirmed PR #17 was merged and created a new branch from exact merge head.
-- Reviewed every changed file through GitHub contents and compare operations.
-- Added negative tests for egress, redirects, redaction, and CI contracts.
-- Used official GitHub artifact-attestation guidance and commit-pinned action implementations.
+```text
+tests/governance/test_production_deployment_contract.py
+tests/unit/test_gui_secret_transport.py
+tests/unit/test_gui_ux6.py
+tests/unit/test_streaming_body_limit.py
+```
 
-Pending/not run:
+Required but not recorded as passed:
 
-- repository-native formatter, lint, type, unit, integration, and coverage commands;
-- GitHub Actions run for the branch;
-- verification of the generated attestation using `gh attestation verify`;
-- full secret/dependency/container scan results;
-- runtime provider and reverse-proxy tests;
-- complete inventory and report validator.
+```bash
+make lint
+make test
+make coverage
+python -m build
+# synthetic docker compose config
+# Docker build and readiness smoke
+# caddy validate with the exact image
+# browser geometry, zoom, keyboard, a11y, and screenshots
+```
 
-## 21. Change impact, rollout, and rollback
+A branch-local `.github/workflows/hardening.yml` was added because the existing `dev-mid` base workflow cannot evaluate a new PR trigger from the head branch. The available connector did not expose a completed push-workflow run, so result remains unknown.
 
-Private or loopback model gateways now require `WE3_GUI_ALLOW_LOCAL_PROVIDERS=1`. Deployments using local Ollama or private gateways must set the variable and enforce network egress so the process can reach only the intended gateway.
+## 21. Change-impact, rollout, and rollback
 
-Automatic provider redirects are no longer followed. A provider requiring redirects must be configured with its canonical final endpoint.
+Behavior changes: production now fails early when required values are absent; internal services lose host ports; Redis requires authentication; Prometheus admin endpoints are disabled; full connection URLs are required; keyed official GUI jobs require POSIX FIFO support; report layout becomes two columns at desktop widths; actual body bytes are limited.
 
-CI behavior is intentionally stricter. Existing lint, test, scan, backup, or build failures will block the pipeline. Rollback restores fail-open or unsupported trust behavior and should not occur without equivalent controls.
+Rollout order: supply secrets/configuration, validate Caddy, validate Compose, build/scan image, start data services, API, proxy, then observability, verify closed direct ports, run one synthetic evaluation, verify FIFO cleanup and artifacts, then run browser checks. Do not roll back by restoring weak defaults, direct monitoring ports, Prometheus admin APIs, regular plaintext credential files, or header-only body limits.
 
 ## 22. Detection, response, and operational hardening
 
-- Alert on GUI listeners beyond loopback.
-- Alert on blocked provider destinations, DNS failures, address changes, and redirect responses.
-- Never include key prefixes/suffixes in logs or metrics.
-- Verify release provenance with GitHub attestation tooling before consumption.
-- Rotate provider credentials if an earlier GUI instance was reachable beyond loopback.
+Alert on non-loopback GUI listeners, blocked provider destinations, missing production inputs, direct internal-service access, secret-transport cleanup failures, repeated body-limit violations, audit degradation, and failed attestation verification. Rotate credentials after suspected exposure. Verify no stale `we3-*-secret-*` directories after jobs.
 
 ## 23. Residual risk and accepted assumptions
 
-No risk is accepted on behalf of maintainers. Remaining material risks are the plaintext subprocess handoff, missing built-in GUI identity, application/network DNS race, unverified deployment egress policy, and unexecuted branch tests.
+No risk is accepted on behalf of maintainers. Residuals: no built-in GUI actor identity, POSIX-only FIFO, same-account local key storage, report-script policy not unified with GUI policy, no network-level egress proof, no database TLS deployment contract, image tags not digest-pinned, no complete inventory, and no production/browser/container execution evidence.
 
 ## 24. Security debt and maturity ledger
 
-| Debt | Missing assurance | Action |
-|---|---|---|
-| DEBT-0001 | Complete authoritative file inventory and reproducible checksums | Generate from clean checkout and reconcile manifests |
-| DEBT-0002 | OIDC refresh/revocation/replay/failure execution evidence | Add lifecycle and fault tests |
-| DEBT-0003 | Production dossier verification requires approved signer trust | Require trust-registry-aware verification path |
-| DEBT-0004 | Built-in or formally contracted GUI authentication | Implement actor identity or verified proxy contract |
-| DEBT-0005 | Descriptor/pipe-based subprocess secret handoff | Implement coordinated parent/child transport and cross-platform tests |
+| Debt | Action |
+|---|---|
+| DEBT-0001 | Run complete inventory and publish hash/coverage ledger |
+| DEBT-0002 | Extract one endpoint policy for GUI and report script; enforce workload egress |
+| DEBT-0003 | Implement an approved external production `SecretStore` backend |
+| DEBT-0004 | Add formal authenticated GUI remote-access contract if remote mode is supported |
+| DEBT-0005 | Implement a secure non-POSIX child transport |
+| DEBT-0006 | Pin production images by digest and validate Caddy/container runtime |
+| DEBT-0007 | Add Playwright geometry, keyboard, a11y, and screenshot gates |
+| DEBT-0008 | Define and test production database TLS policy |
 
 ## 25. Prioritized future roadmap
 
-1. Execute CI and repair genuine repository failures without suppressing controls.
-2. Replace pathname-based plaintext subprocess credentials with an inherited descriptor or anonymous pipe.
-3. Add network-level egress rules matching the application policy.
-4. Complete OIDC, authorization, audit-failure, restore, and signer-trust tests.
-5. Produce the complete file inventory and regenerate checksums.
+1. Obtain branch-workflow results and repair failures without suppression.
+2. Run full suite, coverage, build, Compose, Caddy, container, and browser gates.
+3. Unify report-script and GUI egress policy with network enforcement.
+4. Add external secret-store integration and endpoint-reference migration.
+5. Pin images by digest and establish database TLS.
+6. Complete inventory and final documentation drift checks.
 
 ## 26. Continuous assurance and reassessment triggers
 
-Reassess on GUI remote access, provider adapters, local-provider policy changes, subprocess interfaces, authentication/session changes, CI/action updates, dependency advisories, restore events, and security incidents.
+Reassess on changes to identity, GUI binding, endpoint policy, report subprocesses, secrets, middleware, containers, Caddy, browser rendering, CI actions, dependencies, or signing. Reassess after credential exposure, provider DNS/redirect changes, restore, base-image advisories, or deployment topology changes.
 
 ## 27. Coverage ledger
 
-Coverage remains partial. Reviewed domains include GUI network exposure, runtime provider egress, secret logging, subprocess credential handoff, CI/release provenance, signing/dossier behavior, security policy, and deployment configuration. Total file/byte counts and zero-unreviewed proof remain blocked.
+Reviewed in targeted depth: branch ancestry, active GUI launcher/runtime, provider path, report child, chart/report frontend, API body limit, Dockerfile, Compose, Caddy, CI, README, provider guide, and supplied screenshots. Blocked/unknown: complete tracked-file count, LFS/submodules/binaries, runtime services, and production state. The unreviewed count is not represented as zero.
 
 ## 28. Traceability matrix
 
-| Item | Change/test | Status |
-|---|---|---|
-| SEC-0001 | Loopback validator and bind tests | Merged |
-| SEC-0002 | Policy HTTP client and egress tests | Implemented; execution pending |
-| SEC-0003 | Constant redaction test | Partial; plaintext handoff open |
-| SEC-0004 | Fail-closed CI, pinned actions, attestation, CI contract tests | Implemented; workflow pending |
-| DEBT-0001 | Full inventory | Blocked |
+| Finding | Main changes | Tests | Representative commits |
+|---|---|---|---|
+| SEC-0002 | Compose, Caddy, connection URL contract | production deployment contract | `b9c4cb3`, `859fdfa`, `e2fde29`, `c00d046` |
+| SEC-0003 | FIFO and composition adapter | secret transport | `2611585`, `2c60e97`, `c378dd5` |
+| SEC-0005 | UX6 CSS/JS and overlay | UX6 contract | `5429709`, `31616a6`, `19e4e78` |
+| SEC-0007 | wheel image and Uvicorn | production deployment contract | `0026e68`, `99792ed` |
+| SEC-0009 | ASGI stream guard and installation | streaming body limit | `2d3f76d`, `9351a0f`, `c773929`, `3f7555b` |
+| SEC-0010 | provider guide and README | documentation review/CI pending | `2425abe`, `2ef25d5` |
 
 ## 29. Portfolio and cross-repository dependencies
 
-No second repository was authorized. Identity providers, Redis, PostgreSQL, object storage, reverse proxies, provider services, network policy, and GitHub Actions remain external dependencies.
+No second authorized repository was identified. External dependencies include provider APIs, local gateways/CLIs, OIDC, container registries, GitHub Actions, databases, Redis, TLS/ACME, and any future secret manager; their deployed state is outside repository-only proof.
 
 ## 30. Knowledge delta
 
-Reusable lessons:
-
-- Local operator GUIs with secrets and subprocess authority are administrative control planes.
-- URL validation must be repeated at dispatch and backed by egress policy.
-- Mixed DNS answers must reject the entire target.
-- Redirects and bearer credentials require explicit destination reauthorization.
-- Secret masking should not emit stable fragments.
-- Provenance claims require cryptographic attestations over the exact tested artifact.
-
-No knowledge is promoted automatically.
+Reusable reviewed lessons: mode-0600 regular files are still plaintext-at-rest; reverse proxies do not protect directly published services; raw passwords should not be interpolated into URLs; security configuration must use modules present in the deployed image; responsive `auto-fit` is not an exact comparison contract; and body limits must count actual received bytes.
 
 ## 31. Appendices
 
-### Evidence classes
+### A. Draft PR
 
-`[REPO]` direct repository evidence; `[RUNTIME]` collected runtime evidence; `[HISTORY]` commit/PR evidence; `[CORPUS-*]` hypothesis source; `[STANDARD]` official guidance; `[INFERENCE]` analyst conclusion; `[BLOCKED]` unavailable evidence.
+PR `#25` targets `dev-mid`, is draft, mergeable, unmerged, and contains the integrated 47-commit descendant lineage plus this hardening series.
 
-### Current blockers
+### B. Primary documentation
 
-- No complete local checkout/test environment.
-- No supplied deployment/runtime evidence.
-- No completed GitHub Actions run for this branch.
-- No complete byte-level tree inventory.
+- `README.md`
+- `docs/operations/api-key-local-model-setup.md`
+- `docs/GUI_AND_EVIDENCE_GUIDE.md`
+- `docs/security/MASTER_SECURITY_ASSESSMENT.md`
+
+### C. Blocked evidence
+
+Complete inventory; local full test/coverage/build; Docker image and Compose runtime; Caddy validation; browser automation; production identity/TLS/provider/database/cache/network evidence; and completed branch-workflow results.
