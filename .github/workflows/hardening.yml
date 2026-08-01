@@ -62,7 +62,9 @@ jobs:
       - name: Validate production Compose contract
         env:
           WE3_POSTGRES_PASSWORD: test-postgres
+          WE3_DATABASE_URL: postgresql+psycopg://we3:test-postgres@postgres:5432/we3
           WE3_REDIS_PASSWORD: test-redis
+          WE3_REDIS_URL: redis://:test-redis@redis:6379/0
           WE3_GRAFANA_PASSWORD: test-grafana
           WE3_OIDC_ISSUER: https://issuer.invalid
           WE3_OIDC_JWKS_URI: https://issuer.invalid/jwks
