@@ -14,18 +14,20 @@ def _invoke(
     headers: list[tuple[bytes, bytes]] | None = None,
     limit: int = 8,
 ) -> tuple[list[dict], list[bytes]]:
+    chunk_list = list(chunks)
     messages = [
         {
             "type": "http.request",
             "body": chunk,
-            "more_body": index < len(tuple(chunks)) - 1,
+            "more_body": index < len(chunk_list) - 1,
         }
-        for index, chunk in enumerate(tuple(chunks))
+        for index, chunk in enumerate(chunk_list)
     ]
     received_by_app: list[bytes] = []
     sent: list[dict] = []
 
     async def app(scope, receive, send):
+        del scope
         while True:
             message = await receive()
             received_by_app.append(message.get("body", b""))
@@ -48,13 +50,19 @@ def _invoke(
         "path": "/v1/test",
         "headers": headers or [],
     }
-    asyncio.run(StreamingBodyLimitMiddleware(app, max_body_size=limit)(scope, receive, send))
+    asyncio.run(
+        StreamingBodyLimitMiddleware(app, max_body_size=limit)(scope, receive, send)
+    )
     return sent, received_by_app
 
 
 def _response(sent: list[dict]) -> tuple[int, dict]:
     start = next(item for item in sent if item["type"] == "http.response.start")
-    body = b"".join(item.get("body", b"") for item in sent if item["type"] == "http.response.body")
+    body = b"".join(
+        item.get("body", b"")
+        for item in sent
+        if item["type"] == "http.response.body"
+    )
     return start["status"], json.loads(body or b"{}")
 
 
