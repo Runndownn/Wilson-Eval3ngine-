@@ -1,13 +1,4 @@
-"""Deterministic byte-level repository inventory and coverage identity.
-
-The inventory is deliberately independent of checkout location, file mtimes,
-platform path separators, and generation time. It records every accessible
-regular file and symbolic link, computes SHA-256 identities, groups exact
-content duplicates, and emits a stable bundle hash suitable for CI drift gates.
-
-Private material is protected by design: absolute paths, file contents,
-environment values, usernames, and host details are never included.
-"""
+"""Deterministic, privacy-preserving byte-level repository inventory."""
 
 from __future__ import annotations
 
@@ -20,35 +11,16 @@ from pathlib import Path, PurePosixPath
 from typing import Iterable, Iterator
 
 _DEFAULT_EXCLUDES = frozenset({
-    ".git",
-    ".hg",
-    ".svn",
-    ".mypy_cache",
-    ".pytest_cache",
-    ".ruff_cache",
-    ".tox",
-    ".venv",
-    "__pycache__",
-    "build",
-    "dist",
-    "node_modules",
+    ".git", ".hg", ".svn", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+    ".tox", ".venv", "__pycache__", "build", "dist", "node_modules",
 })
-
 _BINARY_SUFFIXES = frozenset({
     ".7z", ".a", ".avi", ".bin", ".bz2", ".class", ".dll", ".dylib",
     ".exe", ".gif", ".gz", ".ico", ".jar", ".jpeg", ".jpg", ".mov",
     ".mp3", ".mp4", ".o", ".pdf", ".png", ".pyc", ".so", ".tar",
     ".tgz", ".ttf", ".woff", ".woff2", ".xz", ".zip",
 })
-
-_GENERATED_PREFIXES = (
-    "artifacts/",
-    "build/",
-    "dist/",
-    "gui/static/charts/",
-    "htmlcov/",
-    "var/",
-)
+_GENERATED_PREFIXES = ("artifacts/", "gui/static/charts/", "htmlcov/", "var/")
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,23 +63,25 @@ class InventoryResult:
     def write_json(self, destination: str | Path) -> None:
         path = Path(destination)
         path.parent.mkdir(parents=True, exist_ok=True)
-        payload = json.dumps(self.to_dict(), sort_keys=True, indent=2) + "\n"
         temporary = path.with_name(f".{path.name}.tmp")
-        temporary.write_text(payload, encoding="utf-8")
+        temporary.write_text(
+            json.dumps(self.to_dict(), sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
         os.replace(temporary, path)
 
 
-def _posix_relative(path: Path, root: Path) -> str:
+def _relative(path: Path, root: Path) -> str:
     return PurePosixPath(path.relative_to(root)).as_posix()
 
 
-def _sha256_file(path: Path) -> tuple[str, int]:
+def _hash_file(path: Path) -> tuple[str, int]:
     digest = hashlib.sha256()
     size = 0
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            size += len(chunk)
             digest.update(chunk)
+            size += len(chunk)
     return digest.hexdigest(), size
 
 
@@ -123,33 +97,36 @@ def _classify(relative: str, path: Path) -> str:
         return "test"
     if lowered.startswith("docs/") or path.suffix.lower() in {".md", ".rst"}:
         return "documentation"
-    if path.suffix.lower() in {".yml", ".yaml", ".toml", ".json", ".ini", ".cfg"}:
+    if path.suffix.lower() in {".cfg", ".ini", ".json", ".toml", ".yaml", ".yml"}:
         return "configuration"
     return "source"
 
 
-def _iter_paths(root: Path, excludes: frozenset[str]) -> Iterator[Path]:
+def _paths(root: Path, excludes: frozenset[str]) -> Iterator[Path]:
     for current, directories, files in os.walk(root, topdown=True, followlinks=False):
-        directories[:] = sorted(
-            name for name in directories if name not in excludes
+        directories[:] = sorted(name for name in directories if name not in excludes)
+        base = Path(current)
+        yield from (base / name for name in sorted(files))
+        yield from (
+            candidate
+            for candidate in (base / name for name in sorted(directories))
+            if candidate.is_symlink()
         )
-        current_path = Path(current)
-        for name in sorted(files):
-            yield current_path / name
-        for name in sorted(directories):
-            candidate = current_path / name
-            if candidate.is_symlink():
-                yield candidate
 
 
-def _bundle_identity(entries: Iterable[InventoryEntry]) -> str:
+def _safe_link_target(target: str) -> str:
+    """Preserve useful relative topology without disclosing absolute host paths."""
+    encoded = target.encode("utf-8", errors="surrogateescape")
+    if Path(target).is_absolute():
+        return "absolute-sha256:" + hashlib.sha256(encoded).hexdigest()
+    return PurePosixPath(target.replace("\\", "/")).as_posix()
+
+
+def _identity(entries: Iterable[InventoryEntry]) -> str:
     digest = hashlib.sha256()
     for entry in entries:
         canonical = json.dumps(
-            asdict(entry),
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=True,
+            asdict(entry), sort_keys=True, separators=(",", ":"), ensure_ascii=True
         ).encode("utf-8")
         digest.update(len(canonical).to_bytes(8, "big"))
         digest.update(canonical)
@@ -162,99 +139,74 @@ def build_inventory(
     excludes: Iterable[str] = _DEFAULT_EXCLUDES,
     fail_on_error: bool = True,
 ) -> InventoryResult:
-    """Inventory every accessible byte under ``root``.
+    """Account for every accessible regular file and symlink under ``root``.
 
-    Symlinks are recorded by target text and are never followed. Device files,
-    sockets, and FIFOs are rejected because reading them can block or cross a
-    trust boundary. When ``fail_on_error`` is true, any inaccessible or unusual
-    path aborts inventory generation rather than creating a false completeness
-    claim.
+    Symlinks are never followed. Absolute symlink targets are represented only
+    by a digest, preventing workstation or deployment path disclosure. Special
+    filesystem objects and read errors fail the inventory closed by default.
     """
-
     root_path = Path(root).resolve(strict=True)
     if not root_path.is_dir():
         raise NotADirectoryError(root_path)
 
     entries: list[InventoryEntry] = []
     errors: list[str] = []
-    excluded = frozenset(excludes)
-
-    for path in _iter_paths(root_path, excluded):
-        relative = _posix_relative(path, root_path)
+    for path in _paths(root_path, frozenset(excludes)):
+        relative = _relative(path, root_path)
         try:
             metadata = path.lstat()
             mode = stat.S_IMODE(metadata.st_mode)
-            executable = bool(mode & 0o111)
             if stat.S_ISLNK(metadata.st_mode):
-                target = os.readlink(path)
-                encoded = target.encode("utf-8", errors="surrogateescape")
-                entries.append(
-                    InventoryEntry(
-                        path=relative,
-                        kind="symlink",
-                        size=len(encoded),
-                        sha256=hashlib.sha256(encoded).hexdigest(),
-                        mode=f"{mode:04o}",
-                        executable=executable,
-                        classification="symlink",
-                        link_target=target,
-                    )
-                )
+                raw_target = os.readlink(path)
+                encoded = raw_target.encode("utf-8", errors="surrogateescape")
+                entries.append(InventoryEntry(
+                    relative, "symlink", len(encoded), hashlib.sha256(encoded).hexdigest(),
+                    f"{mode:04o}", bool(mode & 0o111), "symlink",
+                    _safe_link_target(raw_target),
+                ))
                 continue
             if not stat.S_ISREG(metadata.st_mode):
                 raise ValueError("unsupported non-regular filesystem object")
-            sha256, size = _sha256_file(path)
-            entries.append(
-                InventoryEntry(
-                    path=relative,
-                    kind="file",
-                    size=size,
-                    sha256=sha256,
-                    mode=f"{mode:04o}",
-                    executable=executable,
-                    classification=_classify(relative, path),
-                )
-            )
+            sha256, size = _hash_file(path)
+            entries.append(InventoryEntry(
+                relative, "file", size, sha256, f"{mode:04o}", bool(mode & 0o111),
+                _classify(relative, path),
+            ))
         except (OSError, ValueError) as exc:
             errors.append(f"{relative}: {type(exc).__name__}")
 
-    entries.sort(key=lambda entry: entry.path)
-    by_digest: dict[tuple[str, int], list[str]] = {}
+    entries.sort(key=lambda item: item.path)
+    by_content: dict[tuple[str, int], list[str]] = {}
     for entry in entries:
         if entry.kind == "file":
-            by_digest.setdefault((entry.sha256, entry.size), []).append(entry.path)
+            by_content.setdefault((entry.sha256, entry.size), []).append(entry.path)
     duplicates = tuple(
-        tuple(paths)
-        for _identity, paths in sorted(by_digest.items())
-        if len(paths) > 1
+        tuple(paths) for _key, paths in sorted(by_content.items()) if len(paths) > 1
     )
-
     if errors and fail_on_error:
         raise RuntimeError("inventory incomplete: " + "; ".join(errors))
 
     return InventoryResult(
-        schema_version="we3.repository_inventory.v1",
-        root_name=root_path.name,
-        file_count=sum(entry.kind == "file" for entry in entries),
-        symlink_count=sum(entry.kind == "symlink" for entry in entries),
-        total_bytes=sum(entry.size for entry in entries if entry.kind == "file"),
-        bundle_sha256=_bundle_identity(entries),
-        entries=tuple(entries),
-        duplicate_sets=duplicates,
-        errors=tuple(errors),
+        "we3.repository_inventory.v1",
+        root_path.name,
+        sum(entry.kind == "file" for entry in entries),
+        sum(entry.kind == "symlink" for entry in entries),
+        sum(entry.size for entry in entries if entry.kind == "file"),
+        _identity(entries),
+        tuple(entries),
+        duplicates,
+        tuple(errors),
     )
 
 
 def verify_inventory(root: str | Path, expected: dict[str, object]) -> InventoryResult:
-    """Rebuild and compare a repository inventory without trusting metadata."""
-
     actual = build_inventory(root)
     expected_hash = str(expected.get("bundle_sha256", ""))
     if not expected_hash:
         raise ValueError("expected inventory has no bundle_sha256")
     if actual.bundle_sha256 != expected_hash:
         raise RuntimeError(
-            "repository inventory drift: "
-            f"expected {expected_hash}, observed {actual.bundle_sha256}"
+            f"repository inventory drift: expected {expected_hash}, "
+            f"observed {actual.bundle_sha256}"
         )
     return actual
