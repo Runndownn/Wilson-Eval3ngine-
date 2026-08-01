@@ -1,6 +1,7 @@
 """Security module for Wilson Eval3ngine.
 
-Exports OIDC authentication, signing, database context, and authorization utilities.
+Exports OIDC authentication, signing, database context, authorization,
+rate limiting, CSRF protection, and input validation utilities.
 """
 
 # Signing is always available
@@ -35,12 +36,41 @@ from .authorization import (
     check_raw_evidence_authorization,
 )
 
+# Rate limiting is always available
+from .rate_limit import (
+    RateLimiter,
+    RateLimitConfig,
+    RateLimitResult,
+    RateLimitExceeded,
+    build_rate_limit_key,
+)
+
+# CSRF protection is always available
+from .csrf import (
+    CSRFProtection,
+    CSRFValidationError,
+    get_csrf_token_endpoint,
+)
+
+# Input validation is always available
+from .input_validation import (
+    ValidationError,
+    ProjectIdValidator,
+    IdempotencyKeyValidator,
+    ContentTypeValidator,
+    InputSanitizer,
+    InputValidator,
+)
+
 # OIDC requires optional dependency - lazy import to avoid hard dependency in foundation
 def __getattr__(name: str):
     if name in (
         "OIDCConfigurationError",
-        "TokenValidationError", 
+        "TokenValidationError",
+        "TokenRevocationError",
         "OIDCSettings",
+        "KeyCacheEntry",
+        "TokenRevocationList",
         "JWKSClient",
         "RoleMapping",
         "OIDCAuthenticator",
@@ -61,7 +91,10 @@ __all__ = [
     # OIDC (lazy-loaded)
     "OIDCConfigurationError",
     "TokenValidationError",
+    "TokenRevocationError",
     "OIDCSettings",
+    "KeyCacheEntry",
+    "TokenRevocationList",
     "JWKSClient",
     "RoleMapping",
     "OIDCAuthenticator",
@@ -89,4 +122,21 @@ __all__ = [
     "build_scope_aware_cache_key",
     "check_export_authorization",
     "check_raw_evidence_authorization",
+    # Rate limiting
+    "RateLimiter",
+    "RateLimitConfig",
+    "RateLimitResult",
+    "RateLimitExceeded",
+    "build_rate_limit_key",
+    # CSRF protection
+    "CSRFProtection",
+    "CSRFValidationError",
+    "get_csrf_token_endpoint",
+    # Input validation
+    "ValidationError",
+    "ProjectIdValidator",
+    "IdempotencyKeyValidator",
+    "ContentTypeValidator",
+    "InputSanitizer",
+    "InputValidator",
 ]

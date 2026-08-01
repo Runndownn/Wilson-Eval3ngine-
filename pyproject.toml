@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=75,<76", "wheel==0.44.0", "build==1.2.1"]
+requires = ["setuptools>=75,<76", "wheel==0.47.0", "build==1.2.1"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -26,17 +26,29 @@ dependencies = [
 postgres = ["psycopg[binary]>=3.2,<4"]
 dev = [
   "pytest>=9,<10",
+  "pytest-timeout>=2.3,<3",
   "httpx>=0.28,<0.29",
   "coverage>=7.8,<8",
   "alembic>=1.16,<2",
+]
+browser = [
+  "playwright>=1.50,<2",
 ]
 oidc = [
   "python-jose[cryptography]>=3.3,<4",
   "requests>=2.32,<3",
 ]
+redis = [
+  "redis>=5.0,<6",
+]
 backup = [
   "psycopg[binary]>=3.2,<4",
   "boto3>=1.35,<2",
+]
+security = [
+  "bandit>=1.7,<2",
+  "pip-audit>=2.7,<3",
+  "safety>=3.3,<4",
 ]
 
 [project.scripts]
@@ -51,6 +63,11 @@ where = ["src"]
 pythonpath = ["src"]
 testpaths = ["tests"]
 addopts = "-q"
+timeout = 300
+markers = [
+  "browser: hermetic or authorized browser assurance",
+  "runtime: requires an explicitly authorized isolated runtime",
+]
 
 [tool.coverage.run]
 branch = true
@@ -61,7 +78,6 @@ show_missing = true
 skip_covered = true
 fail_under = 80
 
-# Security and policy checks
 [tool.bandit]
 exclude_dirs = ["tests", "venv"]
-skips = ["B101"]  # Skip assert_used (intentional in tests)
+skips = ["B101"]

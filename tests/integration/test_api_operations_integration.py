@@ -18,15 +18,15 @@ from wilson_eval3ngine.config import Settings
 
 
 @pytest.fixture
-def client_with_idempotency(tmp_path):
+def client_with_idempotency(db, tmp_path):
     """Test client with idempotency store configured."""
     settings = Settings(
-        database_url=f"sqlite:///{tmp_path / 'api_ops.db'}",
+        database_url="sqlite://",
         artifact_root=tmp_path / "artifacts",
         auth_mode="dev",
         environment="test",
     )
-    app = create_app(settings)
+    app = create_app(settings, database=db)
     return TestClient(app)
 
 
@@ -126,16 +126,16 @@ class TestCrossProjectOperationIsolation:
     """Tests for cross-project operation isolation."""
 
     def test_operations_isolated_by_project(
-        self, tmp_path
+        self, db, tmp_path
     ) -> None:
         """Operations are isolated between projects."""
         settings = Settings(
-            database_url=f"sqlite:///{tmp_path / 'isolation.db'}",
+            database_url="sqlite://",
             artifact_root=tmp_path / "artifacts",
             auth_mode="dev",
             environment="test",
         )
-        client = TestClient(create_app(settings))
+        client = TestClient(create_app(settings, database=db))
 
         # Operation retrieval in different project should fail
         response = client.get(

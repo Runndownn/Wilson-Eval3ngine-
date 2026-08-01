@@ -75,3 +75,21 @@ release_dossier.json
 experiment_result.json
 report.safe.html
 *.pem
+
+# Local runtime credentials, generated state, and downloaded dependencies
+.kilo/kilo.jsonc
+infrastructure/terraform/.terraform/
+gui/data/endpoints.json
+gui/data/jobs.json
+gui/data/telemetry.json
+gui/data/models.json
+gui/data/prompt_packages.json
+gui/data/progress-job-*.jsonl
+gui/static/charts/
+
+# Master encryption key for API key vault (should never be committed)
+.we3/secret_key
+/var/lib/we3/secret_key
+.we3/audit.log
+.we3/encryption_key
+.we3/csrf_secret

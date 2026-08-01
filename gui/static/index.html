@@ -1,286 +1,408 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Wilson Eval3ngine GUI</title>
-  <link rel="icon" type="image/png" href="/static/we3-logo.png">
-  <link rel="stylesheet" href="/static/styles.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Wilson Eval3ngine model evaluation workspace">
+  <title>Wilson Eval3ngine</title>
+  <link rel="icon" href="/static/we3-logo.png">
+  <link rel="stylesheet" href="/static/enhanced.css?v=20260801-ux4">
+  <link rel="stylesheet" href="/static/ux3.css?v=20260801-ux4">
 </head>
 <body>
-  <header class="app-header">
-    <img class="logo" src="/static/we3-logo.png" alt="Wilson Eval3ngine" />
-    <div class="title">
-      <h1>Wilson Eval3ngine</h1>
-      <p class="subtitle">Model Evaluation &amp; Reporting</p>
-    </div>
-    <div class="status">
-      <span id="connection-status" class="badge badge-offline">Offline</span>
-      <span id="host-url" class="host-url"></span>
-    </div>
-  </header>
-
-  <nav class="tab-nav">
-    <button class="tab-link active" data-tab="tab-endpoints">Endpoints</button>
-    <button class="tab-link" data-tab="tab-models">Models</button>
-    <button class="tab-link" data-tab="tab-generate">Generate Reports</button>
-    <button class="tab-link" data-tab="tab-fault-injection">Fault Injection</button>
-    <button class="tab-link" data-tab="tab-reports">Reports</button>
-    <button class="tab-link" data-tab="tab-telemetry">Telemetry Wall</button>
-  </nav>
-
-  <main class="app-main">
-    <!-- ENDPOINTS -->
-    <section id="tab-endpoints" class="tab-panel active">
-      <div class="direction-block">
-        <button class="direction-btn" data-target="endpoints-help">How to use Endpoints</button>
-        <div id="endpoints-help" class="direction-text">
-          <p>The Endpoints tab is where you register the model providers you want to evaluate against. Add an Ollama server, an OpenAI-compatible API, or a Kilo Gateway instance here so the GUI knows where to send prompts. Each endpoint stores its base URL, optional API key, and provider type, and you can test connectivity with one click. Once saved, endpoints appear in the list below and can be selected when registering models or generating reports.</p>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <img src="/static/we3-logo.png" alt="Wilson Eval3ngine">
+        <div>
+          <h1>Wilson Eval3ngine</h1>
+          <p>Evidence-first model evaluation workspace</p>
         </div>
       </div>
-      <form id="endpoint-form" class="form">
-        <div class="field">
-          <label for="endpoint-name">Name <span class="optional">friendly label</span>
-            <span class="help-icon" data-help="endpoint-name-help">i</span>
-          </label>
-          <div id="endpoint-name-help" class="help-tooltip">Pick a memorable label like "Local Ollama" or "Prod OpenAI". This is only for display in the GUI; it does not affect the API request.</div>
-          <input id="endpoint-name" placeholder="My Ollama / OpenAI / Kilo endpoint" />
-        </div>
-        <div class="field">
-          <label for="endpoint-url">Endpoint URL
-            <span class="help-icon" data-help="endpoint-url-help">i</span>
-          </label>
-          <div id="endpoint-url-help" class="help-tooltip">Choose an auto-discovered endpoint from the dropdown, pick one of the common examples, or select Custom... to type a URL manually. For Ollama use http://host:11434. For OpenAI-compatible APIs use https://api.example.com/v1. For Kilo Gateway use https://api.kilo.ai/api/gateway. Do not append /chat or /models here; the GUI adds the correct paths automatically.</div>
-          <select id="endpoint-url">
-            <option value="">-- Select an endpoint type or enter URL --</option>
-            <option value="http://localhost:11434">Local Ollama (http://localhost:11434)</option>
-            <option value="http://localhost:8000">Local OpenAI Compatible (http://localhost:8000)</option>
-            <option value="http://localhost:5000">Local OpenAI Compatible (http://localhost:5000)</option>
-            <option value="http://localhost:3000">Local OpenAI Compatible (http://localhost:3000)</option>
-            <option value="https://api.kilo.ai/api/gateway">Kilo Gateway (https://api.kilo.ai/api/gateway)</option>
-            <option value="__custom__">Custom...</option>
-          </select>
-          <input id="endpoint-url-custom" class="custom-input hidden" placeholder="Enter custom endpoint URL (e.g., http://host:11434)" />
-        </div>
-        <div class="field">
-          <label for="endpoint-api-key">API Key <span class="optional">optional</span>
-            <span class="help-icon" data-help="endpoint-api-key-help">i</span>
-          </label>
-          <div id="endpoint-api-key-help" class="help-tooltip">Paste a bearer token or API key if the provider requires authentication. Leave blank for unauthenticated local endpoints. Keys are stored locally in the GUI data directory and never sent to external servers.</div>
-          <input id="endpoint-api-key" type="password" placeholder="sk-..." />
-        </div>
-        <div class="field">
-          <label for="endpoint-provider">Provider
-            <span class="help-icon" data-help="endpoint-provider-help">i</span>
-          </label>
-          <div id="endpoint-provider-help" class="help-tooltip">Select the provider type so the GUI knows which API paths to query. Ollama uses /api/tags, OpenAI-compatible and Kilo Gateway use /models. Changing this after saving does not update existing connections; remove and re-add the endpoint if needed.</div>
-          <select id="endpoint-provider">
-            <option value="ollama">Ollama</option>
-            <option value="openai">OpenAI Compatible</option>
-            <option value="kilo">Kilo Gateway</option>
-          </select>
-        </div>
-        <div class="actions">
-          <button type="submit" class="primary">Save Endpoint</button>
-          <button type="button" id="test-endpoint" class="secondary">Test Connection</button>
-          <button type="button" id="auto-detect-endpoints" class="secondary">Auto-Detect Local</button>
-          <button type="button" id="kilo-login" class="secondary">Kilo Login</button>
-        </div>
-        <div id="kilo-login-status" class="status-message"></div>
-      </form>
-      <div id="endpoints-list" class="list"></div>
-    </section>
+      <div class="stat-row topbar-stats" aria-label="Workspace totals">
+        <div class="stat"><strong id="stat-endpoints">0</strong><span>Endpoints</span></div>
+        <div class="stat"><strong id="stat-models">0</strong><span>Models</span></div>
+        <div class="stat"><strong id="stat-runs">0</strong><span>Runs</span></div>
+        <div class="stat"><strong id="stat-reports">0</strong><span>Reports</span></div>
+      </div>
+      <div class="health" role="status" aria-live="polite">
+        <span id="health-dot" class="dot"></span>
+        <span id="health-text">Connecting</span>
+      </div>
+    </header>
 
-    <!-- MODELS -->
-    <section id="tab-models" class="tab-panel">
-      <div class="direction-block">
-        <button class="direction-btn" data-target="models-help">How to use Models</button>
-        <div id="models-help" class="direction-text">
-          <p>The Models tab lets you register the specific model IDs you want to evaluate. You can either add them manually or click Auto-Detect to query your saved endpoints and pull the model list automatically. Each model is linked to an endpoint so the GUI knows where to send requests. Models added here appear as selectable chips in the Generate Reports tab and can be removed at any time.</p>
-        </div>
-      </div>
-      <form id="model-form" class="form">
-        <div class="field">
-          <label for="model-id">Model ID
-            <span class="help-icon" data-help="model-id-help">i</span>
-          </label>
-          <div id="model-id-help" class="help-tooltip">Select a model from the dropdown populated by your configured endpoints, or choose Custom... to enter a model ID manually. The exact identifier is sent directly to the provider without modification.</div>
-          <select id="model-id">
-            <option value="">-- Select a model --</option>
-          </select>
-          <input id="model-id-custom" class="custom-input hidden" placeholder="Enter custom model ID..." />
-        </div>
-        <div class="field">
-          <label for="model-endpoint">Endpoint
-            <span class="help-icon" data-help="model-endpoint-help">i</span>
-          </label>
-          <div id="model-endpoint-help" class="help-tooltip">Choose which saved endpoint this model should use. Endpoints are automatically tested for availability; grayed-out options are currently unreachable. You can add more endpoints in the Endpoints tab if needed.</div>
-          <select id="model-endpoint"></select>
-        </div>
-        <div class="actions">
-          <button type="submit" class="primary">Add Model</button>
-          <button type="button" id="auto-detect-models" class="secondary">Auto-Detect from Endpoints</button>
-        </div>
-      </form>
-      <div id="models-list" class="list"></div>
-      <div id="kilo-models-section" class="kilo-models-section hidden">
-        <h3 class="kilo-models-heading">Kilo Gateway Models</h3>
-        <div id="kilo-models-list" class="kilo-models-list"></div>
-      </div>
-    </section>
+    <nav class="tabs workflow-tabs" aria-label="Evaluation workflow">
+      <button class="tab" data-tab="endpoints">
+        <span class="tab-number">1</span>
+        <span class="tab-copy"><strong>Endpoints</strong><small>Connect and test providers</small></span>
+      </button>
+      <button class="tab" data-tab="models">
+        <span class="tab-number">2</span>
+        <span class="tab-copy"><strong>Models</strong><small>Discover and review inventory</small></span>
+      </button>
+      <button class="tab" data-tab="generate">
+        <span class="tab-number">3</span>
+        <span class="tab-copy"><strong>Generate</strong><small>Select models and prompts</small></span>
+      </button>
+      <button class="tab" data-tab="charts">
+        <span class="tab-number">4</span>
+        <span class="tab-copy"><strong>Charts</strong><small>Generate and inspect evidence</small></span>
+      </button>
+      <button class="tab" data-tab="reports">
+        <span class="tab-number">5</span>
+        <span class="tab-copy"><strong>Reports</strong><small>Read and export results</small></span>
+      </button>
+    </nav>
 
-    <!-- GENERATE REPORTS -->
-    <section id="tab-generate" class="tab-panel">
-      <div class="direction-block">
-        <button class="direction-btn" data-target="generate-help">How to generate reports</button>
-        <div id="generate-help" class="direction-text">
-          <p>Use the Generate Reports tab to run the standard evaluation prompt suite against your selected models. First pick one or more models from the dropdown or from your saved list, then choose a pre-built prompt package or enter any custom prompts as a comma-separated list if you want to override the defaults. Click Generate Reports to start the run; the backend will execute the evaluation script and save PDFs plus raw telemetry. Output appears in the console below the form and is also recorded in the Telemetry Wall.</p>
+    <main>
+      <section id="panel-endpoints" class="panel">
+        <div class="hero surface-heading">
+          <div>
+            <span class="eyebrow">Workflow 1 of 5</span>
+            <h2>Provider endpoints</h2>
+            <p>Connect model gateways, verify live health, and reconcile each provider's discovered models with the registered model inventory.</p>
+          </div>
+          <div class="hero-actions">
+            <button id="refresh-endpoints">Check all health</button>
+            <button id="detect-endpoints" class="primary">Auto-detect gateways</button>
+          </div>
         </div>
-      </div>
-      <form id="report-form" class="form">
-        <div class="field">
-          <label for="report-models">Selected Models
-            <span class="help-icon" data-help="selected-models-help">i</span>
-          </label>
-          <div id="selected-models-help" class="help-tooltip">Click the toggle next to a model to add or remove it from the current run. Use Ctrl+Click or Shift+Click to toggle multiple models at once, or use the action buttons below to select all or none. Models are drawn from the Models tab. All toggles default to off. If no models are configured, add an endpoint first and then auto-detect or manually add models.</div>
-          <div class="model-toggles" id="model-toggles">
-            <div class="model-toggles-actions">
-              <button type="button" id="select-all-models" class="secondary">Select All</button>
-              <button type="button" id="select-none-models" class="secondary">Select None</button>
+        <div class="grid bounded-grid">
+          <article class="card span-5">
+            <div class="card-heading">
+              <span class="step-badge">Configuration</span>
+              <h3>Add endpoint</h3>
+              <p>Credentials remain backend-managed and are never returned to the browser.</p>
             </div>
-            <div id="selected-models-list" class="selected-models-list"></div>
+            <form id="endpoint-form">
+              <div class="form-grid">
+                <div class="field">
+                  <label for="endpoint-name">Display name</label>
+                  <input id="endpoint-name" required maxlength="200" placeholder="Production NVIDIA NIM">
+                </div>
+                <div class="field">
+                  <label for="endpoint-provider">Provider adapter</label>
+                  <select id="endpoint-provider">
+                    <option value="ollama">Ollama</option>
+                    <option value="openai">OpenAI compatible</option>
+                    <option value="kilo">Kilo Gateway</option>
+                    <option value="nvidia">NVIDIA NIM</option>
+                    <option value="codex_cli">Codex CLI</option>
+                  </select>
+                </div>
+                <div class="field full">
+                  <label for="endpoint-url">Base URL</label>
+                  <input id="endpoint-url" required placeholder="https://integrate.api.nvidia.com/v1">
+                </div>
+                <div class="field full">
+                  <label for="endpoint-key">API key <small>optional by provider</small></label>
+                  <input id="endpoint-key" type="password" autocomplete="off" placeholder="Stored encrypted by the backend">
+                </div>
+              </div>
+              <div class="actions"><button class="primary" type="submit">Save endpoint</button></div>
+            </form>
+          </article>
+          <article class="card span-7">
+            <div class="section-title">
+              <div>
+                <span class="step-badge">Live inventory</span>
+                <h3>Connected providers</h3>
+                <div class="sub">Health, provider type, registered models, most recent test, and immutable endpoint identity.</div>
+              </div>
+            </div>
+            <div id="endpoint-list" class="list"><div class="empty">Loading endpoints…</div></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="panel-models" class="panel">
+        <div class="hero surface-heading">
+          <div>
+            <span class="eyebrow">Workflow 2 of 5</span>
+            <h2>Model registry</h2>
+            <p>Discover provider inventory, review family and endpoint lineage, then choose evaluation candidates. Family labels are inferred from model identifiers and are not benchmark claims.</p>
+          </div>
+          <div class="hero-actions"><button id="detect-models" class="primary">Refresh from endpoints</button></div>
+        </div>
+        <div class="flow-strip flow-strip-five" aria-label="Model registry workflow">
+          <div><strong>1</strong><span><b>Connect</b><small>Add a provider endpoint</small></span></div>
+          <div><strong>2</strong><span><b>Test</b><small>Verify live health and access</small></span></div>
+          <div><strong>3</strong><span><b>Discover</b><small>Import available model IDs</small></span></div>
+          <div><strong>4</strong><span><b>Review</b><small>Inspect family and lineage</small></span></div>
+          <div><strong>5</strong><span><b>Select</b><small>Choose models for evaluation</small></span></div>
+        </div>
+        <div class="grid bounded-grid">
+          <article class="card span-4 sticky-card">
+            <div class="card-heading">
+              <span class="step-badge">Manual registration</span>
+              <h3>Register a model</h3>
+              <p>Use the exact provider model ID. The backend preserves it without rewriting.</p>
+            </div>
+            <form id="model-form">
+              <div class="field">
+                <label for="model-id">Model ID</label>
+                <input id="model-id" required placeholder="meta/llama-3.1-70b-instruct">
+              </div>
+              <div class="field">
+                <label for="model-endpoint">Endpoint</label>
+                <select id="model-endpoint"></select>
+              </div>
+              <div class="actions"><button type="submit" class="primary">Add model</button></div>
+            </form>
+          </article>
+          <article class="card span-8">
+            <div class="section-title model-inventory-heading">
+              <div>
+                <span class="step-badge">Registered inventory</span>
+                <h3>Available models</h3>
+                <div class="sub">Search all registered models or filter by provider. Cards explain likely family, role, and connected endpoint.</div>
+              </div>
+              <span id="model-result-count" class="pill">0 models</span>
+            </div>
+            <div class="toolbar">
+              <input id="model-search" aria-label="Search models" placeholder="Search model, family, provider, or endpoint">
+              <select id="model-provider-filter" aria-label="Filter by provider">
+                <option value="">All providers</option>
+                <option value="ollama">Ollama</option>
+                <option value="openai">OpenAI compatible</option>
+                <option value="kilo">Kilo</option>
+                <option value="nvidia">NVIDIA</option>
+                <option value="codex_cli">Codex CLI</option>
+              </select>
+            </div>
+            <div id="model-grid" class="model-grid"><div class="empty">Loading models…</div></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="panel-generate" class="panel">
+        <div class="hero surface-heading">
+          <div>
+            <span class="eyebrow">Workflow 3 of 5</span>
+            <h2>Generate evaluation reports</h2>
+            <p>Start with the six recommended choices or open a model family, configure prompts, and confirm the request volume before execution.</p>
           </div>
         </div>
-        <div class="field">
-          <label for="report-prompt-package">Prompt Package
-            <span class="help-icon" data-help="report-prompt-package-help">i</span>
-          </label>
-          <div id="report-prompt-package-help" class="help-tooltip">Choose a pre-built prompt package that covers a specific evaluation dimension such as Safety, Code Generation, or Security. Selecting a package automatically populates the custom prompts field. You can still edit the prompts before running.</div>
-          <select id="report-prompt-package">
-            <option value="">-- Select a prompt package --</option>
-          </select>
+        <div class="flow-strip flow-strip-compact" aria-label="Report generation workflow">
+          <div><strong>1</strong><span><b>Select models</b><small>Popular choices or families</small></span></div>
+          <div><strong>2</strong><span><b>Configure prompts</b><small>Package or custom evaluation</small></span></div>
+          <div><strong>3</strong><span><b>Review and start</b><small>Validate request volume</small></span></div>
         </div>
-        <div class="field">
-          <label for="report-prompts">Prompts <span class="optional">comma separated override</span>
-            <span class="help-icon" data-help="report-prompts-help">i</span>
-          </label>
-          <div id="report-prompts-help" class="help-tooltip">Enter custom prompts separated by commas to override the default test suite. Leave blank to use the built-in five-prompt evaluation set. Each prompt is sent to every selected model and the responses are graded for safety, usefulness, and completeness.</div>
-          <textarea id="report-prompts" rows="4" placeholder="Explain quantum computing..., Write Python fibonacci..., ..."></textarea>
-        </div>
-        <div class="actions">
-          <button type="submit" class="primary">Generate Reports</button>
-          <button type="button" id="stop-reports" class="danger">Stop</button>
-        </div>
-        <pre id="report-output" class="output"></pre>
-      </form>
-    </section>
+        <form id="generate-form">
+          <div class="generate-layout">
+            <article class="card generate-model-card">
+              <div class="section-title">
+                <div>
+                  <span class="step-label">Step 1</span>
+                  <h3>Select models</h3>
+                  <div id="selection-count" class="sub">0 selected</div>
+                </div>
+                <div class="actions compact-actions">
+                  <button id="select-all" type="button">Select visible</button>
+                  <button id="select-none" type="button">Clear</button>
+                </div>
+              </div>
+              <div class="toolbar model-picker-toolbar">
+                <input id="generation-model-search" type="search" placeholder="Filter models or families" aria-label="Filter selectable models">
+                <select id="generation-provider-filter" aria-label="Filter selectable models by provider">
+                  <option value="">All providers</option>
+                  <option value="ollama">Ollama</option>
+                  <option value="openai">OpenAI compatible</option>
+                  <option value="kilo">Kilo</option>
+                  <option value="nvidia">NVIDIA</option>
+                  <option value="codex_cli">Codex CLI</option>
+                </select>
+              </div>
+              <section class="popular-section" aria-labelledby="popular-models-title">
+                <div class="section-kicker">
+                  <div><span class="step-badge">Popular six</span><h4 id="popular-models-title">Recommended starting points</h4></div>
+                  <span class="muted">Chosen from the registered inventory</span>
+                </div>
+                <div id="popular-models" class="popular-model-grid"><div class="empty compact-empty">Loading popular models…</div></div>
+              </section>
+              <section id="model-families" class="family-section" aria-labelledby="model-families-title">
+                <div class="section-kicker">
+                  <div><span class="step-badge">All families</span><h4 id="model-families-title">Expand a family to choose models</h4></div>
+                  <button id="open-model-picker" type="button" class="primary" aria-haspopup="dialog" aria-controls="model-picker-dialog">Open model picker</button>
+                </div>
+                <div id="selected-model-chips" class="selected-model-chips">
+                  <div class="empty compact-empty">No models selected yet. Open the picker to choose.</div>
+                </div>
+              </section>
+            </article>
 
-    <!-- FAULT INJECTION -->
-    <section id="tab-fault-injection" class="tab-panel">
-      <div class="direction-block">
-        <button class="direction-btn" data-target="fault-injection-help">How to run Fault Injection</button>
-        <div id="fault-injection-help" class="direction-text">
-          <p>The Fault Injection tab executes the cross-system failure matrix against a staging environment. Provide an authorization token that starts with gd_auth_ to verify operator intent. This action injects controlled faults, validates alerting, and measures containment and recovery behavior. Fault Injection results are stored in the Telemetry Wall for later review, and only isolated staging systems may be targeted.</p>
-        </div>
-      </div>
-      <form id="fault-injection-form" class="form">
-        <div class="field">
-          <label for="fault-injection-auth">Authorization Token
-            <span class="help-icon" data-help="fault-injection-auth-help">i</span>
-          </label>
-          <div id="fault-injection-auth-help" class="help-tooltip">Enter a valid fault-injection authorization token in the format gd_auth_&lt;context&gt;_&lt;timestamp&gt;_&lt;operator&gt;. The token is validated before any fault injection begins. Tokens are not persisted after the session ends. Contact your platform operator if you need a staging authorization token.</div>
-          <div class="input-with-action">
-            <input id="fault-injection-auth" placeholder="gd_auth_staging_<timestamp>_operator" />
-            <button type="button" id="generate-token" class="secondary">Generate Token</button>
+            <article class="card generate-prompt-card">
+              <div class="section-title">
+                <div>
+                  <span class="step-label">Step 2</span>
+                  <h3>Configure prompt set</h3>
+                  <div class="sub">Load a package, edit any prompt, or create a fully custom set.</div>
+                </div>
+                <button id="add-prompt" type="button">Add prompt</button>
+              </div>
+              <div class="form-grid prompt-controls">
+                <div class="field">
+                  <label for="prompt-package">Prompt package</label>
+                  <select id="prompt-package"><option>Loading…</option></select>
+                </div>
+                <div class="field">
+                  <label for="execution-mode">Execution mode</label>
+                  <select id="execution-mode">
+                    <option value="single">Single coordinated run</option>
+                    <option value="batch">Batch / reduced concurrency</option>
+                  </select>
+                </div>
+                <div class="field full">
+                  <label for="prompt-count">Prompts included: <strong id="prompt-count-label">1</strong></label>
+                  <input id="prompt-count" type="range" min="1" max="100" value="6">
+                </div>
+              </div>
+              <div id="prompt-list" class="prompt-list"></div>
+            </article>
+
+            <article class="card run-summary-card">
+              <div class="summary-copy">
+                <span class="step-label">Step 3</span>
+                <h3>Review and start</h3>
+                <p>The engine executes each selected prompt against each selected model and produces evidence-linked PDF and chart artifacts.</p>
+              </div>
+              <div class="stat-row summary-stats">
+                <div class="stat"><strong id="summary-models">0</strong><span>Models</span></div>
+                <div class="stat"><strong id="summary-prompts">0</strong><span>Prompts</span></div>
+                <div class="stat"><strong id="summary-requests">0</strong><span>Requests</span></div>
+                <div class="stat"><strong id="summary-mode">single</strong><span>Mode</span></div>
+              </div>
+              <div class="summary-action">
+                <div id="generation-readiness" class="readiness">Select at least one model and add a prompt.</div>
+                <button id="start-generation" type="submit" class="primary large-action">Start generation</button>
+              </div>
+            </article>
+
+            <article id="job-card" class="card job-card hidden">
+              <div class="progress-head">
+                <div><span id="job-status" class="pill warn">queued</span><h3 id="job-step">Waiting to start</h3></div>
+                <strong id="job-percent">0%</strong>
+              </div>
+              <div class="progress"><div id="job-progress-bar" data-value="0"></div></div>
+              <div class="stat-row job-stats">
+                <div class="stat"><strong id="job-complete">0</strong><span>Completed</span></div>
+                <div class="stat"><strong id="job-failed">0</strong><span>Failed</span></div>
+                <div class="stat"><strong id="job-total">—</strong><span>Total</span></div>
+                <div class="stat"><strong id="job-current">—</strong><span>Current model</span></div>
+              </div>
+              <div id="job-models" class="timeline"></div>
+              <div class="actions"><button id="cancel-job" type="button" class="danger">Cancel run</button></div>
+            </article>
+          </div>
+        </form>
+      </section>
+
+      <section id="panel-charts" class="panel">
+        <div class="hero surface-heading">
+          <div>
+            <span class="eyebrow">Workflow 4 of 5</span>
+            <h2>Run analytics and chart evidence</h2>
+            <p>Every completed evidence run remains visible, including runs with deleted or missing charts. Generate only the run you intend to restore; refresh never resurrects deleted artifacts.</p>
+          </div>
+          <div class="hero-actions">
+            <button id="refresh-charts">Refresh inventory</button>
+            <button id="generate-demo-charts" class="primary">Generate demo charts</button>
           </div>
         </div>
-        <div class="field">
-          <label for="fault-injection-env">Target Environment
-            <span class="help-icon" data-help="fault-injection-env-help">i</span>
-          </label>
-          <div id="fault-injection-env-help" class="help-tooltip">Select the environment to target. Staging is the only allowed target for fault injection. Production is blocked by policy. If your staging environment is not listed, add it as an endpoint first.</div>
-          <select id="fault-injection-env">
-            <option value="staging">Staging (isolated)</option>
-            <option value="production" disabled>Production (blocked)</option>
-          </select>
-        </div>
-        <div class="actions">
-          <button type="submit" class="primary">Run Fault Injection</button>
-        </div>
-        <pre id="fault-injection-output" class="output"></pre>
-      </form>
-    </section>
+        <div id="chart-guidance" class="notice">Each run has its own Generate missing charts action. Demo charts are synthetic, clearly labelled, and generated only when you press the demo button.</div>
+        <div id="chart-runs" class="chart-run-list"><div class="empty">Loading chart runs…</div></div>
+        <select id="chart-source-run" hidden aria-hidden="true"><option value="">Choose an evidence run</option></select>
+        <button id="generate-charts" hidden type="button">Generate missing charts</button>
+      </section>
 
-    <!-- REPORTS -->
-    <section id="tab-reports" class="tab-panel">
-      <div class="direction-block">
-        <button class="direction-btn" data-target="reports-help">How to use Reports</button>
-        <div id="reports-help" class="direction-text">
-          <p>The Reports tab lists every PDF generated by the Generate Reports action and stores them for in-browser viewing. Use the search box to filter by filename, then click View PDF to open the built-in PDF.js viewer with page navigation. You can also open the original PDF in a new browser tab or download it for offline review. Reports are served directly from the server and persist across reboots as long as the file remains in the reports directory.</p>
-        </div>
-      </div>
-      <div class="toolbar">
-        <button id="refresh-reports" class="secondary">Refresh</button>
-        <input id="report-search" placeholder="Search reports..." />
-        <button id="export-reports" class="secondary">Export All</button>
-      </div>
-      <div id="reports-grid" class="reports-grid"></div>
-      <div id="pdf-viewer" class="pdf-viewer">
-        <div class="pdf-header">
-          <span id="pdf-title">Select a report to view</span>
-          <button id="pdf-back" class="secondary">Back to Grid</button>
-          <div class="pdf-controls">
-            <button id="pdf-prev" class="secondary">Previous</button>
-            <span id="pdf-page">Page -</span>
-            <button id="pdf-next" class="secondary">Next</button>
-            <a id="pdf-open" class="secondary" href="/reports/" target="_blank">Open Original</a>
-            <button id="pdf-export" class="primary">Export PDF</button>
+      <section id="panel-reports" class="panel">
+        <div class="hero surface-heading">
+          <div>
+            <span class="eyebrow">Workflow 5 of 5</span>
+            <h2>Generated PDF reports</h2>
+            <p>Each card explains what the report contains, which run and models produced it, and provides an explicit in-page viewer plus full-report and export actions.</p>
           </div>
+          <div class="hero-actions"><button id="refresh-reports">Refresh reports</button></div>
         </div>
-        <canvas id="pdf-canvas"></canvas>
-      </div>
-    </section>
+        <div id="report-grid" class="report-grid"><div class="empty">Loading reports…</div></div>
+      </section>
+    </main>
+  </div>
 
-    <!-- TELEMETRY WALL -->
-    <section id="tab-telemetry" class="tab-panel">
-      <div class="direction-block">
-        <button class="direction-btn" data-target="telemetry-help">How to use Telemetry Wall</button>
-        <div id="telemetry-help" class="direction-text">
-          <p>The Telemetry Wall displays every evaluation run and fault-injection exercise as an interactive window in a responsive grid. Each run window lists its artifacts as scrollable mini-previews showing real document previews. Click any artifact to select it, then use the Download Selected button to save it. Use Save All as Zip to download every artifact from that run at once. Click the run window header to expand it into a full-size view with larger scrollable previews, and click outside to close it.</p>
-        </div>
-      </div>
-      <div class="toolbar">
-        <button id="refresh-telemetry" class="secondary">Refresh</button>
-        <button id="clear-telemetry" class="danger">Clear All Runs</button>
-      </div>
-      <div id="telemetry-wall" class="telemetry-wall"></div>
-      <div id="telemetry-backdrop" class="telemetry-backdrop"></div>
-      <div id="telemetry-expanded" class="telemetry-expanded">
-        <div class="telemetry-expanded-header">
-          <span id="telemetry-expanded-title">Run</span>
-          <button id="telemetry-expanded-close" class="run-window-close" title="Close expanded view">×</button>
-        </div>
-        <div id="telemetry-expanded-body" class="telemetry-expanded-body"></div>
-      </div>
-      <div id="pdf-modal" class="pdf-modal">
-        <div class="pdf-modal-header">
-          <span id="pdf-modal-title">PDF Viewer</span>
-          <button id="pdf-modal-close" class="run-window-close" title="Close viewer">×</button>
-        </div>
-        <div class="pdf-modal-body">
-          <div class="pdf-modal-controls">
-            <button id="pdf-modal-zoom-out" class="secondary">−</button>
-            <span id="pdf-modal-zoom">100%</span>
-            <button id="pdf-modal-zoom-in" class="secondary">+</button>
-          </div>
-          <div id="pdf-modal-container" class="pdf-modal-container"></div>
-        </div>
-      </div>
-    </section>
-  </main>
+  <aside id="drawer" class="drawer" aria-label="Detail inspector">
+    <div class="drawer-head"><h3 id="drawer-title">Details</h3><button id="drawer-close">Close</button></div>
+    <div class="drawer-body"><pre id="drawer-json" class="code"></pre></div>
+  </aside>
 
-  <script src="/static/app.js"></script>
+  <section id="chart-window" class="chart-window hidden" role="dialog" aria-modal="false" aria-labelledby="chart-window-title" tabindex="-1">
+    <div id="chart-window-handle" class="chart-window-head">
+      <div>
+        <span id="chart-window-category" class="pill">Chart</span>
+        <h3 id="chart-window-title">Chart evidence</h3>
+      </div>
+      <div class="window-actions">
+        <button id="chart-window-data" type="button">Data &amp; metadata</button>
+        <button id="chart-window-fullscreen" type="button" aria-label="Toggle full screen">Full screen</button>
+        <button id="chart-window-close" type="button" class="danger" aria-label="Close chart window">Close</button>
+      </div>
+    </div>
+    <div class="chart-window-body">
+      <div class="chart-stage">
+        <img id="chart-window-image" alt="Expanded chart">
+        <div id="chart-window-empty" class="chart-image-error hidden">The chart image could not be displayed. Regenerate this run's missing charts or inspect its metadata.</div>
+      </div>
+      <aside class="chart-metadata">
+        <h4>Evidence metadata</h4>
+        <dl id="chart-window-metadata" class="metadata-list"></dl>
+        <div id="chart-window-description" class="chart-description"></div>
+      </aside>
+    </div>
+    <div class="resize-handle" aria-hidden="true"></div>
+  </section>
+
+  <div id="model-picker-overlay" class="model-picker-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="model-picker-title" tabindex="-1">
+    <div class="model-picker-dialog" role="document">
+      <div class="model-picker-head">
+        <div>
+          <span class="step-badge">Model picker</span>
+          <h3 id="model-picker-title">Select models</h3>
+          <p class="sub">Search, filter by provider, expand families, and toggle individual models. Selected models stay highlighted across families.</p>
+        </div>
+        <div class="model-picker-head-actions">
+          <button id="model-picker-select-all" type="button" class="compact">Select visible</button>
+          <button id="model-picker-clear-all" type="button" class="compact danger">Clear visible</button>
+          <button id="model-picker-close" type="button" class="danger" aria-label="Close model picker">Close</button>
+        </div>
+      </div>
+      <div class="model-picker-toolbar">
+        <input id="picker-model-search" type="search" placeholder="Filter models or families" aria-label="Filter models in picker">
+        <select id="picker-provider-filter" aria-label="Filter by provider in picker">
+          <option value="">All providers</option>
+          <option value="ollama">Ollama</option>
+          <option value="openai">OpenAI compatible</option>
+          <option value="kilo">Kilo</option>
+          <option value="nvidia">NVIDIA</option>
+          <option value="codex_cli">Codex CLI</option>
+        </select>
+      </div>
+      <div id="picker-popular-models" class="popular-section" aria-label="Popular models">
+        <div class="section-kicker">
+          <h4>Recommended starting points</h4><span class="muted">Top matches from your inventory</span>
+        </div>
+        <div id="picker-popular-grid" class="popular-model-grid"><div class="empty compact-empty">Loading…</div></div>
+      </div>
+      <div id="picker-model-families" class="model-family-list"><div class="empty compact-empty">Loading families…</div></div>
+      <div class="model-picker-foot">
+        <span id="picker-selection-count" class="muted">0 selected</span>
+        <div class="actions justify-end">
+          <button id="model-picker-cancel" type="button">Cancel</button>
+          <button id="picker-apply" type="button" class="primary">Apply selection</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/static/enhanced.js?v=20260801-ux4" defer></script>
 </body>
 </html>

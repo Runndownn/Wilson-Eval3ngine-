@@ -31,13 +31,13 @@ class OllamaAdapter:
 
     name = "ollama"
 
-    # Approved models from Ollama gateway - these are the 5 best models
+    # Approved models from Ollama gateway - these are the available models
     APPROVED_MODELS = {
-        "llama3.1:8b",      # Meta - 8B, 131K context, tool support
-        "qwen2.5:7b",       # Alibaba - 7B, 32K context, tool support  
-        "gemma2:9b",        # Google - 9B, 8K context, good reasoning
-        "phi3:mini",        # Microsoft - 3.8B, 131K context, efficient
-        "mistral:7b",       # Mistral - 7.2B, 32K context, reliable
+        "gpt-oss:latest",      # GPT OSS model on gateway
+        "gemma3:4b",          # Google Gemma 3 4B
+        "qwen3:4b",           # Alibaba Qwen 3 4B
+        "llama3.2:1b",        # Meta Llama 3.2 1B
+        "tinyllama:latest",   # TinyLlama
     }
 
     # Models with embedding capability

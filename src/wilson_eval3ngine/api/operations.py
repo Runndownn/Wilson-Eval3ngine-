@@ -20,6 +20,7 @@ from ..domain.contracts import Operation, OperationState
 from ..persistence.database import Repository
 from ..security.authorization import check_authorization, AuthorizationError
 from ..util import new_id, sha256_hex, utc_now
+from ..observability import get_trace_id
 from .auth import RequestContext
 
 logger = logging.getLogger("wilson.api.operations")
@@ -181,7 +182,7 @@ def add_operation_endpoints(
                     "code": "experiment_not_found",
                     "retryable": False,
                     "safe_detail": "experiment does not exist in this project",
-                    "trace_id": new_id("trc"),
+                    "trace_id": get_trace_id(),
                     "schema_version": "we3.error.v1",
                 },
             )
@@ -194,7 +195,7 @@ def add_operation_endpoints(
                 if operation:
                     return {
                         "schema_version": "we3.operation_ack.v1",
-                        "trace_id": new_id("trc"),
+                        "trace_id": get_trace_id(),
                         "project_id": context.project_id,
                         "operation": operation.model_dump(mode="json"),
                         "idempotent": True,
@@ -211,7 +212,7 @@ def add_operation_endpoints(
                     "code": "insufficient_role",
                     "retryable": False,
                     "safe_detail": str(e),
-                    "trace_id": new_id("trc"),
+                    "trace_id": get_trace_id(),
                     "schema_version": "we3.error.v1",
                 },
             )
@@ -234,7 +235,7 @@ def add_operation_endpoints(
 
         return {
             "schema_version": "we3.operation_ack.v1",
-            "trace_id": new_id("trc"),
+            "trace_id": get_trace_id(),
             "project_id": context.project_id,
             "operation": operation.model_dump(mode="json"),
         }
@@ -255,7 +256,7 @@ def add_operation_endpoints(
                     "code": "experiment_not_found",
                     "retryable": False,
                     "safe_detail": "experiment does not exist",
-                    "trace_id": new_id("trc"),
+                    "trace_id": get_trace_id(),
                     "schema_version": "we3.error.v1",
                 },
             )
@@ -268,7 +269,7 @@ def add_operation_endpoints(
                     "code": "etag_mismatch",
                     "retryable": True,
                     "safe_detail": "resource has been modified",
-                    "trace_id": new_id("trc"),
+                    "trace_id": get_trace_id(),
                     "schema_version": "we3.error.v1",
                 },
             )
@@ -284,14 +285,14 @@ def add_operation_endpoints(
                     "code": "unauthorized",
                     "retryable": False,
                     "safe_detail": "cannot pause experiment",
-                    "trace_id": new_id("trc"),
+                    "trace_id": get_trace_id(),
                     "schema_version": "we3.error.v1",
                 },
             )
 
         return {
             "schema_version": "we3.operation.v1",
-            "trace_id": new_id("trc"),
+            "trace_id": get_trace_id(),
             "project_id": context.project_id,
             "status": "paused",
         }
@@ -310,7 +311,7 @@ def add_operation_endpoints(
                     "code": "experiment_not_found",
                     "retryable": False,
                     "safe_detail": "experiment does not exist",
-                    "trace_id": new_id("trc"),
+                    "trace_id": get_trace_id(),
                     "schema_version": "we3.error.v1",
                 },
             )
@@ -326,14 +327,14 @@ def add_operation_endpoints(
                     "code": "unauthorized",
                     "retryable": False,
                     "safe_detail": "cannot resume experiment",
-                    "trace_id": new_id("trc"),
+                    "trace_id": get_trace_id(),
                     "schema_version": "we3.error.v1",
                 },
             )
 
         return {
             "schema_version": "we3.operation.v1",
-            "trace_id": new_id("trc"),
+            "trace_id": get_trace_id(),
             "project_id": context.project_id,
             "status": "resumed",
         }
@@ -352,7 +353,7 @@ def add_operation_endpoints(
                     "code": "experiment_not_found",
                     "retryable": False,
                     "safe_detail": "experiment does not exist",
-                    "trace_id": new_id("trc"),
+                    "trace_id": get_trace_id(),
                     "schema_version": "we3.error.v1",
                 },
             )
@@ -368,14 +369,14 @@ def add_operation_endpoints(
                     "code": "unauthorized",
                     "retryable": False,
                     "safe_detail": "cannot cancel experiment",
-                    "trace_id": new_id("trc"),
+                    "trace_id": get_trace_id(),
                     "schema_version": "we3.error.v1",
                 },
             )
 
         return {
             "schema_version": "we3.operation.v1",
-            "trace_id": new_id("trc"),
+            "trace_id": get_trace_id(),
             "project_id": context.project_id,
             "status": "cancelled",
         }
@@ -394,7 +395,7 @@ def add_operation_endpoints(
                     "code": "experiment_not_found",
                     "retryable": False,
                     "safe_detail": "experiment does not exist",
-                    "trace_id": new_id("trc"),
+                    "trace_id": get_trace_id(),
                     "schema_version": "we3.error.v1",
                 },
             )
@@ -410,14 +411,14 @@ def add_operation_endpoints(
                     "code": "unauthorized",
                     "retryable": False,
                     "safe_detail": "cannot regrade experiment",
-                    "trace_id": new_id("trc"),
+                    "trace_id": get_trace_id(),
                     "schema_version": "we3.error.v1",
                 },
             )
 
         return {
             "schema_version": "we3.operation.v1",
-            "trace_id": new_id("trc"),
+            "trace_id": get_trace_id(),
             "project_id": context.project_id,
             "status": "regrading",
         }
@@ -441,7 +442,7 @@ def add_operation_endpoints(
                     "code": "unauthorized",
                     "retryable": False,
                     "safe_detail": "cannot list runs",
-                    "trace_id": new_id("trc"),
+                    "trace_id": get_trace_id(),
                     "schema_version": "we3.error.v1",
                 },
             )
@@ -453,7 +454,7 @@ def add_operation_endpoints(
 
         return {
             "schema_version": "we3.run_list.v1",
-            "trace_id": new_id("trc"),
+            "trace_id": get_trace_id(),
             "project_id": context.project_id,
             "experiment_id": experiment_id,
             "runs": runs,
@@ -480,14 +481,14 @@ def add_operation_endpoints(
                     "code": "unauthorized",
                     "retryable": False,
                     "safe_detail": "cannot read metrics",
-                    "trace_id": new_id("trc"),
+                    "trace_id": get_trace_id(),
                     "schema_version": "we3.error.v1",
                 },
             )
 
         return {
             "schema_version": "we3.metric_list.v1",
-            "trace_id": new_id("trc"),
+            "trace_id": get_trace_id(),
             "project_id": context.project_id,
             "metrics": [],
             "next_cursor": None,
@@ -516,14 +517,14 @@ def add_operation_endpoints(
                         "code": "unauthorized",
                         "retryable": False,
                         "safe_detail": "cannot generate dossier",
-                        "trace_id": new_id("trc"),
+                        "trace_id": get_trace_id(),
                         "schema_version": "we3.error.v1",
                     },
                 )
 
         return {
             "schema_version": "we3.operation.v1",
-            "trace_id": new_id("trc"),
+            "trace_id": get_trace_id(),
             "project_id": context.project_id,
             "status": "generating_dossier",
         }

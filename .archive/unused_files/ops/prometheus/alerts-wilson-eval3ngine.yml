@@ -1,0 +1,176 @@
+# Prometheus Alert Rules for Wilson Eval3ngine
+# Generated from SLI/SLO definitions
+# TODO 52 - T8.1.2: Alerting configuration
+
+groups:
+  - name: we3.sli.api_availability
+    rules:
+      - alert: APIAvailabilityBreaching
+        expr: we3_sli_api_availability_v1 < 0.999
+        for: 5m
+        labels:
+          severity: page
+          category: availability
+          owner: "Platform Team"
+          runbook: "/docs/operations/sev-incidents.md#provider-outage"
+        annotations:
+          summary: "API availability below 99.9%"
+          description: "API success rate has dropped below target. Check for provider outages or system errors."
+
+      - alert: APIAvailabilityWarning
+        expr: we3_sli_api_availability_v1 < 0.9995
+        for: 10m
+        labels:
+          severity: ticket
+          category: availability
+          owner: "Platform Team"
+          runbook: "/docs/operations/sev-incidents.md#provider-outage"
+        annotations:
+          summary: "API availability approaching breach threshold"
+          description: "API success rate below warning threshold (99.95%). Monitor closely."
+
+  - name: we3.sli.evidence_durability
+    rules:
+      - alert: EvidenceDurabilityBreaching
+        expr: we3_sli_evidence_durability_v1 < 0.9999
+        for: 5m
+        labels:
+          severity: page
+          category: integrity
+          owner: "SRE Team"
+          runbook: "/docs/operations/sev-incidents.md#evidence-loss"
+        annotations:
+          summary: "Evidence durability below 99.99%"
+          description: "Records accepted but not persisted. Risk of data loss. Check database connectivity and disk space."
+
+  - name: we3.sli.queue_latency
+    rules:
+      - alert: QueueStartLatencyHigh
+        expr: we3_sli_queue_start_latency_p95_v1 > 3
+        for: 5m
+        labels:
+          severity: ticket
+          category: performance
+          owner: "SRE Team"
+          runbook: "/docs/operations/sev-incidents.md#queue-backlog"
+        annotations:
+          summary: "Queue start latency approaching threshold"
+          description: "P95 queue start latency above 3 minutes. Check worker capacity and job backlog."
+
+      - alert: QueueStartLatencyBreaching
+        expr: we3_sli_queue_start_latency_p95_v1 > 5
+        for: 3m
+        labels:
+          severity: page
+          category: performance
+          owner: "SRE Team"
+          runbook: "/docs/operations/sev-incidents.md#queue-backlog"
+        annotations:
+          summary: "Queue start latency breaching SLO"
+          description: "P95 queue start latency exceeds 5 minutes. Immediate investigation required."
+
+  - name: we3.sli.grading_duration
+    rules:
+      - alert: GradingDurationHigh
+        expr: we3_sli_grading_duration_p95_v1 > 60
+        for: 5m
+        labels:
+          severity: ticket
+          category: performance
+          owner: "Evaluation Team"
+          runbook: "/docs/operations/sev-incidents.md#grading-drift"
+        annotations:
+          summary: "Grading duration high"
+          description: "P95 grading duration above 1 minute. Check grader performance and resource usage."
+
+      - alert: GradingDurationBreaching
+        expr: we3_sli_grading_duration_p95_v1 > 120
+        for: 3m
+        labels:
+          severity: page
+          category: performance
+          owner: "Evaluation Team"
+          runbook: "/docs/operations/sev-incidents.md#grading-drift"
+        annotations:
+          summary: "Grading duration breaching SLO"
+          description: "P95 grading duration exceeds 2 minutes. Check for stuck processes or resource exhaustion."
+
+  - name: we3.sli.report_generation
+    rules:
+      - alert: ReportGenerationSlow
+        expr: we3_sli_report_generation_p99_v1 > 300
+        for: 5m
+        labels:
+          severity: ticket
+          category: performance
+          owner: "SRE Team"
+          runbook: "/docs/operations/sev-incidents.md#report-generation"
+        annotations:
+          summary: "Report generation slow"
+          description: "P99 report generation time above 5 minutes. Check database query performance."
+
+      - alert: ReportGenerationBreaching
+        expr: we3_sli_report_generation_p99_v1 > 600
+        for: 3m
+        labels:
+          severity: page
+          category: performance
+          owner: "SRE Team"
+          runbook: "/docs/operations/sev-incidents.md#report-generation"
+        annotations:
+          summary: "Report generation breaching SLO"
+          description: "P99 report generation time exceeds 10 minutes. Check for database lock contention or missing indexes."
+
+  - name: we3.sli.hash_verification
+    rules:
+      - alert: HashVerificationFailed
+        expr: we3_sli_hash_verification_v1 < 1.0
+        for: 10m
+        labels:
+          severity: page
+          category: integrity
+          owner: "Security Team"
+          runbook: "/docs/operations/sev-incidents.md#evidence-corruption"
+        annotations:
+          summary: "Scheduled hash verification failed"
+          description: "Evidence integrity verification failed. Possible corruption or missing artifacts."
+
+      - alert: HashVerificationJobFailed
+        expr: absent(we3_sli_hash_verification_v1[24h])
+        for: 1h
+        labels:
+          severity: page
+          category: integrity
+          owner: "Security Team"
+          runbook: "/docs/operations/sev-incidents.md#evidence-corruption"
+        annotations:
+          summary: "Hash verification job itself failed"
+          description: "The scheduled hash verification job has failed to execute. Check cron and job runner."
+
+  - name: we3.sli.provider_errors
+    rules:
+      - alert: ProviderErrorRateHigh
+        expr: rate(we3_provider_errors_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: ticket
+          category: availability
+          owner: "Platform Team"
+          runbook: "/docs/operations/sev-incidents.md#provider-outage"
+        annotations:
+          summary: "Provider error rate elevated"
+          description: "Provider errors detected. Check provider health and credentials."
+
+  - name: we3.sli.review_backlog
+    rules:
+      - alert: CriticalReviewBacklog
+        expr: we3_unresolved_critical_reviews > 10
+        for: 10m
+        labels:
+          severity: ticket
+          category: performance
+          owner: "Governance Team"
+          runbook: "/docs/operations/sev-incidents.md#review-backlog"
+        annotations:
+          summary: "Critical review backlog detected"
+          description: "Unresolved critical review tasks exceeding threshold. Check reviewer capacity."

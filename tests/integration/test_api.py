@@ -5,14 +5,14 @@ from wilson_eval3ngine.config import Settings
 from wilson_eval3ngine.domain.io import load_experiment
 
 
-def test_validate_endpoint_enforces_project_context(tmp_path, foundation_manifest):
+def test_validate_endpoint_enforces_project_context(db, tmp_path, foundation_manifest):
     settings = Settings(
-        database_url=f"sqlite:///{tmp_path / 'api.db'}",
+        database_url="sqlite://",
         artifact_root=tmp_path / "artifacts",
         auth_mode="dev",
         environment="test",
     )
-    client = TestClient(create_app(settings))
+    client = TestClient(create_app(settings, database=db))
     manifest = load_experiment(foundation_manifest).model_dump(mode="json", by_alias=True)
 
     ok = client.post(
@@ -38,15 +38,15 @@ def test_validate_endpoint_enforces_project_context(tmp_path, foundation_manifes
 
 
 def test_run_endpoint_rejects_manifest_from_another_project(
-    tmp_path, foundation_manifest
+    db, tmp_path, foundation_manifest
 ):
     settings = Settings(
-        database_url=f"sqlite:///{tmp_path / 'api-run.db'}",
+        database_url="sqlite://",
         artifact_root=tmp_path / "artifacts",
         auth_mode="dev",
         environment="test",
     )
-    client = TestClient(create_app(settings))
+    client = TestClient(create_app(settings, database=db))
 
     denied = client.post(
         "/v1/experiments:run",

@@ -1,0 +1,65 @@
+# Prometheus alerting rules for Wilson Eval3ngine
+# These rules define alerts based on SLO breaches and operational health
+
+groups:
+  - name: we3-slo-alerts
+    rules:
+      # API Availability SLO breach (99.9%)
+      - alert: APIAvailabilitySLOBreach
+        expr: we3_health_check{name="database", critical="true"} == 0
+        for: 5m
+        labels:
+          severity: page
+          team: platform
+        annotations:
+          summary: "API availability SLO breach detected"
+          description: "Database health check has been failing for more than 5 minutes"
+          runbook: "/docs/operations/sev-incidents.md#provider-outage-response"
+
+      # Evidence Durability SLO breach (99.99%)
+      - alert: EvidenceDurabilitySLOBreach
+        expr: we3_health_check{name="artifact_store", critical="true"} == 0
+        for: 10m
+        labels:
+          severity: page
+          team: sre
+        annotations:
+          summary: "Evidence durability SLO breach detected"
+          description: "Artifact store health check has been failing for more than 10 minutes"
+          runbook: "/docs/operations/sev-incidents.md#evidence-corruption-response"
+
+      # Disk space warning
+      - alert: LowDiskSpace
+        expr: we3_health_check{name="disk_space", critical="false"} == 0
+        for: 2m
+        labels:
+          severity: ticket
+          team: sre
+        annotations:
+          summary: "Low disk space detected"
+          description: "Available disk space is below 1GB"
+          runbook: "/docs/operations/sev-incidents.md#disk-full-response"
+
+      # High error rate
+      - alert: HighErrorRate
+        expr: rate(we3_operations_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: ticket
+          team: platform
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate exceeds 5% for more than 5 minutes"
+          runbook: "/docs/operations/sev-incidents.md#high-error-rate-response"
+
+      # API latency degradation
+      - alert: APILatencyDegradation
+        expr: we3_uptime_seconds > 0 and we3_health_check{name="database", critical="true"} == 0
+        for: 3m
+        labels:
+          severity: ticket
+          team: platform
+        annotations:
+          summary: "API latency degradation detected"
+          description: "Database health check is failing, API may be slow"
+          runbook: "/docs/operations/sev-incidents.md#latency-degradation-response"

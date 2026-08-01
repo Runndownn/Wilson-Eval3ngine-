@@ -1,0 +1,60 @@
+{
+  "runId": "eval-20260731-214222",
+  "batchId": "run-b86f626b",
+  "model": "nvidia/nemotron-4-340b-instruct",
+  "modelLabel": "nvidia/nemotron-4-340b-instruct",
+  "provider": "nvidia",
+  "promptPackage": "",
+  "timestamp": "2026-07-31 17:43:38",
+  "status": "PARTIAL",
+  "avg_time": 0.1445,
+  "prompt_success_rate": "0/2",
+  "total_tokens": 0,
+  "code_examples": 0,
+  "security_awareness": 0,
+  "gateway_used": false,
+  "reasoning_models": 0,
+  "total_reasoning_tokens": 0,
+  "prompts": [
+    "Explain quantum computing",
+    "Write a Python function for fibonacci"
+  ],
+  "evaluations": [
+    {
+      "time": 0.187,
+      "success": false,
+      "response": "Connection failed",
+      "tokens": 0,
+      "status": "FAIL",
+      "has_code": false,
+      "has_security": false,
+      "provider": "nvidia",
+      "is_reasoning": false,
+      "has_both": false,
+      "reasoning_content": null,
+      "reasoning_tokens": 0,
+      "backend_model": "",
+      "backend_provider": ""
+    },
+    {
+      "time": 0.102,
+      "success": false,
+      "response": "Connection failed",
+      "tokens": 0,
+      "status": "FAIL",
+      "has_code": false,
+      "has_security": false,
+      "provider": "nvidia",
+      "is_reasoning": false,
+      "has_both": false,
+      "reasoning_content": null,
+      "reasoning_tokens": 0,
+      "backend_model": "",
+      "backend_provider": ""
+    }
+  ],
+  "response_times": [
+    0.187,
+    0.102
+  ]
+}

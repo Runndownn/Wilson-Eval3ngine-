@@ -49,13 +49,13 @@ class ModelTestResult:
     available: bool = True
 
 
-# The 5 best Ollama models for Wilson Eval3ngine
+# The available Ollama models for Wilson Eval3ngine
 BEST_MODELS = [
-    ("llama3.1:8b", "Meta Llama 3.1 8B", "High-performance reasoning with 131K context"),
-    ("qwen2.5:7b", "Alibaba Qwen 2.5 7B", "Strong multilingual support with tool calling"),
-    ("gemma2:9b", "Google Gemma 2 9B", "Excellent for technical and coding tasks"),
-    ("phi3:mini", "Microsoft Phi 3 Mini", "Efficient 3.8B with 131K context window"),
-    ("mistral:7b", "Mistral 7B", "Reliable general-purpose with 32K context"),
+    ("gpt-oss:latest", "GPT OSS", "High-performance model on SSH gateway"),
+    ("gemma3:4b", "Google Gemma 3 4B", "Efficient model with good reasoning"),
+    ("qwen3:4b", "Alibaba Qwen 3 4B", "Multilingual support with tool calling"),
+    ("llama3.2:1b", "Meta Llama 3.2 1B", "Lightweight reasoning model"),
+    ("tinyllama:latest", "TinyLlama", "Compact and efficient"),
 ]
 
 # Test prompts for evaluation
@@ -193,7 +193,7 @@ def generate_model_pdf(results: list[ModelTestResult], output_path: Path, logo_p
     meta_data = [
         ["Operator Facing Report", f"Generated {now.strftime('%Y-%m-%d %H:%M UTC')}"],
         ["Framework Version", "0.1.0"],
-        ["Provider", "Ollama Gateway (localhost:11434)"],
+        ["Provider", "Ollama Gateway (10.133.7.211:11434)"],
         ["Models Tested", str(len(results))],
         ["Test Prompts", str(len(TEST_PROMPTS))],
     ]
