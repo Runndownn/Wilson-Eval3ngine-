@@ -2,7 +2,7 @@
 
 A declared Content-Length is only an optimization and cannot be the security
 boundary: HTTP/1.1 chunked requests, HTTP/2 streams, malformed clients, and
-proxy/backend disagreements may omit or contradict it.  This middleware wraps
+proxy/backend disagreements may omit or contradict it. This middleware wraps
 the ASGI receive channel and enforces the configured limit before framework
 body parsing or endpoint execution.
 """
@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -71,7 +70,6 @@ class StreamingBodyLimitMiddleware:
                     (b"content-type", b"application/json"),
                     (b"content-length", str(len(payload)).encode("ascii")),
                     (b"cache-control", b"no-store"),
-                    (b"connection", b"close"),
                 ],
             }
         )
@@ -87,12 +85,9 @@ class StreamingBodyLimitMiddleware:
             parsed: list[int] = []
             try:
                 for raw in lengths:
-                    if not raw or raw.strip() != raw:
+                    if not raw or raw.strip() != raw or not raw.isdecimal():
                         raise ValueError
-                    value = int(raw, 10)
-                    if value < 0:
-                        raise ValueError
-                    parsed.append(value)
+                    parsed.append(int(raw, 10))
             except ValueError:
                 await self._send_json(
                     send,
@@ -125,8 +120,7 @@ class StreamingBodyLimitMiddleware:
             nonlocal received
             message = await receive()
             if message["type"] == "http.request":
-                body = message.get("body", b"")
-                received += len(body)
+                received += len(message.get("body", b""))
                 if received > self.max_body_size:
                     raise RequestBodyTooLarge
             return message
@@ -148,6 +142,9 @@ class StreamingBodyLimitMiddleware:
                     "request body exceeds maximum allowed size",
                 )
                 return
+            # An application that starts a response before fully consuming a
+            # request has already committed response headers. Aborting is safer
+            # than emitting a second response or continuing side effects.
             raise
 
 
