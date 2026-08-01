@@ -1,7 +1,7 @@
 """Runtime composition overlays for focused GUI hardening.
 
 The repository serves a static index document and retains selected legacy
-helpers while the application boundary is extracted.  This module installs
+helpers while the application boundary is extracted. This module installs
 versioned same-origin assets and replaces the legacy regular-file credential
 handoff before the server begins accepting requests.
 """
@@ -20,10 +20,12 @@ from .secret_transport import store_api_key_pipe
 _STYLESHEETS = (
     '<link rel="stylesheet" href="/static/ux4.css?v=20260801-ux4">',
     '<link rel="stylesheet" href="/static/ux5.css?v=20260801-ux5">',
+    '<link rel="stylesheet" href="/static/ux6.css?v=20260801-ux6">',
 )
 _SCRIPTS = (
     '<script src="/static/ux4.js?v=20260801-ux4" defer></script>',
     '<script src="/static/ux5.js?v=20260801-ux5" defer></script>',
+    '<script src="/static/ux6.js?v=20260801-ux6" defer></script>',
 )
 
 
