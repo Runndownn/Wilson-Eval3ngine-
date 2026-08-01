@@ -480,3 +480,153 @@
   .report-understanding dl { grid-template-columns: 1fr; }
   .report-understanding dd { margin-bottom: 5px; }
 }
+
+/* ---- Model picker modal dialog ---- */
+
+.model-picker-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(4px);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.model-picker-overlay.hidden {
+  display: none;
+}
+
+.model-picker-dialog {
+  background: linear-gradient(180deg, #0d1426, #070b16);
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.65);
+  width: min(920px, 94vw);
+  max-height: min(86vh, 820px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.model-picker-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--line);
+  background: #0a1224;
+}
+
+.model-picker-head .sub {
+  margin-top: 5px;
+  font-size: 12px;
+  color: var(--muted);
+  max-width: 70%;
+}
+
+.model-picker-head-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.model-picker-head-actions .compact {
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.model-picker-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(5, 10, 22, 0.45);
+}
+
+.model-picker-toolbar input {
+  flex: 1;
+  min-width: 200px;
+}
+
+.model-picker-toolbar select {
+  min-width: 160px;
+}
+
+.model-picker-dialog .popular-section,
+.model-picker-dialog .model-family-list {
+  padding: 10px 14px;
+  overflow: auto;
+}
+
+.model-picker-dialog .popular-section {
+  border-bottom: 1px solid var(--line);
+  max-height: 260px;
+}
+
+.model-picker-dialog .model-family-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  max-height: 480px;
+}
+
+.model-picker-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line);
+  background: #0a1224;
+}
+
+.model-picker-foot .muted {
+  font-size: 12px;
+}
+
+.actions.justify-end {
+  justify-content: flex-end;
+}
+
+.selected-model-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 8px 0;
+  min-height: 60px;
+  align-items: center;
+}
+
+.selected-model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(91, 140, 255, 0.15);
+  border: 1px solid var(--blue);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.selected-model-chip button {
+  background: transparent;
+  border: 0;
+  color: var(--yellow);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+

@@ -6,8 +6,8 @@
   <meta name="description" content="Wilson Eval3ngine model evaluation workspace">
   <title>Wilson Eval3ngine</title>
   <link rel="icon" href="/static/we3-logo.png">
-  <link rel="stylesheet" href="/static/enhanced.css?v=20260801-ux3">
-  <link rel="stylesheet" href="/static/ux3.css?v=20260801-ux3">
+  <link rel="stylesheet" href="/static/enhanced.css?v=20260801-ux4">
+  <link rel="stylesheet" href="/static/ux3.css?v=20260801-ux4">
 </head>
 <body>
   <div class="shell">
@@ -223,10 +223,12 @@
               <section class="family-section" aria-labelledby="model-families-title">
                 <div class="section-kicker">
                   <div><span class="step-badge">All families</span><h4 id="model-families-title">Expand a family to choose models</h4></div>
+                  <button id="open-model-picker" type="button" class="primary" aria-haspopup="dialog" aria-controls="model-picker-dialog">Open model picker</button>
                 </div>
-                <div id="model-families" class="model-family-list"><div class="empty compact-empty">Loading model families…</div></div>
+                <div id="selected-model-chips" class="selected-model-chips">
+                  <div class="empty compact-empty">No models selected yet. Open the picker to choose.</div>
+                </div>
               </section>
-              <div id="model-chips" class="model-picker legacy-model-picker" hidden></div>
             </article>
 
             <article class="card generate-prompt-card">
@@ -358,7 +360,49 @@
     <div class="resize-handle" aria-hidden="true"></div>
   </section>
 
+  <div id="model-picker-overlay" class="model-picker-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="model-picker-title" tabindex="-1">
+    <div class="model-picker-dialog" role="document">
+      <div class="model-picker-head">
+        <div>
+          <span class="step-badge">Model picker</span>
+          <h3 id="model-picker-title">Select models</h3>
+          <p class="sub">Search, filter by provider, expand families, and toggle individual models. Selected models stay highlighted across families.</p>
+        </div>
+        <div class="model-picker-head-actions">
+          <button id="model-picker-select-all" type="button" class="compact">Select visible</button>
+          <button id="model-picker-clear-all" type="button" class="compact danger">Clear visible</button>
+          <button id="model-picker-close" type="button" class="danger" aria-label="Close model picker">Close</button>
+        </div>
+      </div>
+      <div class="model-picker-toolbar">
+        <input id="picker-model-search" type="search" placeholder="Filter models or families" aria-label="Filter models in picker">
+        <select id="picker-provider-filter" aria-label="Filter by provider in picker">
+          <option value="">All providers</option>
+          <option value="ollama">Ollama</option>
+          <option value="openai">OpenAI compatible</option>
+          <option value="kilo">Kilo</option>
+          <option value="nvidia">NVIDIA</option>
+          <option value="codex_cli">Codex CLI</option>
+        </select>
+      </div>
+      <div id="picker-popular-models" class="popular-section" aria-label="Popular models">
+        <div class="section-kicker">
+          <h4>Recommended starting points</h4><span class="muted">Top matches from your inventory</span>
+        </div>
+        <div id="picker-popular-grid" class="popular-model-grid"><div class="empty compact-empty">Loading…</div></div>
+      </div>
+      <div id="picker-model-families" class="model-family-list"><div class="empty compact-empty">Loading families…</div></div>
+      <div class="model-picker-foot">
+        <span id="picker-selection-count" class="muted">0 selected</span>
+        <div class="actions justify-end">
+          <button id="model-picker-cancel" type="button">Cancel</button>
+          <button id="picker-apply" type="button" class="primary">Apply selection</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="/static/enhanced.js?v=20260801-ux3" defer></script>
+  <script src="/static/enhanced.js?v=20260801-ux4" defer></script>
 </body>
 </html>

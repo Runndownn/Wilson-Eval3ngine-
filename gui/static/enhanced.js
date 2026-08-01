@@ -442,8 +442,13 @@ function wireModelChoices(root) {
       const id = button.dataset.model;
       if (state.selectedModels.has(id)) state.selectedModels.delete(id);
       else state.selectedModels.add(id);
-      renderModelSelector();
+      renderSelectedModels();
       updateRunSummary();
+      if (!$("model-picker-overlay").classList.contains("hidden")) {
+        renderModelPicker();
+      } else {
+        renderModelSelector();
+      }
     }),
   );
 }
@@ -491,22 +496,55 @@ function renderModelSelector() {
   popularRoot.innerHTML = popular.length ? popular.map((model) => modelChoiceMarkup(model, true)).join("") : '<div class="empty compact-empty">No popular models match the current filters.</div>';
   wireModelChoices(popularRoot);
 
+  renderSelectedModels();
+}
+
+function renderSelectedModels() {
+  const chipsRoot = $("selected-model-chips");
+  if (!chipsRoot) return;
+  if (!state.selectedModels.size) {
+    chipsRoot.innerHTML = '<div class="empty compact-empty">No models selected yet. Open the picker to choose.</div>';
+    return;
+  }
+  const selected = state.models.filter((model) => state.selectedModels.has(model.id));
+  chipsRoot.innerHTML = selected
+    .map((model) => `<span class="selected-model-chip">${escapeHtml(model.id)}<span class="muted">·</span><button type="button" data-remove-model="${escapeAttr(model.id)}" aria-label="Remove ${escapeHtml(model.id)}">✕</button></span>`)
+    .join("");
+  chipsRoot.querySelectorAll("[data-remove-model]").forEach((button) =>
+    button.addEventListener("click", () => {
+      const id = button.dataset.removeModel;
+      state.selectedModels.delete(id);
+      renderSelectedModels();
+      renderModelSelector();
+      updateRunSummary();
+    }),
+  );
+}
+
+function renderModelPicker() {
+  const pickerItems = filteredModels("picker-model-search", "picker-provider-filter");
+  const popular = [...pickerItems].sort((a, b) => popularScore(b) - popularScore(a) || a.id.localeCompare(b.id)).slice(0, 6);
+  const popularRoot = $("picker-popular-grid");
+  popularRoot.innerHTML = popular.length ? popular.map((model) => modelChoiceMarkup(model, true)).join("") : '<div class="empty compact-empty">No popular models match the current filters.</div>';
+  wireModelChoices(popularRoot);
+
   const groups = new Map();
-  for (const model of items) {
+  for (const model of pickerItems) {
     const family = modelFamily(model);
     if (!groups.has(family)) groups.set(family, []);
     groups.get(family).push(model);
   }
-  const familyRoot = $("model-families");
+  const familyRoot = $("picker-model-families");
   if (!groups.size) {
     familyRoot.innerHTML = '<div class="empty compact-empty">No model families match the current filters.</div>';
+    updatePickerSelectionCount();
     return;
   }
   familyRoot.innerHTML = [...groups.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([family, models]) => {
       const selected = models.filter((model) => state.selectedModels.has(model.id)).length;
-      const open = state.openFamilies.has(family) || Boolean($("generation-model-search").value);
+      const open = state.openFamilies.has(family);
       return `<section class="model-family ${open ? "open" : ""}" data-family="${escapeAttr(family)}">
         <button type="button" class="model-family-header" data-toggle-family="${escapeAttr(family)}" aria-expanded="${open}">
           <span><strong>${escapeHtml(family)}</strong><small>${models.length} model${models.length === 1 ? "" : "s"} · ${selected} selected</small></span><span class="family-chevron">⌄</span>
@@ -521,10 +559,28 @@ function renderModelSelector() {
       if (state.openFamilies.has(family)) state.openFamilies.delete(family);
       else state.openFamilies.add(family);
       localStorage.setItem("we3.openFamilies", JSON.stringify([...state.openFamilies]));
-      renderModelSelector();
+      renderModelPicker();
     }),
   );
   wireModelChoices(familyRoot);
+  updatePickerSelectionCount();
+}
+
+function updatePickerSelectionCount() {
+  const count = $("picker-selection-count");
+  if (count) count.textContent = `${state.selectedModels.size} selected`;
+}
+
+function openModelPicker() {
+  $("model-picker-overlay").classList.remove("hidden");
+  $("model-picker-dialog").focus();
+  document.body.classList.add("dialog-open");
+  renderModelPicker();
+}
+
+function closeModelPicker() {
+  $("model-picker-overlay").classList.add("hidden");
+  document.body.classList.remove("dialog-open");
 }
 
 function applyPackage() {
@@ -1012,6 +1068,30 @@ function init() {
     state.selectedModels.clear();
     renderModelSelector();
     updateRunSummary();
+  });
+  $("open-model-picker").addEventListener("click", openModelPicker);
+  $("model-picker-close").addEventListener("click", closeModelPicker);
+  $("model-picker-cancel").addEventListener("click", closeModelPicker);
+  $("picker-apply").addEventListener("click", () => {
+    renderSelectedModels();
+    updateRunSummary();
+    closeModelPicker();
+  });
+  $("picker-model-search").addEventListener("input", renderModelPicker);
+  $("picker-provider-filter").addEventListener("change", renderModelPicker);
+  $("model-picker-overlay").addEventListener("click", (event) => {
+    if (event.target === $("model-picker-overlay")) closeModelPicker();
+  });
+  $("model-picker-select-all").addEventListener("click", () => {
+    filteredModels("picker-model-search", "picker-provider-filter").forEach((model) => state.selectedModels.add(model.id));
+    renderModelPicker();
+    updatePickerSelectionCount();
+  });
+  $("model-picker-clear-all").addEventListener("click", () => {
+    const visible = filteredModels("picker-model-search", "picker-provider-filter");
+    for (const model of visible) state.selectedModels.delete(model.id);
+    renderModelPicker();
+    updatePickerSelectionCount();
   });
   $("generate-form").addEventListener("submit", submitGeneration);
   $("cancel-job").addEventListener("click", async (event) => {
