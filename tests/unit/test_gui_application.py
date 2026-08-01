@@ -136,7 +136,7 @@ def test_restart_marks_nonterminal_jobs_interrupted(
 
 def test_endpoint_url_rejects_public_plaintext_http() -> None:
     with pytest.raises(Exception) as captured:
-        application._normalize_endpoint_url("openai", "http://example.com/v1")
+        application._normalize_endpoint_url("openai", "http://8.8.8.8/v1")
 
     assert getattr(captured.value, "status_code", None) == 422
 
