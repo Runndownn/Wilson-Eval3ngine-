@@ -30,7 +30,9 @@ def test_production_credentials_have_no_fallback_values() -> None:
     assert "WE3_GRAFANA_PASSWORD:-admin" not in text
     for variable in {
         "WE3_POSTGRES_PASSWORD",
+        "WE3_DATABASE_URL",
         "WE3_REDIS_PASSWORD",
+        "WE3_REDIS_URL",
         "WE3_GRAFANA_PASSWORD",
         "WE3_OIDC_ISSUER",
         "WE3_OIDC_JWKS_URI",
@@ -38,6 +40,15 @@ def test_production_credentials_have_no_fallback_values() -> None:
         "WE3_TLS_EMAIL",
     }:
         assert f"${{{variable}:?" in text
+
+
+def test_connection_urls_are_not_assembled_from_raw_passwords() -> None:
+    environment = _compose()["services"]["api"]["environment"]
+
+    assert environment["WE3_DATABASE_URL"].startswith("${WE3_DATABASE_URL:?")
+    assert environment["WE3_REDIS_URL"].startswith("${WE3_REDIS_URL:?")
+    assert "WE3_POSTGRES_PASSWORD" not in environment["WE3_DATABASE_URL"]
+    assert "WE3_REDIS_PASSWORD" not in environment["WE3_REDIS_URL"]
 
 
 def test_monitoring_admin_api_is_not_enabled() -> None:
