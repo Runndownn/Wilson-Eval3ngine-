@@ -1,14 +1,14 @@
 """Ephemeral secret handoff for report-generation child processes.
 
-The report generator historically consumed an owner-only regular file.  That
+The report generator historically consumed an owner-only regular file. That
 protected the value from other users but still left plaintext key material on
-the filesystem.  This module preserves the existing narrow ``file_path``
+the filesystem. This module preserves the existing narrow ``file_path``
 contract while replacing the regular file with a one-shot POSIX FIFO held in a
 private temporary directory.
 
-The secret exists only in the parent process and the kernel pipe buffer.  A
+The secret exists only in the parent process and the kernel pipe buffer. A
 single reader receives it and EOF, after which the bytearray is overwritten and
-the FIFO directory is removed.  Platforms without ``os.mkfifo`` fail closed;
+the FIFO directory is removed. Platforms without ``os.mkfifo`` fail closed;
 they must use a future native secure transport rather than silently falling
 back to plaintext storage.
 """
@@ -102,15 +102,21 @@ class OneShotSecretPipe:
             self._closed = True
 
             thread = self._thread
+            release_reader: int | None = None
             if thread and thread.is_alive() and os.path.exists(self.file_path):
                 try:
-                    # Opening a non-blocking reader releases a writer waiting
-                    # for a child that never started or never consumed the key.
-                    descriptor = os.open(self.file_path, os.O_RDONLY | os.O_NONBLOCK)
-                    os.close(descriptor)
+                    # Keep the reader open until the writer exits. Closing it
+                    # immediately creates a race where the writer can remain
+                    # blocked or receive SIGPIPE before cleanup completes.
+                    release_reader = os.open(
+                        self.file_path,
+                        os.O_RDONLY | os.O_NONBLOCK,
+                    )
                 except OSError:
-                    pass
+                    release_reader = None
                 thread.join(timeout=1.0)
+                if release_reader is not None:
+                    os.close(release_reader)
 
             _zero(self._secret)
             try:
