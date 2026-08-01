@@ -1,0 +1,114 @@
+# Wilson Eval3ngine - Production Dockerfile
+# Multi-stage build with security hardening
+
+# ============================================================================
+# Build Stage
+# ============================================================================
+FROM python:3.13-slim AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_ONLY_BINARY=1
+
+WORKDIR /build
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    make \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy project files for dependency resolution
+COPY pyproject.toml ./
+
+# Install dependencies to a separate layer
+RUN python -m pip install --user ".[postgres,backup]"
+
+# ============================================================================
+# Runtime Stage
+# ============================================================================
+FROM python:3.13-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONHASHSEED=random \
+    PYTHONPATH=/app/src \
+    HOME=/home/we3 \
+    WE3_ENVIRONMENT=production \
+    WE3_AUTH_MODE=oidc
+
+# Create non-root user
+RUN groupadd --system we3 && \
+    useradd --system \
+    --gid we3 \
+    --uid 10001 \
+    --home-dir /home/we3 \
+    --shell /usr/sbin/nologin \
+    we3
+
+# Install only runtime dependencies (no build tools)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && update-ca-certificates
+
+# Copy Python packages from builder
+COPY --from=builder /root/.local /home/we3/.local
+
+# Make sure root and we3 can use the packages
+ENV PATH=/home/we3/.local/bin:$PATH
+
+WORKDIR /app
+
+# Copy application source
+COPY --chown=we3:we3 src /app/src
+COPY --chown=we3:we3 pyproject.toml README.md LICENSE /app/
+
+# Copy contracts and examples (read-only)
+COPY --chown=we3:we3 contracts /app/contracts
+COPY --chown=we3:we3 examples /app/examples
+
+# Create directories for runtime data
+RUN mkdir -p /var/lib/we3/artifacts \
+    /var/lib/we3/backups \
+    /var/log/we3 \
+    /app/var \
+    && chown -R we3:we3 /var/lib/we3 /var/log/we3 /app/var
+
+# Switch to non-root user
+USER 10001
+
+# Health check - checks readiness endpoint
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD python -c "import urllib.request,sys; \
+    try: \
+        r=urllib.request.urlopen('http://127.0.0.1:8000/ready',timeout=5); \
+        sys.exit(0 if r.status==200 else 1); \
+    except: sys.exit(1)"
+
+EXPOSE 8000
+
+# Run with security hardening flags
+# --workers: number of worker processes (adjust based on CPU cores)
+# --timeout: graceful shutdown timeout
+# --graceful-timeout: force kill after this time during shutdown
+# --limit-request-line: prevent overly long request lines
+# --limit-request-fields: prevent header injection attacks
+CMD ["sh", "-c", "python -m gunicorn \
+    --bind 0.0.0.0:8000 \
+    --workers 4 \
+    --worker-class uvicorn.workers.UvicornWorker \
+    --timeout 120 \
+    --graceful-timeout 60 \
+    --limit-request-line 8190 \
+    --limit-request-fields 100 \
+    --limit-request-field-size 16384 \
+    --access-logfile - \
+    --error-logfile - \
+    --log-level info \
+    --preload \
+    wilson_eval3ngine.api.main:app"]

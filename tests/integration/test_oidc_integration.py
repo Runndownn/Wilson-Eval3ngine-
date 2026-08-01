@@ -25,10 +25,10 @@ from wilson_eval3ngine.security.oidc import (
 class TestOIDCAPIIntegration:
     """Integration tests for OIDC authentication through the API."""
 
-    def test_oidc_mode_rejects_dev_headers(self, tmp_path) -> None:
+    def test_oidc_mode_rejects_dev_headers(self, db, tmp_path) -> None:
         """OIDC mode does not accept development header authentication."""
         settings = Settings(
-            database_url=f"sqlite:///{tmp_path / 'oidc-test.db'}",
+            database_url="sqlite://",
             artifact_root=tmp_path / "artifacts",
             auth_mode="oidc",
             environment="test",
@@ -36,7 +36,7 @@ class TestOIDCAPIIntegration:
             oidc_jwks_uri="https://auth.example.com/.well-known/jwks.json",
             oidc_audience="wilson-eval3ngine",
         )
-        client = TestClient(create_app(settings))
+        client = TestClient(create_app(settings, database=db))
 
         # Dev headers should not work in OIDC mode
         response = client.post(
@@ -52,7 +52,7 @@ class TestOIDCAPIIntegration:
 
     @patch("wilson_eval3ngine.security.oidc.JWKSClient.verify_token")
     def test_oidc_mode_accepts_valid_bearer_token(
-        self, mock_verify: Mock, tmp_path
+        self, mock_verify: Mock, db, tmp_path
     ) -> None:
         """Valid OIDC bearer token is accepted in production mode."""
         mock_verify.return_value = {
@@ -63,7 +63,7 @@ class TestOIDCAPIIntegration:
         }
 
         settings = Settings(
-            database_url=f"sqlite:///{tmp_path / 'oidc-valid.db'}",
+            database_url="sqlite://",
             artifact_root=tmp_path / "artifacts",
             auth_mode="oidc",
             environment="test",
@@ -71,7 +71,7 @@ class TestOIDCAPIIntegration:
             oidc_jwks_uri="https://auth.example.com/.well-known/jwks.json",
             oidc_audience="wilson-eval3ngine",
         )
-        client = TestClient(create_app(settings))
+        client = TestClient(create_app(settings, database=db))
 
         response = client.post(
             "/v1/experiments:validate",
@@ -84,7 +84,7 @@ class TestOIDCAPIIntegration:
         assert response.status_code != 401
 
     @patch("wilson_eval3ngine.security.oidc.JWKSClient.verify_token")
-    def test_oidc_mode_rejects_invalid_role(self, mock_verify: Mock, tmp_path) -> None:
+    def test_oidc_mode_rejects_invalid_role(self, mock_verify: Mock, db, tmp_path) -> None:
         """Token with invalid role is rejected."""
         mock_verify.return_value = {
             "we3_project_id": "model-safety",
@@ -94,7 +94,7 @@ class TestOIDCAPIIntegration:
         }
 
         settings = Settings(
-            database_url=f"sqlite:///{tmp_path / 'oidc-bad-role.db'}",
+            database_url="sqlite://",
             artifact_root=tmp_path / "artifacts",
             auth_mode="oidc",
             environment="test",
@@ -102,7 +102,7 @@ class TestOIDCAPIIntegration:
             oidc_jwks_uri="https://auth.example.com/.well-known/jwks.json",
             oidc_audience="wilson-eval3ngine",
         )
-        client = TestClient(create_app(settings))
+        client = TestClient(create_app(settings, database=db))
 
         response = client.post(
             "/v1/experiments:validate",
@@ -116,13 +116,13 @@ class TestOIDCAPIIntegration:
 
     @patch("wilson_eval3ngine.security.oidc.JWKSClient.verify_token")
     def test_oidc_mode_rejects_missing_project_claim(
-        self, mock_verify: Mock, tmp_path
+        self, mock_verify: Mock, db, tmp_path
     ) -> None:
         """Token missing project claim is rejected."""
         mock_verify.side_effect = TokenValidationError("Missing required claim: we3_project_id")
 
         settings = Settings(
-            database_url=f"sqlite:///{tmp_path / 'oidc-no-project.db'}",
+            database_url="sqlite://",
             artifact_root=tmp_path / "artifacts",
             auth_mode="oidc",
             environment="test",
@@ -130,7 +130,7 @@ class TestOIDCAPIIntegration:
             oidc_jwks_uri="https://auth.example.com/.well-known/jwks.json",
             oidc_audience="wilson-eval3ngine",
         )
-        client = TestClient(create_app(settings))
+        client = TestClient(create_app(settings, database=db))
 
         response = client.post(
             "/v1/experiments:validate",
@@ -144,13 +144,13 @@ class TestOIDCAPIIntegration:
 
     @patch("wilson_eval3ngine.security.oidc.JWKSClient.verify_token")
     def test_oidc_mode_rejects_missing_role_claim(
-        self, mock_verify: Mock, tmp_path
+        self, mock_verify: Mock, db, tmp_path
     ) -> None:
         """Token missing role claim is rejected."""
         mock_verify.side_effect = TokenValidationError("Missing required claim: we3_role")
 
         settings = Settings(
-            database_url=f"sqlite:///{tmp_path / 'oidc-no-role.db'}",
+            database_url="sqlite://",
             artifact_root=tmp_path / "artifacts",
             auth_mode="oidc",
             environment="test",
@@ -158,7 +158,7 @@ class TestOIDCAPIIntegration:
             oidc_jwks_uri="https://auth.example.com/.well-known/jwks.json",
             oidc_audience="wilson-eval3ngine",
         )
-        client = TestClient(create_app(settings))
+        client = TestClient(create_app(settings, database=db))
 
         response = client.post(
             "/v1/experiments:validate",

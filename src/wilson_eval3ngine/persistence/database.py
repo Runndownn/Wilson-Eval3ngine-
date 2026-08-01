@@ -383,12 +383,22 @@ class OverrideRow(Base):
 
 
 class Database:
-    def __init__(self, url: str) -> None:
+    def __init__(
+        self,
+        url: str,
+        *,
+        connect_args: dict | None = None,
+        poolclass: type | None = None,
+    ) -> None:
         if url.startswith("sqlite:///") and not url.endswith(":memory:"):
             database_path = Path(url.removeprefix("sqlite:///"))
             database_path.parent.mkdir(parents=True, exist_ok=True)
-        connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-        self.engine = create_engine(url, future=True, connect_args=connect_args)
+        if connect_args is None:
+            connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
+        engine_kwargs: dict = {"future": True, "connect_args": connect_args}
+        if poolclass is not None:
+            engine_kwargs["poolclass"] = poolclass
+        self.engine = create_engine(url, **engine_kwargs)
         self.session_factory = sessionmaker(
             bind=self.engine,
             expire_on_commit=False,

@@ -3,9 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Security headers (frame-ancestors, X-Frame-Options) are set via HTTP headers by SecurityHeadersMiddleware in server.py.
+       They cannot be set via <meta> tags and are ignored by browsers when delivered this way. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://cdnjs.cloudflare.com; font-src 'self' https://cdnjs.cloudflare.com; connect-src 'self' ws: wss:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <meta http-equiv="X-Content-Type-Options" content="nosniff">
+  <meta http-equiv="Referrer-Policy" content="no-referrer">
   <title>Wilson Eval3ngine GUI</title>
   <link rel="icon" type="image/png" href="/static/we3-logo.png">
-  <link rel="stylesheet" href="/static/styles.css?v=20260720-0630">
+   <link rel="stylesheet" href="/static/styles.css?v=20260731-13">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
 </head>
@@ -26,6 +31,7 @@
     <button class="tab-link" data-tab="tab-endpoints">Endpoints</button>
     <button class="tab-link" data-tab="tab-models">Models</button>
     <button class="tab-link" data-tab="tab-generate">Generate Reports</button>
+    <button class="tab-link" data-tab="tab-charts">Charts</button>
     <button class="tab-link" data-tab="tab-reports">Reports</button>
   </nav>
 
@@ -50,42 +56,47 @@
           <label for="endpoint-url">Endpoint URL
             <span class="help-icon" data-help="endpoint-url-help">i</span>
           </label>
-          <div id="endpoint-url-help" class="help-tooltip">Select the SSH gateway endpoint. All Ollama models are on the gateway at 10.133.7.211 with 8GB GPU. Available models: gpt-oss, gemma3:4b, qwen3:4b, llama3.2:1b, tinyllama, bge-m3. Choose an auto-discovered endpoint or pick Custom to type a URL manually.</div>
+           <div id="endpoint-url-help" class="help-tooltip">Pick a preset (NVIDIA NIM, Kilo Gateway, Ollama, Codex CLI) or Custom to enter any URL. After saving an endpoint, switch to the Models tab and click Auto-Detect to pull the available models. Gateway hosts are configured via the WE3_GATEWAY_URLS environment variable.</div>
           <select id="endpoint-url">
             <option value="">-- Select an endpoint type or enter URL --</option>
-            <option value="http://10.133.7.211:11434">SSH Gateway Ollama (http://10.133.7.211:11434)</option>
-            <option value="http://10.133.7.211:8000">SSH Gateway OpenAI Compatible (http://10.133.7.211:8000)</option>
-            <option value="http://10.133.7.211:5000">SSH Gateway OpenAI Compatible (http://10.133.7.211:5000)</option>
-            <option value="http://10.133.7.211:3000">SSH Gateway OpenAI Compatible (http://10.133.7.211:3000)</option>
             <option value="__custom__">Custom...</option>
+            <option value="__nvidia__">NVIDIA NIM (https://integrate.api.nvidia.com/v1</option>
+            <option value="__kilo__">Kilo Gateway (https://api.kilo.ai/api/gateway</option>
+            <option value="__ollama__">Ollama (http://localhost:11434</option>
+            <option value="__codex__">Codex CLI (cli://codex</option>
           </select>
-          <input id="endpoint-url-custom" class="custom-input hidden" placeholder="Enter custom endpoint URL (e.g., http://host:11434)" />
+           <input id="endpoint-url-custom" class="custom-input hidden" autocomplete="off" placeholder="Enter custom endpoint URL (e.g., http://host:11434)" />
         </div>
         <div class="field">
           <label for="endpoint-api-key">API Key <span class="optional">optional</span>
             <span class="help-icon" data-help="endpoint-api-key-help">i</span>
           </label>
-          <div id="endpoint-api-key-help" class="help-tooltip">Paste a bearer token or API key if the provider requires authentication. Leave blank for unauthenticated gateway endpoints. Keys are stored locally in the GUI data directory and never sent to external servers.</div>
-          <input id="endpoint-api-key" type="password" placeholder="sk-..." />
+          <div id="endpoint-api-key-help" class="help-tooltip">Paste a bearer token or API key if the provider requires authentication. Leave blank for unauthenticated gateway endpoints. NVIDIA NIM keys start with nvapi- and can be generated at build.nvidia.com. Keys are encrypted at rest with Fernet+PBKDF2 (260k iterations) and never sent to external servers except the endpoint you configure</div>
+          <input id="endpoint-api-key" type="password" autocomplete="current-password" placeholder="sk-..." />
         </div>
         <div class="field">
           <label for="endpoint-provider">Provider
             <span class="help-icon" data-help="endpoint-provider-help">i</span>
           </label>
-          <div id="endpoint-provider-help" class="help-tooltip">Select the provider type so the GUI knows which API paths to query. Ollama uses /api/tags, OpenAI-compatible and Kilo Gateway use /models. Changing this after saving does not update existing connections; remove and re-add the endpoint if needed.</div>
-          <select id="endpoint-provider">
-            <option value="ollama">Ollama</option>
-            <option value="openai">OpenAI Compatible</option>
-            <option value="kilo">Kilo Gateway</option>
-          </select>
+          <div id="endpoint-provider-help" class="help-tooltip">Select the provider type. Ollama uses /api/tags; OpenAI-compatible, Kilo Gateway, and NVIDIA NIM use /models. For NVIDIA, the URL must be https://integrate.api.nvidia.com/v1 and the API key starts with nvapi-. Changing provider after saving does not update existing connections; remove and re-add if needed</div>
+         <select id="endpoint-provider">
+             <option value="ollama">Ollama</option>
+             <option value="openai">OpenAI Compatible</option>
+             <option value="kilo">Kilo Gateway</option>
+             <option value="nvidia">NVIDIA NIM (build.nvidia.com)</option>
+             <option value="codex_cli">Codex CLI</option>
+           </select>
         </div>
-        <div class="actions">
-          <button type="submit" class="primary">Save Endpoint</button>
-          <button type="button" id="test-endpoint" class="secondary">Test Connection</button>
-          <button type="button" id="auto-detect-endpoints" class="secondary">Auto-Detect Gateway</button>
-          <button type="button" id="kilo-login" class="secondary">Kilo Login</button>
-        </div>
-        <div id="kilo-login-status" class="status-message"></div>
+         <div class="actions">
+           <button type="submit" class="primary">Save Endpoint</button>
+           <button type="button" id="test-endpoint" class="secondary">Test Connection</button>
+           <button type="button" id="auto-detect-endpoints" class="secondary">Auto-Detect Gateway</button>
+           <button type="button" id="login-kilo" class="secondary provider-login hidden" data-provider="kilo">Login</button>
+           <button type="button" id="login-nvidia" class="secondary provider-login hidden" data-provider="nvidia">Login</button>
+           <button type="button" id="login-ollama" class="secondary provider-login hidden" data-provider="ollama">Login</button>
+           <button type="button" id="login-codex" class="secondary provider-login hidden" data-provider="codex_cli">Login</button>
+         </div>
+         <div id="login-status" class="status-message"></div>
       </form>
       <div id="endpoints-list" class="list"></div>
     </section>
@@ -138,7 +149,8 @@
       </div>
       <form id="report-form" class="form">
         <div class="generate-layout">
-          <div class="generate-left">
+          <!-- Selected Models (left half, scrollable window) -->
+          <div class="generate-selected-models">
             <div class="field">
               <label for="report-models">Selected Models
                 <span class="help-icon" data-help="selected-models-help">i</span>
@@ -162,103 +174,115 @@
               </div>
             </div>
           </div>
-          <div class="generate-right">
-            <div class="field">
-              <label for="report-prompt-package">Prompt Package
-                <span class="help-icon" data-help="report-prompt-package-help">i</span>
-              </label>
-              <div id="report-prompt-package-help" class="help-tooltip">Choose a pre-built prompt package that covers a specific evaluation dimension. Selecting a package populates the prompts panel. You can also click Edit to customize individual prompts.</div>
-              <select id="report-prompt-package" class="thin-dropdown">
-                <option value="">-- Select a prompt package --</option>
-              </select>
-              <div id="prompt-packages-loading" class="loading-message" style="display:none;">Loading prompt packages...</div>
-              <div id="prompt-packages-error" class="error-message" style="display:none;"></div>
-            </div>
-            <div class="form-row">
+
+          <!-- All dropdowns and selections (right half) -->
+          <div class="generate-content">
+            <div class="generate-right">
               <div class="field">
-                <label for="prompt-count">
-                  Prompt Count <span id="prompt-count-value" class="prompt-count-value">5</span>
-                  <span class="help-icon" data-help="prompt-count-help">i</span>
+                <label for="report-prompt-package">Prompt Package
+                  <span class="help-icon" data-help="report-prompt-package-help">i</span>
                 </label>
-                <div id="prompt-count-help" class="help-tooltip">Drag slider to select count. Single run: up to 20. Batch mode: up to 100.</div>
-                <input type="range" id="prompt-count" min="1" max="20" value="5" class="prompt-count-slider" />
-              </div>
-              <div class="field">
-                <label for="batch-mode">Execution Mode
-                  <span class="help-icon" data-help="batch-mode-help">i</span>
-                </label>
-                <div id="batch-mode-help" class="help-tooltip">Single-run: All models process all selected prompts. Batch mode: Each model processes a subset of prompts sequentially, reducing concurrent load.</div>
-                <select id="batch-mode">
-                  <option value="single">Single Run</option>
-                  <option value="batch">Batch Mode</option>
+                <div id="report-prompt-package-help" class="help-tooltip">Choose a pre-built prompt package that covers a specific evaluation dimension. Selecting a package populates the prompts panel. You can also click Edit to customize individual prompts.</div>
+                <select id="report-prompt-package" class="thin-dropdown">
+                  <option value="">-- Select a prompt package --</option>
                 </select>
+                <div id="prompt-packages-loading" class="loading-message" style="display:none;">Loading prompt packages...</div>
+                <div id="prompt-packages-error" class="error-message" style="display:none;"></div>
               </div>
-            </div>
-            <div class="field">
-              <label for="report-prompts">Prompts
-                <span class="optional">customizable</span>
-                <span class="help-icon" data-help="report-prompts-help">i</span>
-              </label>
-              <div id="report-prompts-help" class="help-tooltip">Click Edit to open the prompt editor modal. Or enter custom prompts separated by commas to override the package defaults. Leave empty to use package prompts.</div>
-              <div class="prompts-edit-container">
-                <textarea id="report-prompts" rows="4" placeholder="Click Edit to customize prompts or use package defaults..."></textarea>
-                <button type="button" id="edit-prompts" class="secondary prompts-edit-btn">Edit</button>
-              </div>
-            </div>
-          <div class="actions">
-            <button type="submit" class="primary">Generate Reports</button>
-            <button type="button" id="stop-reports" class="danger">Stop</button>
-          </div>
-          <div id="generate-rate-limit-status" class="rate-limit-status hidden">
-            <span class="rate-limit-indicator"></span>
-            <span class="rate-limit-text">Rate limit detected</span>
-          </div>
-          
-          <!-- Progress Dashboard -->
-          <div id="progress-dashboard" class="progress-dashboard hidden">
-            <div class="progress-overall">
-              <div class="progress-header">
-                <div class="progress-title">
-                  <span id="progress-status-label" class="progress-status-label">Queued</span>
-                  <span id="progress-step" class="progress-step">Waiting to start...</span>
+              <div class="form-row">
+                <div class="field">
+                  <label for="prompt-count">
+                    Prompt Count <span id="prompt-count-value" class="prompt-count-value">5</span>
+                    <span class="help-icon" data-help="prompt-count-help">i</span>
+                  </label>
+                  <div id="prompt-count-help" class="help-tooltip">Drag slider to select count. Single run: up to 20. Batch mode: up to 100.</div>
+                  <input type="range" id="prompt-count" min="1" max="20" value="5" class="prompt-count-slider" />
                 </div>
-                <div class="progress-stats">
-                  <span id="progress-percentage" class="progress-percentage">0%</span>
+                <div class="field">
+                  <label for="batch-mode">Execution Mode
+                    <span class="help-icon" data-help="batch-mode-help">i</span>
+                  </label>
+                  <div id="batch-mode-help" class="help-tooltip">Single-run: All models process all selected prompts. Batch mode: Each model processes a subset of prompts sequentially, reducing concurrent load.</div>
+                  <select id="batch-mode">
+                    <option value="single">Single Run</option>
+                    <option value="batch">Batch Mode</option>
+                  </select>
                 </div>
               </div>
-              <div class="progress-bar-container">
-                <div id="progress-bar" class="progress-bar" style="width: 0%"></div>
+              <div class="field">
+                <label for="report-prompts">Prompts
+                  <span class="optional">customizable</span>
+                  <span class="help-icon" data-help="report-prompts-help">i</span>
+                </label>
+                <div id="report-prompts-help" class="help-tooltip">Click Edit to open the prompt editor modal. Or enter custom prompts separated by commas to override the package defaults. Leave empty to use package prompts.</div>
+                <div class="prompts-edit-container">
+                  <textarea id="report-prompts" rows="4" placeholder="Click Edit to customize prompts or use package defaults..."></textarea>
+                  <button type="button" id="edit-prompts" class="secondary prompts-edit-btn">Edit</button>
+                </div>
               </div>
-              <div class="progress-meta">
-                <span id="progress-completed">0 completed</span>
-                <span id="progress-failed" class="progress-failed-text hidden">0 failed</span>
-                <span id="progress-processing">0 processing</span>
-                <span id="progress-queued">0 queued</span>
-                <span id="progress-elapsed">Elapsed: 0s</span>
-                <span id="progress-eta" class="hidden">ETA: calculating...</span>
-              </div>
+            <div class="actions">
+              <button type="submit" class="primary">Generate Reports</button>
+              <button type="button" id="stop-reports" class="danger">Stop</button>
+            </div>
+            <div id="generate-rate-limit-status" class="rate-limit-status hidden">
+              <span class="rate-limit-indicator"></span>
+              <span class="rate-limit-text">Rate limit detected</span>
             </div>
             
-            <div id="progress-models" class="progress-models"></div>
+            <!-- Progress Dashboard -->
+            <div id="progress-dashboard" class="progress-dashboard hidden">
+              <div class="progress-overall">
+                <div class="progress-header">
+                  <div class="progress-title">
+                    <span id="progress-status-label" class="progress-status-label">Queued</span>
+                    <span id="progress-step" class="progress-step">Waiting to start...</span>
+                  </div>
+                  <div class="progress-stats">
+                    <span id="progress-percentage" class="progress-percentage">0%</span>
+                  </div>
+                </div>
+                <div class="progress-bar-track">
+                  <div id="progress-bar" class="progress-bar" style="width: 0%"></div>
+                </div>
+                <div class="progress-meta">
+                  <span id="progress-completed">0 completed</span>
+                  <span id="progress-failed" class="progress-failed-text hidden">0 failed</span>
+                  <span id="progress-processing">0 processing</span>
+                  <span id="progress-queued">0 queued</span>
+                  <span id="progress-elapsed" class="progress-elapsed">Elapsed: 0s</span>
+                  <span id="progress-eta" class="hidden">ETA: calculating...</span>
+                </div>
+                <!-- Non-bouncing "model is responding" warning with spinner timer -->
+                <div id="progress-model-warning" class="progress-model-warning hidden">
+                  <span class="spinner spinner--sm model-warning-spinner" aria-hidden="true"></span>
+                  <span class="model-warning-text">Model is responding, we will wait until it finishes before sending the next request.</span>
+                  <span class="model-warning-timer">0s</span>
+                </div>
+              </div>
+              
+              <div id="progress-models" class="progress-models"></div>
+              
+              <details id="progress-reports-details" class="progress-reports-details">
+                <summary class="progress-reports-summary">Report Details</summary>
+                <div id="progress-reports-list" class="progress-reports-list"></div>
+              </details>
+              
+            </div>
             
-            <details id="progress-reports-details" class="progress-reports-details">
-              <summary class="progress-reports-summary">Report Details</summary>
-              <div id="progress-reports-list" class="progress-reports-list"></div>
-            </details>
+            <!-- Progress Actions (outside dashboard so they remain visible after completion) -->
+            <div id="progress-actions" class="progress-actions hidden">
+              <button type="button" id="cancel-reports" class="danger">Cancel</button>
+              <button type="button" id="retry-reports" class="secondary hidden">Retry Failed</button>
+               <a id="view-reports-link" href="#" class="secondary hidden">View Reports</a>
+            </div>
             
+            <pre id="report-output" class="output"></pre>
+            
+            <!-- Charts are displayed in the Charts tab, not here -->
+            </div>
           </div>
-          
-          <!-- Progress Actions (outside dashboard so they remain visible after completion) -->
-          <div id="progress-actions" class="progress-actions hidden">
-            <button type="button" id="cancel-reports" class="danger">Cancel</button>
-            <button type="button" id="retry-reports" class="secondary hidden">Retry Failed</button>
-            <a id="view-reports-link" href="/reports/" target="_blank" class="secondary hidden">View Reports</a>
-          </div>
-          
-          <pre id="report-output" class="output"></pre>
         </div>
-      </div>
-    </form>
+      </form>
 
       <!-- Models Selector Modal -->
       <div id="models-selector-modal" class="prompts-modal">
@@ -307,6 +331,39 @@
       </div>
     </section>
 
+    <!-- CHARTS -->
+    <section id="tab-charts" class="tab-panel">
+      <div class="direction-block">
+        <button class="direction-btn" data-target="charts-help">How to use Charts</button>
+        <div id="charts-help" class="direction-text">
+          <p>The Charts tab displays all visualization charts generated from model evaluation data. Charts are produced from real evaluation JSON sidecars and telemetry runs, showing model performance, response times, token usage, success rates, and more. Each run's charts are grouped together and can be individually removed using the X button on each chart card. Charts are generated automatically during report generation and reflect the actual data from each run.</p>
+        </div>
+      </div>
+      <div class="charts-toolbar">
+        <button id="generate-charts-btn" class="primary">Generate Charts</button>
+        <button id="refresh-charts-btn" class="secondary">Refresh</button>
+      </div>
+      <!-- Dynamic Status Bar -->
+      <div id="charts-status-bar" class="status-bar status-bar--compact hidden">
+        <div class="status-bar__track">
+          <div class="status-bar__fill" id="charts-progress-bar" style="width: 0%"></div>
+        </div>
+        <div class="status-bar__body">
+          <div class="status-bar__left">
+            <span id="charts-spinner" class="spinner spinner--sm" aria-hidden="true"></span>
+            <span id="charts-status-text" class="status-bar__text status-bar__text--info">Ready</span>
+          </div>
+          <div class="status-bar__right">
+            <span id="charts-status-current" class="status-bar__current"></span>
+            <span id="charts-status-progress" class="status-bar__progress">0 / 0</span>
+          </div>
+        </div>
+      </div>
+      <div id="charts-gallery" class="charts-gallery">
+        <!-- Run sections with charts will be dynamically populated here -->
+      </div>
+    </section>
+
     <!-- REPORTS -->
     <section id="tab-reports" class="tab-panel">
       <div class="direction-block">
@@ -330,30 +387,106 @@
             <button id="pdf-prev" class="secondary">Previous</button>
             <span id="pdf-page">Page -</span>
             <button id="pdf-next" class="secondary">Next</button>
-            <a id="pdf-open" class="secondary" href="/reports/" target="_blank">Open Original</a>
+             <a id="pdf-open" class="secondary" href="#" target="_blank">Open Original</a>
             <button id="pdf-export" class="primary">Export PDF</button>
           </div>
         </div>
         <canvas id="pdf-canvas"></canvas>
       </div>
+
+      <!-- Telemetry Wall (hidden — charts are now shown alongside PDFs in the report grid above) -->
+      <div class="telemetry-section" style="display: none;">
+        <div class="telemetry-toolbar">
+          <button id="refresh-telemetry" class="secondary">Refresh</button>
+          <button id="clear-telemetry" class="danger">Clear Telemetry</button>
+        </div>
+        <div id="telemetry-wall" class="telemetry-wall"></div>
+      </div>
     </section>
+
+    <!-- Telemetry Expanded Modal -->
+    <div id="telemetry-backdrop" class="telemetry-backdrop">
+      <div id="telemetry-expanded" class="telemetry-expanded">
+        <div class="telemetry-expanded-header">
+          <span id="telemetry-expanded-title">Run Details</span>
+          <button id="telemetry-expanded-close" class="run-window-close" title="Close">×</button>
+        </div>
+        <div id="telemetry-expanded-body" class="telemetry-expanded-body"></div>
+      </div>
+    </div>
+
+    <!-- Raw Data Modal -->
+    <div id="raw-data-modal" class="raw-data-modal">
+      <div class="raw-data-modal-backdrop" id="raw-data-modal-backdrop"></div>
+      <div class="raw-data-modal-content" id="raw-data-modal-content-wrapper">
+        <div class="raw-data-modal-header">
+          <span>Raw Data</span>
+          <button id="raw-data-modal-close" class="run-window-close" title="Close">×</button>
+        </div>
+        <div id="raw-data-modal-content" class="raw-data-modal-body"></div>
+        <div class="raw-data-modal-actions">
+          <button id="raw-data-copy" class="secondary">Copy to Clipboard</button>
+        </div>
+      </div>
+    </div>
   </main>
 
-  <div id="pdf-modal" class="pdf-modal">
-    <div class="pdf-modal-header">
-      <span id="pdf-modal-title">PDF Viewer</span>
-      <button id="pdf-modal-close" class="run-window-close" title="Close viewer">×</button>
-    </div>
-    <div class="pdf-modal-body">
-      <div class="pdf-modal-controls">
-        <button id="pdf-modal-zoom-out" class="secondary">−</button>
-        <span id="pdf-modal-zoom">100%</span>
-        <button id="pdf-modal-zoom-in" class="secondary">+</button>
-      </div>
-      <div id="pdf-modal-container" class="pdf-modal-container"></div>
-    </div>
-  </div>
+   <div id="pdf-modal" class="pdf-modal">
+     <div class="pdf-modal-backdrop" id="pdf-modal-backdrop"></div>
+     <div class="pdf-modal-content" id="pdf-modal-content">
+     <div class="pdf-modal-header">
 
-  <script src="/static/app.js?v=20260720-0630"></script>
+       <span id="pdf-modal-title">PDF Viewer</span>
+
+       <button id="pdf-modal-close" class="run-window-close" title="Close viewer">×</button>
+     </div>
+     <div class="pdf-modal-body">
+
+       <div class="pdf-modal-controls">
+
+         <button id="pdf-modal-zoom-out" class="secondary">−</button>
+
+         <span id="pdf-modal-zoom">100%</span>
+
+         <button id="pdf-modal-zoom-in" class="secondary">+</button>
+       </div>
+
+       <div id="pdf-modal-container" class="pdf-modal-container"></div>
+     </div>
+    </div>
+   </div>
+   </div>
+
+<!-- Chart Modal (draggable, zoomable, resizable window with click-backdrop-to-close) -->
+    <div id="chart-modal" class="chart-modal">
+      <div class="chart-modal-backdrop" id="chart-modal-backdrop"></div>
+      <div class="chart-modal-content" id="chart-modal-content">
+        <div class="chart-modal-header" id="chart-modal-header">
+           <span id="chart-modal-title">Chart Viewer</span>
+           <span id="chart-modal-sample-badge" class="chart-modal-sample-badge" title="Sample chart — generated from synthetic data">SAMPLE</span>
+           <div class="chart-modal-zoom-controls">
+            <button id="chart-modal-zoom-out" class="zoom-btn" title="Zoom Out (−)">−</button>
+            <span id="chart-modal-zoom-level" class="zoom-level">100%</span>
+            <button id="chart-modal-zoom-in" class="zoom-btn" title="Zoom In (+)">+</button>
+            <button id="chart-modal-zoom-reset" class="zoom-btn" title="Reset Zoom (0)">Reset</button>
+          </div>
+           <div class="chart-modal-actions">
+            <button id="chart-modal-delete" class="danger" title="Delete this chart" style="font-size: 0.7rem; padding: 2px 8px;">Delete</button>
+            <button id="chart-modal-close-all" class="danger" title="Close all charts" style="font-size: 0.7rem; padding: 2px 8px;">Close All</button>
+            <button id="chart-modal-maximize" class="secondary" title="Maximize viewer" style="font-size: 0.7rem; padding: 2px 8px;">Maximize</button>
+          </div>
+          <button id="chart-modal-close" class="run-window-close" title="Close viewer (Esc)">×</button>
+        </div>
+        <div class="chart-modal-body">
+          <div class="chart-modal-image-wrapper" id="chart-modal-image-wrapper">
+            <img id="chart-modal-img" class="chart-modal-img" alt="Chart" draggable="false" />
+          </div>
+          <div id="chart-modal-desc" class="chart-modal-desc"></div>
+          <div class="chart-modal-resize-handle" id="chart-modal-resize-handle" title="Resize window">⋮</div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/static/app.js?v=20260731-14"></script>
 </body>
 </html>

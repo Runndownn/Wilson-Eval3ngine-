@@ -15,6 +15,6 @@
 | Auth | OIDC with MFA validation, JWKS caching, workload identity | Production OIDC with managed IdP |
 | Project isolation | PostgreSQL RLS with 14-table policy coverage, session variable context, negative permission matrix | API/RLS/object policy negative matrix |
 | Queue | PostgreSQL lease contract | Scheduler/worker/reconciliation implementation |
-| Observability | Minimal | SLO dashboards, alerts, runbooks |
-| DR | Not implemented | Backup/restore with PITR, object recovery, quarterly exercise |
+| Observability | Full SLI/SLO with 6 core SLIs, 13 alert rules, 9 dashboards, error budget, distributed tracing with OTel SDK bridge | SLO dashboards, alerts, runbooks, trace-based alerting |
+| DR | Backup/restore with PITR, encrypted backups, reconciliation verification, quarterly exercise | Backup/restore with PITR, object recovery, quarterly exercise |
 | Production certification | Prohibited | Full certification suite (20 tests) |

@@ -30,10 +30,8 @@ from wilson_eval3ngine.evidence.store import LocalArtifactStore, ArtifactRef
 class TestDatabaseRLSIntegration:
     """Tests for database row-level security and context binding."""
 
-    def test_context_binding_sets_transaction_local(self, tmp_path):
+    def test_context_binding_sets_transaction_local(self, db):
         """Project context binds to transaction-local setting."""
-        db = Database(f"sqlite:///{tmp_path / 'rls_test.db'}")
-        db.initialize()
 
         # SQLite doesn't support SET LOCAL - test the validation logic exists
         # by verifying the function handles errors appropriately
@@ -43,10 +41,8 @@ class TestDatabaseRLSIntegration:
         from wilson_eval3ngine.security.context import validate_context_bound
         assert callable(validate_context_bound)
 
-    def test_repository_uses_project_scoped_queries(self, tmp_path):
+    def test_repository_uses_project_scoped_queries(self, db):
         """Repository queries filter by project_id to prevent cross-project access."""
-        db = Database(f"sqlite:///{tmp_path / 'repo_test.db'}")
-        db.initialize()
         repo = Repository(db)
 
         # Create project
@@ -66,10 +62,8 @@ class TestDatabaseRLSIntegration:
         sql_str = str(query.compile(compile_kwargs={"literal_binds": True}))
         assert "project_id" in sql_str
 
-    def test_cross_project_query_returns_none(self, tmp_path):
+    def test_cross_project_query_returns_none(self, db):
         """Cross-project query returns None for experiments in other projects."""
-        db = Database(f"sqlite:///{tmp_path / 'cross_proj.db'}")
-        db.initialize()
         repo = Repository(db)
 
         # Create project_a and attempt to query for project_b's experiment
@@ -99,7 +93,7 @@ class TestStorageIsolation:
         assert "internal" in key
         assert "abc123" in key
 
-    def test_local_artifact_store_validates_project(self, tmp_path):
+    def test_local_artifact_store_validates_project(self, db, tmp_path):
         """Local artifact store validates project_id to prevent path traversal."""
         store = LocalArtifactStore(root=tmp_path)
 
@@ -188,7 +182,7 @@ class TestQueueIsolation:
         assert "project_id" in sql_str
         assert "RETURNING" in sql_str
 
-    def test_job_row_schema_includes_project(self, tmp_path):
+    def test_job_row_schema_includes_project(self, db):
         """Job row model includes project_id for isolation."""
         from wilson_eval3ngine.persistence.database import JobRow
 
@@ -196,8 +190,6 @@ class TestQueueIsolation:
         assert hasattr(JobRow, "project_id")
 
         # Check the column setup
-        db = Database(f"sqlite:///{tmp_path / 'job_proj.db'}")
-        db.initialize()
 
         # Verify JobRow has project_id mapped
         from sqlalchemy import inspect
@@ -208,10 +200,8 @@ class TestQueueIsolation:
 class TestConfusedDeputyPrevention:
     """Tests for confused deputy prevention in background workers."""
 
-    def test_worker_validates_project_scope(self, tmp_path):
+    def test_worker_validates_project_scope(self, db):
         """Background workers validate project scope before acting on jobs."""
-        db = Database(f"sqlite:///{tmp_path / 'deputy.db'}")
-        db.initialize()
         repo = Repository(db)
         repo.ensure_project("src_project")
 
@@ -229,7 +219,7 @@ class TestConfusedDeputyPrevention:
 class TestMultiProjectConcurrency:
     """Tests for isolation under concurrent multi-project operations."""
 
-    def test_artifact_paths_dont_collide(self, tmp_path):
+    def test_artifact_paths_dont_collide(self, db):
         """Different projects have non-overlapping artifact paths."""
         # Create artifacts for different projects - just verify paths are structured correctly
         ref_a = ArtifactRef(
@@ -255,19 +245,16 @@ class TestMultiProjectConcurrency:
         assert "project_a" in ref_a.relative_path
         assert "project_b" in ref_b.relative_path
 
-    def test_metric_snapshots_project_isolated(self, tmp_path):
+    def test_metric_snapshots_project_isolated(self, db):
         """Metric snapshots are isolated by project_id in database."""
         from wilson_eval3ngine.persistence.database import MetricSnapshotRow
-
-        db = Database(f"sqlite:///{tmp_path / 'snapshot.db'}")
-        db.initialize()
 
         # MetricSnapshotRow has project_id field
         from sqlalchemy import inspect
         insp = inspect(MetricSnapshotRow)
         assert "project_id" in [c.key for c in insp.columns]
 
-    def test_cross_project_evidence_lookup_blocked(self, tmp_path):
+    def test_cross_project_evidence_lookup_blocked(self, db):
         """Cross-project evidence lookups are blocked by authorization matrix."""
         # viewer cannot read all evidence
         with pytest.raises(Exception):
@@ -301,7 +288,7 @@ class TestReportIsolation:
         assert dossier["project_id"] == "proj_test"
         assert "experiment_id" in dossier
 
-    def test_safe_html_no_raw_prompts(self, tmp_path):
+    def test_safe_html_no_raw_prompts(self, db):
         """Safe HTML report does not embed raw prompts/responses."""
         from wilson_eval3ngine.reports.dossier import write_safe_html
 

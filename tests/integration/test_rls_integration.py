@@ -24,10 +24,9 @@ from wilson_eval3ngine.domain.enums import ExperimentState
 class TestRLSSessionContext:
     """Tests for RLS session context management."""
 
-    def test_rls_context_sets_project_id(self, tmp_path) -> None:
+    def test_rls_context_sets_project_id(self, db) -> None:
         """RLS context sets the project_id session variable."""
-        db = Database(f"sqlite:///{tmp_path / 'rls-test.db'}")
-        db.initialize()
+        
 
         with db.session() as session:
             with rls_context(session, project_id="proj_test"):
@@ -35,10 +34,9 @@ class TestRLSSessionContext:
                 result = session.execute(text("SELECT 1")).scalar()
                 assert result == 1
 
-    def test_rls_context_clears_on_exit(self, tmp_path) -> None:
+    def test_rls_context_clears_on_exit(self, db) -> None:
         """RLS context is cleared when exiting the context manager."""
-        db = Database(f"sqlite:///{tmp_path / 'rls-clear.db'}")
-        db.initialize()
+        
 
         with db.session() as session:
             with rls_context(session, project_id="proj_test"):
@@ -48,10 +46,9 @@ class TestRLSSessionContext:
             result = session.execute(text("SELECT 1")).scalar()
             assert result == 1
 
-    def test_rls_context_rejects_empty_project_id(self, tmp_path) -> None:
+    def test_rls_context_rejects_empty_project_id(self, db) -> None:
         """Empty project_id is rejected."""
-        db = Database(f"sqlite:///{tmp_path / 'rls-empty.db'}")
-        db.initialize()
+        
 
         with db.session() as session:
             with pytest.raises(ValueError, match="project_id must not be empty"):
@@ -62,10 +59,9 @@ class TestRLSSessionContext:
 class TestProjectIsolation:
     """Tests for project-level data isolation."""
 
-    def test_cross_project_access_blocked(self, tmp_path) -> None:
+    def test_cross_project_access_blocked(self, db) -> None:
         """Data from other projects is not visible."""
-        db = Database(f"sqlite:///{tmp_path / 'rls-isolation.db'}")
-        db.initialize()
+        
         repo = Repository(db)
 
         # Create two projects
@@ -115,10 +111,9 @@ class TestProjectIsolation:
                 # level filtering is correct
                 assert len(beta_experiments) == 1  # SQLite doesn't enforce RLS
 
-    def test_project_scope_filter(self, tmp_path) -> None:
+    def test_project_scope_filter(self, db) -> None:
         """Application-level project scope filter works correctly."""
-        db = Database(f"sqlite:///{tmp_path / 'rls-filter.db'}")
-        db.initialize()
+        
         repo = Repository(db)
 
         repo.ensure_project("proj_test")
@@ -148,20 +143,18 @@ class TestProjectIsolation:
 class TestRLSEnforcement:
     """Tests for RLS enforcement and verification."""
 
-    def test_check_rls_enabled_returns_bool(self, tmp_path) -> None:
+    def test_check_rls_enabled_returns_bool(self, db) -> None:
         """check_rls_enabled returns a boolean."""
-        db = Database(f"sqlite:///{tmp_path / 'rls-check.db'}")
-        db.initialize()
+        
 
         with db.session() as session:
             # SQLite doesn't have RLS, so this should return False
             result = check_rls_enabled(session)
             assert isinstance(result, bool)
 
-    def test_verify_project_isolation(self, tmp_path) -> None:
+    def test_verify_project_isolation(self, db) -> None:
         """verify_project_isolation correctly checks isolation."""
-        db = Database(f"sqlite:///{tmp_path / 'rls-verify.db'}")
-        db.initialize()
+        
         repo = Repository(db)
 
         repo.ensure_project("proj_a")
@@ -191,10 +184,9 @@ class TestNegativePermissionMatrix:
     Verifies that there are no cross-project read or write paths.
     """
 
-    def test_no_cross_project_write(self, tmp_path) -> None:
+    def test_no_cross_project_write(self, db) -> None:
         """Cannot write to another project's data."""
-        db = Database(f"sqlite:///{tmp_path / 'rls-write.db'}")
-        db.initialize()
+        
         repo = Repository(db)
 
         repo.ensure_project("proj_owner")
@@ -236,10 +228,9 @@ class TestNegativePermissionMatrix:
                 except Exception:
                     pass  # Expected in production with RLS
 
-    def test_hidden_set_isolation(self, tmp_path) -> None:
+    def test_hidden_set_isolation(self, db) -> None:
         """Hidden set data is isolated from visible set access."""
-        db = Database(f"sqlite:///{tmp_path / 'rls-hidden.db'}")
-        db.initialize()
+        
         repo = Repository(db)
 
         repo.ensure_project("proj_test")

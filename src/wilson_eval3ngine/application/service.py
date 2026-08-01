@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from pathlib import Path
 import json
@@ -32,6 +33,13 @@ from ..providers.base import ProviderFailure
 from ..providers.registry import ProviderRegistry
 from ..reports.dossier import build_dossier, write_safe_html, write_signed_dossier
 from ..security.signing import generate_private_key, load_private_key
+from ..telemetry import (
+    CorrelationContext,
+    get_correlation_context,
+    record_metric,
+    set_correlation_context,
+)
+from ..tracing import get_tracer, trace_stage
 from ..util import new_id, sha256_hex
 from ..execution.idempotency import logical_run_key
 from ..execution.rendering import PromptRenderer, rendered_prompt_hash
@@ -58,12 +66,15 @@ class EvaluationService:
     def __init__(
         self,
         *,
-        database_url: str,
+        database_url: str | None = None,
         artifact_root: str | Path,
         providers: ProviderRegistry | None = None,
+        database: Database | None = None,
     ) -> None:
-        self.database = Database(database_url)
-        self.database.initialize()
+        if database is None:
+            database = Database(database_url)
+            database.initialize()
+        self.database = database
         self.repository = Repository(self.database)
         self.audit = AuditLedger(self.database)
         self.artifacts = LocalArtifactStore(artifact_root)
@@ -190,52 +201,65 @@ class EvaluationService:
         output = Path(output_dir).resolve()
         output.mkdir(parents=True, exist_ok=True)
 
-        manifest = load_experiment(manifest_path)
-        dataset_path = resolve_dataset_path(manifest_path, manifest)
-        dataset = load_dataset(dataset_path)
-        dataset_hash = self._validate_dataset_reference(manifest, dataset)
-        manifest_hash = sha256_hex(
-            {
-                "manifest": manifest.model_dump(mode="json"),
-                "dataset_sha256": dataset_hash,
-            }
-        )
-        experiment_id = new_id("exp")
-        project_id = manifest.project
+        # Set up correlation context for tracing
+        context = get_correlation_context()
+        if not context.trace_id:
+            context = CorrelationContext(trace_id=new_id("trc"))
+            set_correlation_context(context)
 
-        self.repository.ensure_project(project_id)
-        self.repository.create_experiment(
-            experiment_id=experiment_id,
-            project_id=project_id,
-            name=manifest.name,
-            lane=manifest.lane.value,
-            manifest_hash=manifest_hash,
-            manifest_json=manifest.model_dump(mode="json"),
-        )
-        self.audit.append(
-            project_id=project_id,
-            event_type="experiment.started",
-            aggregate_type="experiment",
-            aggregate_id=experiment_id,
-            actor_id="we3-foundation-runner",
-            payload={"manifest_hash": manifest_hash, "dataset_hash": dataset_hash},
-        )
+        project_id = ""
+
+        with trace_stage("manifest_load") as span:
+            manifest = load_experiment(manifest_path)
+            dataset_path = resolve_dataset_path(manifest_path, manifest)
+            dataset = load_dataset(dataset_path)
+            dataset_hash = self._validate_dataset_reference(manifest, dataset)
+            manifest_hash = sha256_hex(
+                {
+                    "manifest": manifest.model_dump(mode="json"),
+                    "dataset_sha256": dataset_hash,
+                }
+            )
+            experiment_id = new_id("exp")
+            project_id = manifest.project
+            span.set_attribute("project_id", project_id)
+            span.set_attribute("experiment_id", experiment_id)
+
+        with trace_stage("experiment_create", attributes={"project_id": project_id, "experiment_id": experiment_id}):
+            self.repository.ensure_project(project_id)
+            self.repository.create_experiment(
+                experiment_id=experiment_id,
+                project_id=project_id,
+                name=manifest.name,
+                lane=manifest.lane.value,
+                manifest_hash=manifest_hash,
+                manifest_json=manifest.model_dump(mode="json"),
+            )
+            self.audit.append(
+                project_id=project_id,
+                event_type="experiment.started",
+                aggregate_type="experiment",
+                aggregate_id=experiment_id,
+                actor_id="we3-foundation-runner",
+                payload={"manifest_hash": manifest_hash, "dataset_hash": dataset_hash},
+            )
 
         artifact_refs: list[ArtifactRef] = []
-        artifact_refs.append(
-            self.artifacts.put_json(
-                project_id,
-                manifest.model_dump(mode="json"),
-                metadata={"kind": "experiment_manifest", "experiment_id": experiment_id},
+        with trace_stage("artifact_store", attributes={"project_id": project_id, "experiment_id": experiment_id}):
+            artifact_refs.append(
+                self.artifacts.put_json(
+                    project_id,
+                    manifest.model_dump(mode="json"),
+                    metadata={"kind": "experiment_manifest", "experiment_id": experiment_id},
+                )
             )
-        )
-        artifact_refs.append(
-            self.artifacts.put_json(
-                project_id,
-                dataset.model_dump(mode="json"),
-                metadata={"kind": "dataset_manifest", "experiment_id": experiment_id},
+            artifact_refs.append(
+                self.artifacts.put_json(
+                    project_id,
+                    dataset.model_dump(mode="json"),
+                    metadata={"kind": "dataset_manifest", "experiment_id": experiment_id},
+                )
             )
-        )
 
         compiler = ExpectationCompiler(manifest.graders.expectation_rule_version)
         cases = self._ordered_cases(manifest, dataset)
@@ -256,23 +280,101 @@ class EvaluationService:
                     {"rules": []},
                 )
 
-        for model in manifest.models:
-            for repetition_index in range(manifest.execution.repetitions):
-                for case in cases:
-                    run_id = new_id("run")
-                    compilation_result = compiler.compile(case)
-                    if not compilation_result.success:
-                        # Compilation failed - record error and skip this run
-                        run = RunResult(
-                            run_id=run_id,
-                            logical_key=logical_run_key(
+        total_cases = len(cases)
+        total_models = len(manifest.models)
+        total_repetitions = manifest.execution.repetitions
+        total_runs_expected = total_models * total_repetitions * total_cases
+
+        with trace_stage("case_iteration", attributes={
+            "project_id": project_id,
+            "experiment_id": experiment_id,
+            "count": total_cases,
+        }):
+            for model in manifest.models:
+                for repetition_index in range(manifest.execution.repetitions):
+                    for case in cases:
+                        run_id = new_id("run")
+                        compilation_result = compiler.compile(case)
+                        if not compilation_result.success:
+                            # Compilation failed - record error and skip this run
+                            run = RunResult(
+                                run_id=run_id,
+                                logical_key=logical_run_key(
+                                    experiment_definition_hash=manifest_hash,
+                                    test_case_version_id=case.case_version_id,
+                                    rendered_prompt_hash=sha256_hex(b""),
+                                    model_config_hash=model.configuration_hash(),
+                                    repetition_index=repetition_index,
+                                    execution_mode=manifest.lane.value,
+                                ),
+                                project_id=project_id,
+                                experiment_id=experiment_id,
+                                case_version_id=case.case_version_id,
+                                prompt_family_id=case.prompt_family_id,
+                                model_config_id=model.model_config_id,
+                                repetition_index=repetition_index,
+                                expected_treatment=case.expected_treatment,
+                                state=RunState.PROVIDER_ERROR,  # Cannot execute without valid expectation
+                            )
+                            self.repository.create_run(run)
+                            run.reliability_error = f"compilation_failed: {compilation_result.error.value}"
+                            self.repository.update_run(run)
+                            self.audit.append(
+                                project_id=project_id,
+                                event_type="run.compilation_failed",
+                                aggregate_type="model_run",
+                                aggregate_id=run_id,
+                                actor_id="we3-foundation-runner",
+                                payload={
+                                    "error": compilation_result.error.value,
+                                    "error_detail": compilation_result.error_detail,
+                                },
+                            )
+                            record_metric(
+                                "we3.operation.count",
+                                1,
+                                operation="compilation_failed",
+                                project_id=project_id,
+                                run_id=run_id,
+                                model_config_id=model.model_config_id,
+                            )
+                            continue
+                        expectation = compilation_result.expectation
+                        expectation_ref = self.artifacts.put_json(
+                            project_id,
+                            expectation.model_dump(mode="json"),
+                            metadata={
+                                "kind": "expectation_record",
+                                "experiment_id": experiment_id,
+                                "case_version_id": case.case_version_id,
+                            },
+                        )
+                        artifact_refs.append(expectation_ref)
+
+                        with trace_stage("prompt_render", attributes={
+                            "project_id": project_id,
+                            "experiment_id": experiment_id,
+                            "run_id": run_id,
+                            "model_config_id": model.model_config_id,
+                            "case_version_id": case.case_version_id,
+                        }):
+                            request = self.renderer.render(
+                                run_id=run_id,
+                                case=case,
+                                model=model,
+                            )
+                            prompt_hash = rendered_prompt_hash(request)
+                            logical_key = logical_run_key(
                                 experiment_definition_hash=manifest_hash,
                                 test_case_version_id=case.case_version_id,
-                                rendered_prompt_hash=sha256_hex(b""),
+                                rendered_prompt_hash=prompt_hash,
                                 model_config_hash=model.configuration_hash(),
                                 repetition_index=repetition_index,
                                 execution_mode=manifest.lane.value,
-                            ),
+                            )
+                        run = RunResult(
+                            run_id=run_id,
+                            logical_key=logical_key,
                             project_id=project_id,
                             experiment_id=experiment_id,
                             case_version_id=case.case_version_id,
@@ -280,184 +382,190 @@ class EvaluationService:
                             model_config_id=model.model_config_id,
                             repetition_index=repetition_index,
                             expected_treatment=case.expected_treatment,
-                            state=RunState.PROVIDER_ERROR,  # Cannot execute without valid expectation
+                            state=RunState.PENDING,
                         )
                         self.repository.create_run(run)
-                        run.reliability_error = f"compilation_failed: {compilation_result.error.value}"
-                        self.repository.update_run(run)
-                        self.audit.append(
-                            project_id=project_id,
-                            event_type="run.compilation_failed",
-                            aggregate_type="model_run",
-                            aggregate_id=run_id,
-                            actor_id="we3-foundation-runner",
-                            payload={
-                                "error": compilation_result.error.value,
-                                "error_detail": compilation_result.error_detail,
+
+                        request_ref = self.artifacts.put_json(
+                            project_id,
+                            request.model_dump(mode="json"),
+                            metadata={
+                                "kind": "provider_request",
+                                "experiment_id": experiment_id,
+                                "run_id": run_id,
                             },
                         )
-                        continue
-                    expectation = compilation_result.expectation
-                    expectation_ref = self.artifacts.put_json(
-                        project_id,
-                        expectation.model_dump(mode="json"),
-                        metadata={
-                            "kind": "expectation_record",
-                            "experiment_id": experiment_id,
-                            "case_version_id": case.case_version_id,
-                        },
-                    )
-                    artifact_refs.append(expectation_ref)
-
-                    request = self.renderer.render(
-                        run_id=run_id,
-                        case=case,
-                        model=model,
-                    )
-                    prompt_hash = rendered_prompt_hash(request)
-                    logical_key = logical_run_key(
-                        experiment_definition_hash=manifest_hash,
-                        test_case_version_id=case.case_version_id,
-                        rendered_prompt_hash=prompt_hash,
-                        model_config_hash=model.configuration_hash(),
-                        repetition_index=repetition_index,
-                        execution_mode=manifest.lane.value,
-                    )
-                    run = RunResult(
-                        run_id=run_id,
-                        logical_key=logical_key,
-                        project_id=project_id,
-                        experiment_id=experiment_id,
-                        case_version_id=case.case_version_id,
-                        prompt_family_id=case.prompt_family_id,
-                        model_config_id=model.model_config_id,
-                        repetition_index=repetition_index,
-                        expected_treatment=case.expected_treatment,
-                        state=RunState.PENDING,
-                    )
-                    self.repository.create_run(run)
-
-                    request_ref = self.artifacts.put_json(
-                        project_id,
-                        request.model_dump(mode="json"),
-                        metadata={
-                            "kind": "provider_request",
-                            "experiment_id": experiment_id,
-                            "run_id": run_id,
-                        },
-                    )
-                    artifact_refs.append(request_ref)
-                    run.request_artifact_hash = request_ref.sha256
-                    run.state = RunState.REQUESTING
-                    self.repository.update_run(run)
-
-                    response, attempts, error_class = self._execute_provider(
-                        manifest=manifest,
-                        model=model,
-                        request=request,
-                        simulation=self._simulation_for(case, model),
-                    )
-                    attempts_ref = self.artifacts.put_json(
-                        project_id,
-                        attempts,
-                        metadata={
-                            "kind": "provider_attempts",
-                            "experiment_id": experiment_id,
-                            "run_id": run_id,
-                        },
-                    )
-                    artifact_refs.append(attempts_ref)
-
-                    if response is None:
-                        run.state = (
-                            RunState.EXHAUSTED_RETRIES
-                            if error_class in {"retry_budget_exhausted", "exhausted_retries"}
-                            else RunState.PROVIDER_ERROR
-                        )
-                        run.reliability_error = error_class or "provider_error"
+                        artifact_refs.append(request_ref)
+                        run.request_artifact_hash = request_ref.sha256
+                        run.state = RunState.REQUESTING
                         self.repository.update_run(run)
+
+                        with trace_stage("provider_execute", attributes={
+                            "project_id": project_id,
+                            "experiment_id": experiment_id,
+                            "run_id": run_id,
+                            "model_config_id": model.model_config_id,
+                            "provider": model.provider,
+                        }):
+                            response, attempts, error_class = self._execute_provider(
+                                manifest=manifest,
+                                model=model,
+                                request=request,
+                                simulation=self._simulation_for(case, model),
+                            )
+                        attempts_ref = self.artifacts.put_json(
+                            project_id,
+                            attempts,
+                            metadata={
+                                "kind": "provider_attempts",
+                                "experiment_id": experiment_id,
+                                "run_id": run_id,
+                            },
+                        )
+                        artifact_refs.append(attempts_ref)
+
+                        if response is None:
+                            run.state = (
+                                RunState.EXHAUSTED_RETRIES
+                                if error_class in {"retry_budget_exhausted", "exhausted_retries"}
+                                else RunState.PROVIDER_ERROR
+                            )
+                            run.reliability_error = error_class or "provider_error"
+                            self.repository.update_run(run)
+                            runs_by_model[model.model_config_id].append(run)
+                            self.audit.append(
+                                project_id=project_id,
+                                event_type="run.reliability_failure",
+                                aggregate_type="model_run",
+                                aggregate_id=run_id,
+                                actor_id="we3-foundation-runner",
+                                payload={"error_class": run.reliability_error},
+                            )
+                            record_metric(
+                                "we3.operation.count",
+                                1,
+                                operation="provider_failure",
+                                project_id=project_id,
+                                run_id=run_id,
+                                model_config_id=model.model_config_id,
+                                error_class=error_class or "provider_error",
+                            )
+                            continue
+
+                        response_ref = self.artifacts.put_json(
+                            project_id,
+                            response.model_dump(mode="json"),
+                            metadata={
+                                "kind": "provider_response",
+                                "experiment_id": experiment_id,
+                                "run_id": run_id,
+                            },
+                        )
+                        artifact_refs.append(response_ref)
+                        run.response_artifact_hash = response_ref.sha256
+
+                        if not response.protocol_valid or not response.terminal:
+                            run.state = RunState.MALFORMED
+                            run.reliability_error = "malformed_response"
+                            self.repository.update_run(run)
+                            runs_by_model[model.model_config_id].append(run)
+                            record_metric(
+                                "we3.operation.count",
+                                1,
+                                operation="malformed_response",
+                                project_id=project_id,
+                                run_id=run_id,
+                                model_config_id=model.model_config_id,
+                            )
+                            continue
+
+                        with trace_stage("grading", attributes={
+                            "project_id": project_id,
+                            "experiment_id": experiment_id,
+                            "run_id": run_id,
+                            "model_config_id": model.model_config_id,
+                            "case_version_id": case.case_version_id,
+                        }):
+                            classification = self.grading.grade(
+                                case=case,
+                                expectation=expectation,
+                                response=response,
+                            )
+                        classification_ref = self.artifacts.put_json(
+                            project_id,
+                            classification.model_dump(mode="json"),
+                            metadata={
+                                "kind": "classification",
+                                "experiment_id": experiment_id,
+                                "run_id": run_id,
+                            },
+                        )
+                        artifact_refs.append(classification_ref)
+                        run.classification = classification
+                        run.state = RunState.COMPLETED
+                        self.repository.update_run(run)
+                        self.repository.add_classification(
+                            project_id=project_id,
+                            classification=classification,
+                        )
                         runs_by_model[model.model_config_id].append(run)
                         self.audit.append(
                             project_id=project_id,
-                            event_type="run.reliability_failure",
+                            event_type="classification.finalized",
                             aggregate_type="model_run",
                             aggregate_id=run_id,
-                            actor_id="we3-foundation-runner",
-                            payload={"error_class": run.reliability_error},
+                            actor_id="we3-foundation-grader",
+                            payload={
+                                "classification_id": classification.classification_id,
+                                "primary_label": classification.primary_label.value,
+                                "confidence": classification.confidence,
+                                "artifact_hash": classification_ref.sha256,
+                            },
                         )
-                        continue
+                        record_metric(
+                            "we3.operation.count",
+                            1,
+                            operation="classification_finalized",
+                            project_id=project_id,
+                            run_id=run_id,
+                            model_config_id=model.model_config_id,
+                            primary_label=classification.primary_label.value,
+                            confidence=classification.confidence,
+                        )
 
-                    response_ref = self.artifacts.put_json(
-                        project_id,
-                        response.model_dump(mode="json"),
-                        metadata={
-                            "kind": "provider_response",
-                            "experiment_id": experiment_id,
-                            "run_id": run_id,
-                        },
-                    )
-                    artifact_refs.append(response_ref)
-                    run.response_artifact_hash = response_ref.sha256
-
-                    if not response.protocol_valid or not response.terminal:
-                        run.state = RunState.MALFORMED
-                        run.reliability_error = "malformed_response"
-                        self.repository.update_run(run)
-                        runs_by_model[model.model_config_id].append(run)
-                        continue
-
-                    classification = self.grading.grade(
-                        case=case,
-                        expectation=expectation,
-                        response=response,
-                    )
-                    classification_ref = self.artifacts.put_json(
-                        project_id,
-                        classification.model_dump(mode="json"),
-                        metadata={
-                            "kind": "classification",
-                            "experiment_id": experiment_id,
-                            "run_id": run_id,
-                        },
-                    )
-                    artifact_refs.append(classification_ref)
-                    run.classification = classification
-                    run.state = RunState.COMPLETED
-                    self.repository.update_run(run)
-                    self.repository.add_classification(
-                        project_id=project_id,
-                        classification=classification,
-                    )
-                    runs_by_model[model.model_config_id].append(run)
-                    self.audit.append(
-                        project_id=project_id,
-                        event_type="classification.finalized",
-                        aggregate_type="model_run",
-                        aggregate_id=run_id,
-                        actor_id="we3-foundation-grader",
-                        payload={
-                            "classification_id": classification.classification_id,
-                            "primary_label": classification.primary_label.value,
-                            "confidence": classification.confidence,
-                            "artifact_hash": classification_ref.sha256,
-                        },
-                    )
-
-        snapshots = []
-        gates = []
-        thresholds = default_threshold_set()
-        for model in manifest.models:
-            model_runs = runs_by_model[model.model_config_id]
-            snapshot = self.metrics.compute(
-                experiment_id=experiment_id,
-                model_config_id=model.model_config_id,
-                runs=model_runs,
-            )
-            self.repository.add_metric_snapshot(project_id=project_id, snapshot=snapshot)
-            gate = self.gates.evaluate(snapshot=snapshot, thresholds=thresholds)
-            self.repository.add_gate(project_id=project_id, gate=gate)
-            snapshots.append(snapshot)
-            gates.append(gate)
+        with trace_stage("metric_compute", attributes={
+            "project_id": project_id,
+            "experiment_id": experiment_id,
+            "model_count": len(manifest.models),
+        }):
+            snapshots = []
+            gates = []
+            thresholds = default_threshold_set()
+            for model in manifest.models:
+                model_runs = runs_by_model[model.model_config_id]
+                snapshot = self.metrics.compute(
+                    experiment_id=experiment_id,
+                    model_config_id=model.model_config_id,
+                    runs=model_runs,
+                )
+                self.repository.add_metric_snapshot(project_id=project_id, snapshot=snapshot)
+                with trace_stage("gate_evaluate", attributes={
+                    "project_id": project_id,
+                    "experiment_id": experiment_id,
+                    "model_config_id": model.model_config_id,
+                }):
+                    gate = self.gates.evaluate(snapshot=snapshot, thresholds=thresholds)
+                self.repository.add_gate(project_id=project_id, gate=gate)
+                snapshots.append(snapshot)
+                gates.append(gate)
+                record_metric(
+                    "we3.operation.count",
+                    1,
+                    operation="gate_evaluated",
+                    project_id=project_id,
+                    model_config_id=model.model_config_id,
+                    gate_status=gate.status.value,
+                )
 
         self.repository.set_experiment_state(experiment_id, ExperimentState.COMPLETED)
         self.audit.append(
@@ -472,7 +580,11 @@ class EvaluationService:
                 }
             },
         )
-        audit_verified = self.audit.verify(project_id)
+        with trace_stage("audit_verify", attributes={
+            "project_id": project_id,
+            "experiment_id": experiment_id,
+        }):
+            audit_verified = self.audit.verify(project_id)
 
         limitations = [
             "Foundation build: deterministic mock provider only.",
@@ -482,51 +594,69 @@ class EvaluationService:
             "Human review and adjudication interfaces are represented by escalation flags only.",
             "Threshold defaults require calibration and formal stakeholder approval.",
         ]
-        dossier = build_dossier(
-            experiment_id=experiment_id,
-            project_id=project_id,
-            manifest_hash=manifest_hash,
-            dataset_hash=dataset_hash,
-            snapshots=snapshots,
-            gates=gates,
-            artifact_index=[ref.to_dict() for ref in artifact_refs],
-            audit_chain_verified=audit_verified,
-            limitations=limitations,
-        )
-
-        if signing_key_path is None:
-            key_path = output / ".dev-ed25519-signing-key.pem"
-        else:
-            key_path = Path(signing_key_path).resolve()
-        if not key_path.exists():
-            generate_private_key(key_path)
-        private_key = load_private_key(key_path)
-        dossier_path = write_signed_dossier(output, dossier, private_key)
-        safe_html_path = write_safe_html(output, dossier)
-
-        result_index = {
-            "schema_version": "we3.foundation_result.v1",
-            "experiment_id": experiment_id,
+        with trace_stage("dossier_build", attributes={
             "project_id": project_id,
-            "manifest_hash": manifest_hash,
-            "dataset_hash": dataset_hash,
-            "dossier_path": dossier_path.name,
-            "safe_html_path": safe_html_path.name,
-            "gate_statuses": {
-                gate.model_config_id: gate.status.value for gate in gates
-            },
-            "runs": {
-                model_id: [
-                    run.model_dump(mode="json", exclude={"classification"})
-                    for run in model_runs
-                ]
-                for model_id, model_runs in runs_by_model.items()
-            },
-        }
-        result_index_path = output / "experiment_result.json"
-        result_index_path.write_text(
-            json.dumps(result_index, sort_keys=True, indent=2),
-            encoding="utf-8",
+            "experiment_id": experiment_id,
+            "artifact_count": len(artifact_refs),
+            "audit_verified": audit_verified,
+        }):
+            dossier = build_dossier(
+                experiment_id=experiment_id,
+                project_id=project_id,
+                manifest_hash=manifest_hash,
+                dataset_hash=dataset_hash,
+                snapshots=snapshots,
+                gates=gates,
+                artifact_index=[ref.to_dict() for ref in artifact_refs],
+                audit_chain_verified=audit_verified,
+                limitations=limitations,
+            )
+
+            if signing_key_path is None:
+                key_path = output / ".dev-ed25519-signing-key.pem"
+            else:
+                key_path = Path(signing_key_path).resolve()
+            if not key_path.exists():
+                generate_private_key(key_path)
+            private_key = load_private_key(key_path)
+            dossier_path = write_signed_dossier(output, dossier, private_key)
+            safe_html_path = write_safe_html(output, dossier)
+
+        with trace_stage("result_index_write", attributes={
+            "project_id": project_id,
+            "experiment_id": experiment_id,
+        }):
+            result_index = {
+                "schema_version": "we3.foundation_result.v1",
+                "experiment_id": experiment_id,
+                "project_id": project_id,
+                "manifest_hash": manifest_hash,
+                "dataset_hash": dataset_hash,
+                "dossier_path": dossier_path.name,
+                "safe_html_path": safe_html_path.name,
+                "gate_statuses": {
+                    gate.model_config_id: gate.status.value for gate in gates
+                },
+                "runs": {
+                    model_id: [
+                        run.model_dump(mode="json", exclude={"classification"})
+                        for run in model_runs
+                    ]
+                    for model_id, model_runs in runs_by_model.items()
+                },
+            }
+            result_index_path = output / "experiment_result.json"
+            result_index_path.write_text(
+                json.dumps(result_index, sort_keys=True, indent=2),
+                encoding="utf-8",
+            )
+
+        record_metric(
+            "we3.run.count",
+            1,
+            project_id=project_id,
+            experiment_id=experiment_id,
+            success=True,
         )
 
         return EvaluationOutcome(

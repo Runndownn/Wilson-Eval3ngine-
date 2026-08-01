@@ -50,12 +50,8 @@ class TestDatabaseRoleConstants:
 class TestApplicationRoleAssertion:
     """Test suite for application role assertion."""
 
-    def test_assert_application_role_exists(self):
+    def test_assert_application_role_exists(self, db):
         """Assertion function exists and can be called."""
-        from wilson_eval3ngine.persistence.database import Database
-
-        db = Database("sqlite:///./test_role_assertion.db")
-        db.initialize()
         with db.session():
             # SQLite doesn't support roles, so we just verify function exists
             # The actual check is PostgreSQL-specific
@@ -82,12 +78,8 @@ class TestRLSPolicyVerification:
         assert "ENABLE ROW LEVEL SECURITY" in content
         assert "CREATE POLICY" in content
 
-    def test_validate_context_bound_raises_on_missing(self, tmp_path):
+    def test_validate_context_bound_raises_on_missing(self, db):
         """validate_context_bound raises ProjectContextError when context missing."""
-        from wilson_eval3ngine.persistence.database import Database
-
-        db = Database("sqlite:///./test_context_validate.db")
-        db.initialize()
         with db.session() as session:
             # Without SET LOCAL (SQLite doesn't support), context should be missing
             # validate_context_bound checks for context and raises
