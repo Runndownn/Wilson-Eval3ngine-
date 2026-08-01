@@ -1,8 +1,9 @@
-"""Runtime HTML overlay for incremental GUI interaction improvements.
+"""Runtime composition overlays for focused GUI hardening.
 
-The repository serves a static index document. This module injects versioned,
-same-origin assets through a first-match FastAPI route so focused UX repairs
-remain reversible without rewriting the large baseline document.
+The repository serves a static index document and retains selected legacy
+helpers while the application boundary is extracted.  This module installs
+versioned same-origin assets and replaces the legacy regular-file credential
+handoff before the server begins accepting requests.
 """
 
 from __future__ import annotations
@@ -12,6 +13,9 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.routing import APIRoute
+
+from . import server as legacy
+from .secret_transport import store_api_key_pipe
 
 _STYLESHEETS = (
     '<link rel="stylesheet" href="/static/ux4.css?v=20260801-ux4">',
@@ -41,10 +45,15 @@ def _render_overlay(index_path: Path) -> str:
 
 
 def install_ux_overlay(app: FastAPI, static_dir: Path) -> None:
-    """Install the enhanced index route before the inherited root route."""
+    """Install hardened runtime adapters before the listener starts."""
 
     if getattr(app.state, "we3_ux_overlay_installed", False):
         return
+
+    # Application job execution resolves this legacy helper at invocation time.
+    # Preserve the established call contract while replacing the regular-file
+    # implementation with a one-shot FIFO that never stores plaintext at rest.
+    legacy.store_api_key_temp_file = store_api_key_pipe
 
     index_path = static_dir / "index.html"
 
