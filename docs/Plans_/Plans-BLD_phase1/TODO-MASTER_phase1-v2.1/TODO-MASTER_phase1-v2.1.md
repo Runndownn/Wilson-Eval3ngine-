@@ -2715,7 +2715,7 @@
   * Follow one immutable run ID across logs, metrics, traces, audit, and database state.
   * Check context lost at queue boundaries, field names differing by service, high-cardinality attributes, body capture enabled by framework defaults, and exporter retries exhausting application resources.
 
-* [ ] TODO 52: Establish SLIs, SLO dashboards, and actionable alerts
+* [x] TODO 52: Establish SLIs, SLO dashboards, and actionable alerts
 
   **Purpose / Why this exists**
 
@@ -2768,7 +2768,7 @@
   * Recalculate the SLI from raw safe telemetry and authoritative database records.
   * Check timezone/window mismatch, missing labels, stale recording rules, low-traffic denominator behavior, alerts based only on averages, and maintenance suppressions that outlive their change window.
 
-* [ ] TODO 53: Write operational runbooks and graceful-degradation rules
+* [x] TODO 53: Write operational runbooks and graceful-degradation rules
 
   **Purpose / Why this exists**
 
@@ -2821,7 +2821,7 @@
   * Compare actual sequence with the runbook timeline and identify the first divergence.
   * Check broken alert links, obsolete service names, unavailable break-glass path, commands assuming production access from local hosts, and recovery completed without reconciliation or re-certification.
 
-* [ ] TODO 54: Execute performance, load, and soak qualification
+* [x] TODO 54: Execute performance, load, and soak qualification
 
   **Purpose / Why this exists**
 

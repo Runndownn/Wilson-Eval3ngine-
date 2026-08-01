@@ -1314,6 +1314,152 @@ def get_supply_chain_manager() -> SupplyChainManager:
     return _supply_chain_manager
 
 
+# ============================================================================
+# Supply Chain Scanner Integration
+# ============================================================================
+
+def scan_ci_pipeline(
+    source_path: Path,
+    lockfile_path: Path | None = None,
+    dockerfile_paths: list[Path] = None,
+) -> dict[str, Any]:
+    """Run all supply chain scanners in a CI pipeline context.
+
+    This is the main entry point for CI integration. It runs all scanners
+    and returns a comprehensive report suitable for blocking decisions.
+
+    Args:
+        source_path: Path to source code root for SAST/secret scanning
+        lockfile_path: Optional path to requirements lock file for SBOM
+        dockerfile_paths: Optional list of Dockerfile paths for container scanning
+
+    Returns:
+        Dictionary with all scan results and blocking decisions
+    """
+    manager = SupplyChainManager()
+
+    report: dict[str, Any] = {
+        "schema_version": "we3.supply_chain_ci_report.v1",
+        "generated_at": utc_now().isoformat(),
+        "source_path": str(source_path),
+        "scans": {},
+        "blocking": [],
+    }
+
+    # SAST scan
+    sast_findings = manager.scan_source_code(source_path)
+    report["scans"]["sast"] = {
+        "finding_count": len(sast_findings),
+        "findings": [f.to_dict() for f in sast_findings],
+    }
+    for finding in sast_findings:
+        if finding.severity in ("critical", "high"):
+            report["blocking"].append({
+                "type": "sast",
+                "severity": finding.severity,
+                "description": finding.description,
+                "file": finding.file_path,
+            })
+
+    # Secret scan
+    secret_findings = manager.scan_for_secrets(source_path)
+    report["scans"]["secrets"] = {
+        "finding_count": len(secret_findings),
+        "findings": [f.to_dict() for f in secret_findings],
+    }
+    for finding in secret_findings:
+        report["blocking"].append({
+            "type": "secret",
+            "severity": "critical",
+            "description": f"Secret detected: {finding.matcher_name}",
+            "file": finding.file_path,
+        })
+
+    # Container/Dockerfile scan
+    if dockerfile_paths:
+        container_findings: list[ContainerFinding] = []
+        for dockerfile in dockerfile_paths:
+            container_findings.extend(manager.scan_dockerfiles(source_path))
+        report["scans"]["container"] = {
+            "finding_count": len(container_findings),
+            "findings": [f.to_dict() for f in container_findings],
+        }
+        for finding in container_findings:
+            report["blocking"].append({
+                "type": "container",
+                "severity": finding.severity,
+                "description": finding.description,
+            })
+
+    # IaC scan
+    iac_results = manager.scan_infrastructure(source_path)
+    report["scans"]["iac"] = {
+        "file_count": len(iac_results),
+        "failures": sum(1 for r in iac_results if r.status == IaCFileStatus.FAIL),
+        "results": [
+            {
+                "file": r.file_path,
+                "status": r.status.value,
+                "finding_count": len(r.findings),
+                "findings": r.findings,
+            }
+            for r in iac_results
+        ],
+    }
+    for result in iac_results:
+        if result.status == IaCFileStatus.FAIL:
+            report["blocking"].append({
+                "type": "iac",
+                "severity": "high",
+                "description": f"IaC issue in {result.file_path}",
+                "findings": result.findings,
+            })
+
+    # GitHub Actions workflow scan
+    workflow_findings = manager.scan_all_workflows(source_path)
+    report["scans"]["github_actions"] = {
+        "finding_count": len(workflow_findings),
+        "findings": [f.to_dict() for f in workflow_findings],
+    }
+    for finding in workflow_findings:
+        report["blocking"].append({
+            "type": "workflow",
+            "severity": finding.severity,
+            "description": finding.description,
+            "workflow": finding.workflow_path,
+        })
+
+    # SBOM and vulnerability scan
+    if lockfile_path and lockfile_path.exists():
+        sbom = manager.generate_sbom_from_lockfile(lockfile_path, "ci-release")
+        vuln_findings = manager.scan_for_vulnerabilities(sbom.components)
+        vuln_decisions = manager.evaluate_vulnerabilities(vuln_findings)
+
+        report["scans"]["sbom"] = {
+            "component_count": len(sbom.components),
+            "dependency_lockfile_hash": sbom.components[0].sha256 if sbom.components else None,
+        }
+        report["scans"]["vulnerabilities"] = {
+            "finding_count": len([d for _, d in vuln_decisions if d == RiskDecision.BLOCK]),
+            "blocked": [r.to_dict() for r, d in vuln_decisions if d == RiskDecision.BLOCK],
+            "exceptioned": [r.to_dict() for r, d in vuln_decisions if d == RiskDecision.EXCEPTION],
+            "allowed": [r.to_dict() for r, d in vuln_decisions if d == RiskDecision.ACCEPT],
+        }
+
+        for vuln, decision in vuln_decisions:
+            if decision == RiskDecision.BLOCK:
+                report["blocking"].append({
+                    "type": "vulnerability",
+                    "severity": vuln.severity.value,
+                    "description": vuln.description,
+                    "package": f"{vuln.package_name}@{vuln.package_version}",
+                    "vulnerability_id": vuln.vulnerability_id,
+                })
+
+    report["pass"] = len(report["blocking"]) == 0
+    return report
+
+
 __all__ = [
     # Vulnerability types
     "VulnerabilitySeverity",
@@ -1345,4 +1491,6 @@ __all__ = [
     # Manager
     "SupplyChainManager",
     "get_supply_chain_manager",
+    # CI Integration
+    "scan_ci_pipeline",
 ]

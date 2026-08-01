@@ -1,4 +1,4 @@
-"""Failure injection testing module."""
+"""Testing infrastructure module for failure injection and game day exercises."""
 
 from .failure_injection import (
     EvidenceAccessor,
@@ -14,6 +14,20 @@ from .failure_injection import (
     create_network_partition_scenario,
     create_stale_lease_scenario,
 )
+from .game_day import (
+    AlertSystem,
+    EvidenceStore,
+    FaultCategory,
+    GameDayFinding,
+    GameDayMetrics,
+    GameDayOrchestrator,
+    GameDayReport,
+    GameDayScenario,
+    GameDayTimelineEvent,
+    GamePhase,
+    compute_timeline_hash,
+    generate_failure_matrix_yaml,
+)
 
 __all__ = [
     "EvidenceAccessor",
@@ -28,4 +42,17 @@ __all__ = [
     "create_database_restart_scenario",
     "create_network_partition_scenario",
     "create_stale_lease_scenario",
+    # Game day exports
+    "EvidenceStore",
+    "AlertSystem",
+    "FaultCategory",
+    "GameDayFinding",
+    "GameDayMetrics",
+    "GameDayOrchestrator",
+    "GameDayReport",
+    "GameDayScenario",
+    "GameDayTimelineEvent",
+    "GamePhase",
+    "compute_timeline_hash",
+    "generate_failure_matrix_yaml",
 ]

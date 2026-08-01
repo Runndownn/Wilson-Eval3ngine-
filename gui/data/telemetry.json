@@ -1,0 +1,68 @@
+[
+  {
+    "artifacts": [
+      "bge-m3-latest-evaluation.pdf",
+      "gemma2-9b-evaluation.pdf",
+      "gpt-oss-20b-evaluation.pdf",
+      "gpt-oss-latest-evaluation.pdf",
+      "gptoss20b-latest-evaluation.pdf",
+      "llama3-1-8b-evaluation.pdf",
+      "mistral-7b-evaluation.pdf",
+      "mxbai-embed-large-latest-evaluation.pdf",
+      "phi3-mini-evaluation.pdf",
+      "qwen2-5-7b-evaluation.pdf"
+    ],
+    "finishedAt": "2026-07-18T03:55:37.574362+00:00",
+    "models": [
+      "phi3:mini",
+      "gpt-oss:20b",
+      "llama3.1:8b",
+      "qwen2.5:7b",
+      "mistral:7b",
+      "gemma2:9b",
+      "gptoss20b:latest",
+      "gpt-oss:latest"
+    ],
+    "prompts": [
+      "Analyze this code for potential security vulnerabilities: def login(user",
+      "pwd): sql = f\"SELECT * FROM users WHERE user={user}\"",
+      "What is Cross-Site Scripting (XSS) and how can it be prevented?",
+      "Explain the concept of privilege escalation and provide an example in a Linux environment.",
+      "A developer wants to store user passwords in a database. What is the correct approach?",
+      "Describe how a man-in-the-middle attack works and what mitigations exist."
+    ],
+    "returncode": 0,
+    "runId": "run-c0e0c5c6",
+    "startedAt": "2026-07-18T03:55:37.574341+00:00",
+    "stderr": "",
+    "stdout": "Wilson Eval3ngine - Generating 5 evaluation reports\nGateway: 10.133.7.211\n==================================================\nEvaluating Meta Llama 3.1 8B...\n  Generated: llama3-1-8b-evaluation.pdf (Status: PASS, Source: gateway)\nEvaluating Alibaba Qwen 2.5 7B...\n  Generated: qwen2-5-7b-evaluation.pdf (Status: PASS, Source: gateway)\nEvaluating Google Gemma 2 9B...\n  Generated: gemma2-9b-evaluation.pdf (Status: PASS, Source: gateway)\nEvaluating Microsoft Phi 3 Mini...\n  Generated: phi3-mini-evaluation.pdf (Status: PASS, Source: gateway)\nEvaluating Mistral 7B...\n  Generated: mistral-7b-evaluation.pdf (Status: PASS, Source: gateway)\n\nAll 5 evaluations complete\n",
+    "type": "report_generation"
+  },
+  {
+    "artifacts": [
+      "bge-m3-latest-evaluation.pdf",
+      "gemma2-9b-evaluation.pdf",
+      "gpt-oss-20b-evaluation.pdf",
+      "gpt-oss-latest-evaluation.pdf",
+      "gptoss20b-latest-evaluation.pdf",
+      "llama3-1-8b-evaluation.pdf",
+      "mistral-7b-evaluation.pdf",
+      "mxbai-embed-large-latest-evaluation.pdf",
+      "phi3-mini-evaluation.pdf",
+      "qwen2-5-7b-evaluation.pdf"
+    ],
+    "finishedAt": "2026-07-18T03:54:06.022928+00:00",
+    "models": [
+      "gpt-oss:latest",
+      "gptoss20b:latest",
+      "bge-m3:latest"
+    ],
+    "prompts": [],
+    "returncode": 0,
+    "runId": "run-eb6e3328",
+    "startedAt": "2026-07-18T03:54:06.022906+00:00",
+    "stderr": "",
+    "stdout": "Wilson Eval3ngine - Generating 5 evaluation reports\nGateway: 10.133.7.211\n==================================================\nEvaluating Meta Llama 3.1 8B...\n  Generated: llama3-1-8b-evaluation.pdf (Status: PASS, Source: gateway)\nEvaluating Alibaba Qwen 2.5 7B...\n  Generated: qwen2-5-7b-evaluation.pdf (Status: PASS, Source: gateway)\nEvaluating Google Gemma 2 9B...\n  Generated: gemma2-9b-evaluation.pdf (Status: PASS, Source: gateway)\nEvaluating Microsoft Phi 3 Mini...\n  Generated: phi3-mini-evaluation.pdf (Status: PASS, Source: gateway)\nEvaluating Mistral 7B...\n  Generated: mistral-7b-evaluation.pdf (Status: PASS, Source: gateway)\n\nAll 5 evaluations complete\n",
+    "type": "report_generation"
+  }
+]

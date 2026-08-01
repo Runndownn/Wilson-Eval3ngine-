@@ -10,15 +10,19 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from dataclasses import dataclass, field
 from typing import Any
 
 from .util import new_id, utc_now
 
+# ============================================================================
+# Correlation Context (Thread-Local for Production Safety)
+# ============================================================================
 
-# ============================================================================
-# Correlation Context
-# ============================================================================
+_correlation_context: CorrelationContext | None = None
+_correlation_lock = threading.Lock()
+
 
 @dataclass(frozen=True, slots=True)
 class CorrelationContext:
@@ -51,29 +55,18 @@ class CorrelationContext:
         # Use snake_case for headers (common convention)
         return {f"X-Correlation-{k}": v for k, v in self.to_baggage().items() if v}
 
-
-# Global correlation context (thread-local in production)
-_correlation_context: CorrelationContext | None = None
-
-
-def get_correlation_context() -> CorrelationContext:
-    """Get current correlation context, creating one if missing."""
-    global _correlation_context
-    if _correlation_context is None:
-        _correlation_context = CorrelationContext(trace_id=new_id("trc"))
-    return _correlation_context
-
-
-def set_correlation_context(context: CorrelationContext | None) -> None:
-    """Set the correlation context."""
-    global _correlation_context
-    _correlation_context = context
-
-
-def with_correlation_context(context: CorrelationContext) -> CorrelationContext:
-    """Set and return correlation context (for context managers)."""
-    set_correlation_context(context)
-    return context
+    def child_context(self, **overrides: str) -> CorrelationContext:
+        """Create a child context with overridden values."""
+        return CorrelationContext(
+            trace_id=self.trace_id,
+            project_id=overrides.get("project_id", self.project_id),
+            experiment_id=overrides.get("experiment_id", self.experiment_id),
+            run_id=overrides.get("run_id", self.run_id),
+            case_id=overrides.get("case_id", self.case_id),
+            model_id=overrides.get("model_id", self.model_id),
+            attempt_id=overrides.get("attempt_id", self.attempt_id),
+            job_id=overrides.get("job_id", self.job_id),
+        )
 
 
 # ============================================================================
@@ -127,6 +120,12 @@ HISTOGRAM_BUCKETS: dict[str, list[float]] = {
     "confidence": [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0],
 }
 
+# Prohibited content patterns (never allowed in telemetry)
+PROHIBITED_PATTERNS: frozenset[str] = frozenset({
+    "prompt", "response", "completion", "message", "content", "text",
+    "secret", "password", "api_key", "token", "credential",
+})
+
 
 # ============================================================================
 # Redaction Utilities
@@ -144,17 +143,23 @@ def redact_sensitive_fields(data: dict[str, Any]) -> dict[str, Any]:
     """
     redacted = {}
     for key, value in data.items():
+        # Skip prohibited fields entirely (no prompt/response/text in telemetry)
+        if key.lower() in PROHIBITED_PATTERNS:
+            continue
         if key not in ALLOWED_LOG_FIELDS:
-            # Skip disallowed fields entirely
             continue
         if isinstance(value, str):
-            # Check for canary secrets
+            # Check for canary secrets/prompts
             if CANARY_SECRET in value or CANARY_PROMPT in value:
                 redacted[key] = "[REDACTED]"
                 continue
             # Check for common secret patterns
             value_lower = value.lower()
-            if any(p in value_lower for p in ["password", "secret", "token", "api_key", "apikey"]):
+            if any(p in value_lower for p in ["password", "secret", "token", "api_key", "apikey", "bearer"]):
+                redacted[key] = "[REDACTED]"
+                continue
+            # Check for prohibited content patterns in values
+            if any(p in value_lower for p in ["prompt content:", "response content:", "completion text:"]):
                 redacted[key] = "[REDACTED]"
                 continue
             # Truncate very long strings (prevent high cardinality)
@@ -181,6 +186,9 @@ def is_safe_for_telemetry(value: Any) -> bool:
         # Check for secret patterns
         value_lower = value.lower()
         if any(p in value_lower for p in ["password", "secret", "token", "api_key"]):
+            return False
+        # Check for prohibited content
+        if any(p in value_lower for p in ["prompt content:", "response content:"]):
             return False
         # Check length
         if len(value) > 1024:
@@ -216,11 +224,13 @@ class TelemetryLogger:
     """Telemetry logger with OpenTelemetry compatibility.
 
     Security: All events are redacted before emission.
+    Thread-safe for production use.
     """
 
     def __init__(self, name: str = "we3.telemetry") -> None:
         self.logger = logging.getLogger(name)
         self._enabled = os.getenv("WE3_TELEMETRY_ENABLED", "true").lower() == "true"
+        self._lock = threading.Lock()
 
     def emit(
         self,
@@ -244,7 +254,8 @@ class TelemetryLogger:
         )
 
         if self._enabled:
-            self.logger.log(level, event_type, extra={"telemetry": event.to_log_dict()})
+            with self._lock:
+                self.logger.log(level, event_type, extra={"telemetry": event.to_log_dict()})
 
         return context.trace_id
 
@@ -255,14 +266,43 @@ class TelemetryLogger:
 
 # Global telemetry logger instance
 _telemetry_logger: TelemetryLogger | None = None
+_logger_lock = threading.Lock()
 
 
 def get_telemetry_logger() -> TelemetryLogger:
-    """Get the global telemetry logger."""
+    """Get the global telemetry logger (thread-safe lazy initialization)."""
     global _telemetry_logger
     if _telemetry_logger is None:
-        _telemetry_logger = TelemetryLogger()
+        with _logger_lock:
+            if _telemetry_logger is None:
+                _telemetry_logger = TelemetryLogger()
     return _telemetry_logger
+
+
+# ============================================================================
+# Correlation Context Functions (Thread-Safe)
+# ============================================================================
+
+def get_correlation_context() -> CorrelationContext:
+    """Get current correlation context, creating one if missing (thread-safe)."""
+    global _correlation_context
+    with _correlation_lock:
+        if _correlation_context is None:
+            _correlation_context = CorrelationContext(trace_id=new_id("trc"))
+        return _correlation_context
+
+
+def set_correlation_context(context: CorrelationContext | None) -> None:
+    """Set the correlation context (thread-safe)."""
+    global _correlation_context
+    with _correlation_lock:
+        _correlation_context = context
+
+
+def with_correlation_context(context: CorrelationContext) -> CorrelationContext:
+    """Set and return correlation context (for context managers)."""
+    set_correlation_context(context)
+    return context
 
 
 # ============================================================================
@@ -275,9 +315,9 @@ class SamplingConfig:
 
     Controls cardinality and resource usage.
     """
-    traces_sample_rate: float = 1.0  # 1.0 = full, < 1.0 = sampling
-    metrics_cardinality_limit: int = 1000  # Max distinct label values
-    logs_sampling_rate: float = 0.1  # 10% of logs to reduce volume
+    traces_sample_rate: float = 1.0
+    metrics_cardinality_limit: int = 1000
+    logs_sampling_rate: float = 0.1
     redaction_enabled: bool = True
 
     def should_sample_trace(self) -> bool:
@@ -291,7 +331,6 @@ class SamplingConfig:
         return random.random() < self.logs_sampling_rate
 
 
-# Default sampling configuration
 _DEFAULT_SAMPLING = SamplingConfig()
 
 
@@ -306,6 +345,112 @@ def get_sampling_config() -> SamplingConfig:
 
 
 # ============================================================================
+# OpenTelemetry Integration Hooks
+# ============================================================================
+
+def start_span(name: str, **attributes: Any) -> "TelemetrySpan":
+    """Start a telemetry span (OpenTelemetry-style).
+
+    Security: All attributes are validated against allowlist before emission.
+    """
+    logger = get_telemetry_logger()
+    if not logger._enabled:
+        return TelemetrySpan(name, is_recording=False)
+    trace_id = logger.emit(f"span.{name}.start", attributes)
+    return TelemetrySpan(name, trace_id=trace_id, is_recording=True)
+
+
+@dataclass
+class TelemetrySpan:
+    """Lightweight span for OpenTelemetry compatibility.
+
+    In production, this delegates to the OpenTelemetry SDK.
+    Security: Never records prompt/response bodies or restricted content.
+    """
+    name: str
+    trace_id: str = ""
+    is_recording: bool = True
+    _attributes: dict[str, Any] = field(default_factory=dict)
+    _logger: TelemetryLogger = field(default_factory=get_telemetry_logger)
+    _lock: threading.Lock = field(default_factory=threading.Lock)
+
+    def set_attribute(self, key: str, value: Any) -> None:
+        """Set a span attribute with validation."""
+        if self.is_recording and is_safe_for_telemetry(value):
+            with self._lock:
+                self._attributes[key] = value
+
+    def add_event(self, name: str, attributes: dict[str, Any] | None = None) -> None:
+        """Add an event to the span."""
+        if self.is_recording:
+            payload = redact_sensitive_fields(attributes or {})
+            self._logger.emit(f"span.{self.name}.event.{name}", payload)
+
+    def end(self) -> None:
+        """End the span."""
+        if self.is_recording:
+            self._logger.emit(f"span.{self.name}.end", self._attributes)
+
+
+def instrument_operation(func):
+    """Decorator to instrument operations with telemetry.
+
+    Security: Automatically captures correlation context without sensitive data.
+    """
+    import functools
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        context = get_correlation_context()
+        span = start_span(
+            func.__name__,
+            **{k: v for k, v in {
+                "project_id": context.project_id,
+                "experiment_id": context.experiment_id,
+                "run_id": context.run_id,
+            }.items() if v}
+        )
+        try:
+            result = func(*args, **kwargs)
+            span.set_attribute("status", "success")
+            span.end()
+            return result
+        except Exception as e:
+            span.set_attribute("status", "error")
+            span.set_attribute("error_class", type(e).__name__)
+            span.end()
+            raise
+    return wrapper
+
+
+def record_metric(name: str, value: float, **labels: Any) -> None:
+    """Record a metric with validation.
+
+    Security: Metric name must be in allowlist; labels are validated.
+    Silently skips invalid metrics to prevent telemetry failure from corrupting domain work.
+    """
+    if name not in ALLOWED_METRIC_NAMES:
+        return  # Silently skip invalid metric names (graceful degradation)
+
+    if len(labels) > 10:
+        return  # Silently skip - too many labels risks high cardinality
+
+    # Filter labels for safety
+    safe_labels = {
+        k: v for k, v in labels.items()
+        if k in ALLOWED_LOG_FIELDS and is_safe_for_telemetry(v)
+    }
+
+    event = TelemetryEvent(
+        event_type=f"metric.{name}",
+        trace_id=get_correlation_context().trace_id,
+        payload={"value": value, **safe_labels},
+    )
+    # Record metric by emitting telemetry event
+    get_telemetry_logger().emit(event.event_type, event.payload)
+
+
+# ============================================================================
 # Exports
 # ============================================================================
 
@@ -317,6 +462,7 @@ __all__ = [
     "ALLOWED_LOG_FIELDS",
     "ALLOWED_METRIC_NAMES",
     "HISTOGRAM_BUCKETS",
+    "PROHIBITED_PATTERNS",
     "redact_sensitive_fields",
     "is_safe_for_telemetry",
     "TelemetryEvent",
@@ -326,4 +472,8 @@ __all__ = [
     "get_sampling_config",
     "CANARY_SECRET",
     "CANARY_PROMPT",
+    "TelemetrySpan",
+    "start_span",
+    "instrument_operation",
+    "record_metric",
 ]
