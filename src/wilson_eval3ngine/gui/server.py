@@ -4042,7 +4042,76 @@ async def delete_chart(run_id: str, chart_name: str) -> dict[str, Any]:
         })
     _save_telemetry(telemetry)
 
-    return {"deleted": str(chart_path), "runId": safe_run_id, "chartName": safe_chart_name, "deletedFile": deleted_file}
+    # If the run directory is now empty, remove it so the empty run-window frame
+    # is cleaned up from disk. The frontend also removes the frame on its side.
+    run_is_empty = False
+    run_dir = CHARTS_DIR / safe_run_id
+    if run_dir.exists():
+        remaining = list(run_dir.glob("*.png"))
+        # Filter out deleted charts — only count undeleted PNGs
+        remaining = [f for f in remaining if f.stem not in deleted_charts]
+        if not remaining:
+            try:
+                run_dir.rmdir()
+                run_is_empty = True
+            except OSError:
+                pass
+
+    return {
+        "deleted": str(chart_path),
+        "runId": safe_run_id,
+        "chartName": safe_chart_name,
+        "deletedFile": deleted_file,
+        "runIsEmpty": run_is_empty,
+    }
+
+
+@app.delete("/api/charts/runs/all")
+async def delete_all_chart_runs() -> dict[str, Any]:
+    """Delete all chart PNG files and run-window directories at once.
+
+    Removes every chart image under CHARTS_DIR and all run directories.
+    Records a session-level deletion marker so that auto-generation does
+    not resurrect any charts during the current server process.
+
+    Also writes a telemetry ``deletedCharts`` entry of ``["__all__"]`` for
+    every run that had a telemetry entry, so deletions persist across restarts.
+    """
+    deleted_count = 0
+    if CHARTS_DIR.exists():
+        for run_dir in CHARTS_DIR.iterdir():
+            if run_dir.is_dir():
+                for chart_file in run_dir.glob("*.png"):
+                    try:
+                        chart_file.unlink()
+                        deleted_count += 1
+                    except Exception:
+                        pass
+                try:
+                    run_dir.rmdir()
+                except OSError:
+                    pass
+
+    # Mark all known runs as deleted in telemetry
+    telemetry = _get_telemetry()
+    for entry in telemetry:
+        if entry.get("runId") or entry.get("run_id"):
+            existing = entry.get("deletedCharts", [])
+            if not isinstance(existing, list):
+                existing = []
+            if "__all__" not in existing:
+                existing.append("__all__")
+            entry["deletedCharts"] = existing
+
+    _save_telemetry(telemetry)
+    _deleted_chart_runs.update(
+        entry.get("runId", entry.get("run_id", ""))
+        for entry in telemetry
+        if entry.get("runId") or entry.get("run_id")
+    )
+
+    _audit_log("all_charts_deleted", file_count=deleted_count)
+    return {"deleted": True, "deletedFiles": deleted_count}
 
 
 # ---------------------------------------------------------------------------
@@ -5608,6 +5677,15 @@ def _list_chart_runs() -> list[dict[str, Any]]:
                 "url": f"/static/charts/{run_id}/{chart_name}.png",
                 "size_bytes": chart_file.stat().st_size,
             })
+
+        # Skip and clean up empty run directories — a run-window frame
+        # remains visible only while it contains one or more charts.
+        if not charts:
+            try:
+                run_dir.rmdir()
+            except OSError:
+                pass
+            continue
         if charts:
             runs.append({
                 "runId": run_id,
@@ -5626,35 +5704,23 @@ def _list_chart_runs() -> list[dict[str, Any]]:
                 "deletedCharts": deleted_charts,
             })
 
-    # Auto-generate charts when no real chart runs exist on disk.
-    # This ensures the Charts page always has something to display on first
-    # visit. If real evaluation JSON sidecars are available, generate real
-    # charts under "test-run-final"; otherwise fall back to sample (synthetic)
-    # charts under "sample-charts".
+    # Auto-generate charts only for legitimate evaluation runs that have
+    # real evaluation JSON sidecars available but don't yet have chart
+    # artifacts on disk. Sample/demo charts are NOT auto-generated — they
+    # are only created when the user explicitly presses the "Generate demo
+    # charts" button. This prevents empty run-window frames from being
+    # created during testing, and ensures the Charts page starts clean.
     #
-    # If the user has deleted runs during this session, do NOT auto-generate
-    # — the user intentionally cleared the gallery. Auto-generation only
-    # triggers on a pristine state (no runs on disk, no deletions this session).
+    # If the user has deleted runs during this session, do NOT auto-generate.
     if not runs and not _deleted_chart_runs:
         if _load_evaluation_jsons():
             logger.info("No chart runs on disk but real eval JSONs found, generating real charts")
             try:
                 gen_result = _generate_charts_impl({"runId": "test-run-final"})
-                # If the run was deleted (persisted in telemetry), _generate_charts_impl
-                # falls back to sample-charts. Don't auto-generate in that case —
-                # respect the deletion.
                 if gen_result.get("charts") and not gen_result.get("isSample"):
                     runs.append(_format_generated_charts_as_run(gen_result))
             except Exception as exc:
                 logger.warning("Real chart generation failed: %s", exc)
-        if not runs:
-            logger.info("No chart runs on disk, generating sample charts")
-            try:
-                sample_result = _generate_charts_impl({"runId": "sample-charts"})
-                if sample_result.get("charts"):
-                    runs.append(_format_generated_charts_as_run(sample_result))
-            except Exception as exc:
-                logger.warning("Sample chart generation failed: %s", exc)
 
     return runs
 

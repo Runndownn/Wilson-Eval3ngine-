@@ -35,6 +35,7 @@ def test_job_creation_route_accepts_post() -> None:
 
 def test_chart_inventory_and_delete_routes_are_unique() -> None:
     assert _route_count("/api/charts/runs", "GET") == 1
+    assert _route_count("/api/charts/runs/all", "DELETE") == 1
     assert _route_count("/api/charts/runs/{run_id}/all", "DELETE") == 1
     assert _route_count("/api/charts/runs/{run_id}/{chart_name}", "DELETE") == 1
 
@@ -373,3 +374,36 @@ def test_chart_generation_rejects_runs_without_real_evidence(
         )
 
     assert captured.value.status_code == 409
+
+
+def test_delete_all_charts_endpoint_exists() -> None:
+    """Verify the delete-all-chart-runs endpoint is registered."""
+    assert _route_count("/api/charts/runs/all", "DELETE") == 1
+
+
+def test_delete_chart_returns_run_is_empty_flag(monkeypatch, tmp_path) -> None:
+    """Verify delete_chart returns runIsEmpty=True when the last chart is removed."""
+    import json as _json
+
+    charts_dir = tmp_path / "charts"
+    run_dir = charts_dir / "test-empties-run"
+    run_dir.mkdir(parents=True)
+    (run_dir / "success_rate.png").write_bytes(b"\x89PNG fake data")
+
+    telemetry = tmp_path / "telemetry.json"
+    telemetry.write_text(_json.dumps([{"runId": "test-empties-run", "type": "report_generation"}]))
+
+    monkeypatch.setattr(runtime.legacy, "CHARTS_DIR", charts_dir)
+    monkeypatch.setattr(runtime.legacy, "TELEMETRY_FILE", telemetry)
+    monkeypatch.setattr(runtime.legacy, "_get_telemetry", lambda: _json.loads(telemetry.read_text()))
+    monkeypatch.setattr(runtime.legacy, "_save_telemetry", lambda t: telemetry.write_text(_json.dumps(t)))
+    monkeypatch.setattr(runtime.legacy, "_deleted_chart_runs", set())
+
+    with TestClient(app) as client:
+        response = client.delete("/api/charts/runs/test-empties-run/success_rate")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["deletedFile"] is True
+        assert data["runIsEmpty"] is True
+        # The run directory should be removed when empty
+        assert not run_dir.exists()

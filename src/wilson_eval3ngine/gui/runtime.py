@@ -262,6 +262,13 @@ def _existing_chart_runs() -> list[dict[str, Any]]:
             )
 
         if not charts:
+            # Clean up empty run directory so empty frames don't persist.
+            # A run-window frame remains visible only while it contains
+            # one or more charts.
+            try:
+                run_dir.rmdir()
+            except OSError:
+                pass
             continue
 
         runs.append(
@@ -437,6 +444,11 @@ async def generate_demo_charts() -> dict[str, Any]:
         "charts": chart_urls,
         "isSample": True,
     }
+
+
+@app.delete("/api/charts/runs/all")
+async def delete_all_chart_runs() -> dict[str, Any]:
+    return _normalize_legacy_result(await legacy.delete_all_chart_runs())
 
 
 @app.delete("/api/charts/runs/{run_id}/all")
