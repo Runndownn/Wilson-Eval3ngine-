@@ -1,84 +1,56 @@
-# Caddy reverse proxy configuration for Wilson Eval3ngine
-# Provides TLS termination, request routing, and security headers
+# Wilson Eval3ngine stock-Caddy reverse proxy
+#
+# API-level rate limiting remains authoritative. This file intentionally uses
+# only directives available in the official caddy:2-alpine image; deployments
+# that require an additional proxy limiter must build and provenance-pin a
+# Caddy image containing that module.
 
-# Global options
 {
-    # Email for Let's Encrypt certificate management
     email {$WE3_TLS_EMAIL}
+    admin off
+}
 
-    # Minimum TLS version
-    servers {
-        protocol {
-            min_tls_version tls1.2
-            prefer_tls13
-        }
-    }
-
-    # Security headers
+(security_headers) {
     header {
-        # Remove server header
-        Server ""
-
-        # Security headers
+        -Server
         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
         X-Content-Type-Options "nosniff"
         X-Frame-Options "DENY"
-        X-XSS-Protection "1; mode=block"
         Referrer-Policy "strict-origin-when-cross-origin"
         Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=(), usb=()"
         Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
         Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
     }
-
-    # Log format
+    encode zstd gzip
     log {
         output stdout
         format json
         level INFO
     }
+    tls {
+        protocols tls1.2 tls1.3
+    }
 }
 
-# Main API endpoint
 {$WE3_DOMAIN} {
-    reverse_proxy api:8000
-
-    # Rate limiting for API endpoints
-    @api {
-        path /v1/*
+    import security_headers
+    reverse_proxy api:8000 {
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
     }
-    rate_limit @api 1000r/m
-
-    # Stricter rate limiting for auth-sensitive endpoints
-    @auth {
-        path /v1/experiments:run
-    }
-    rate_limit @auth 100r/m
-
-    # Health checks - no rate limit
-    @health {
-        path /health /ready /metrics
-    }
-    rate_limit @health 60r/m
-
-    # Encode response
-    encode zstd gzip
 }
 
-# Prometheus metrics endpoint
 metrics.{$WE3_DOMAIN} {
-    reverse_proxy prometheus:9090
+    import security_headers
 
-    # Restrict access to metrics
-    @metrics {
-        remote 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+    @private_clients remote_ip 127.0.0.0/8 ::1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+    handle @private_clients {
+        reverse_proxy prometheus:9090
     }
-    @allow {
-        not @metrics
-    }
-    respond @allow "Forbidden" 403
+    respond "Forbidden" 403
 }
 
-# Grafana dashboard
 grafana.{$WE3_DOMAIN} {
+    import security_headers
     reverse_proxy grafana:3000
 }
