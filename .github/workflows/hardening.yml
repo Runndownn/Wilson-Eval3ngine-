@@ -20,7 +20,7 @@ env:
 jobs:
   focused-security-regression:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Checkout exact source revision
         uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
@@ -45,6 +45,10 @@ jobs:
           python -m py_compile \
             src/wilson_eval3ngine/api/body_limit.py \
             src/wilson_eval3ngine/api/__init__.py \
+            src/wilson_eval3ngine/assurance/inventory.py \
+            src/wilson_eval3ngine/security/secrets_backend.py \
+            src/wilson_eval3ngine/gui/access_control.py \
+            src/wilson_eval3ngine/gui/run_gui.py \
             src/wilson_eval3ngine/gui/secret_transport.py \
             src/wilson_eval3ngine/gui/ux_overlay.py
 
@@ -52,12 +56,31 @@ jobs:
         run: |
           python -m pytest -q \
             tests/governance/test_production_deployment_contract.py \
+            tests/unit/test_assurance_inventory.py \
+            tests/unit/test_secrets_backend.py \
+            tests/unit/test_gui_access_control.py \
             tests/unit/test_gui_secret_transport.py \
             tests/unit/test_gui_ux6.py \
             tests/unit/test_streaming_body_limit.py \
             tests/unit/test_gui_bind_security.py \
             tests/unit/test_gui_egress_policy.py \
             tests/governance/test_ci_security_contract.py
+
+      - name: Generate privacy-safe byte inventory
+        run: |
+          mkdir -p artifacts/assurance
+          python scripts/assurance/inventory_repository.py . \
+            --output artifacts/assurance/repository-inventory.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("artifacts/assurance/repository-inventory.json").read_text())
+          assert payload["errors"] == []
+          assert payload["file_count"] > 0
+          assert len(payload["bundle_sha256"]) == 64
+          serialized = json.dumps(payload)
+          assert "/home/runner/" not in serialized
+          PY
 
       - name: Validate production Compose contract
         env:
@@ -72,7 +95,7 @@ jobs:
           WE3_TLS_EMAIL: security@example.invalid
         run: docker compose -f docker-compose.prod.yml config >/dev/null
 
-      - name: Ensure branch contains no regular secret handoff in active composition
+      - name: Ensure active GUI composition uses ephemeral secret transport
         run: |
           python - <<'PY'
           from wilson_eval3ngine.gui import server
@@ -89,3 +112,12 @@ jobs:
               install_ux_overlay(app, root)
               assert server.store_api_key_temp_file is store_api_key_pipe
           PY
+
+      - name: Upload sanitized assurance evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: hardening-assurance-${{ github.sha }}
+          path: artifacts/assurance/repository-inventory.json
+          if-no-files-found: error
+          retention-days: 30
