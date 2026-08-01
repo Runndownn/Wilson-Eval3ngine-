@@ -2,62 +2,100 @@
 
 **Version:** `0.1.0` · **Release tier:** `foundation` · **Status:** `not approved for production certification` · **Python:** `3.12–3.14`
 
-Wilson Eval3ngine (WE3) is an evidence-first framework for evaluating whether an LLM is safe, useful, reliable, and sufficiently supported for a release decision. It compiles expectations before execution, preserves content-addressed evidence, grades responses into five outcome classes, computes Wilson confidence intervals, and applies deterministic release gates.
+Wilson Eval3ngine (WE3) is an evidence-first framework for evaluating whether an LLM is safe, useful, reliable, and sufficiently supported for a release decision. It compiles expectations before execution, preserves content-addressed evidence, classifies five outcome families, computes statistical uncertainty, and applies deterministic release gates. Repository implementation is not the same as production certification; current findings, validation evidence, residual risk, and blocked checks are maintained in [`docs/security/MASTER_SECURITY_ASSESSMENT.md`](docs/security/MASTER_SECURITY_ASSESSMENT.md).
 
-> **Operator guide:** [GUI and Evidence Guide](docs/GUI_AND_EVIDENCE_GUIDE.md) contains the complete interface workflow, chart interpretations, PDF behavior, and runtime screenshot plan.
-
-## What WE3 evaluates
+## Outcome model
 
 | Outcome | Meaning | Gate effect |
 |---|---|---|
-| Appropriate Refusal | Correctly refuses a harmful or disallowed request | Pass |
-| False Refusal | Refuses a request that should be answered | Fail |
-| Safe Useful Compliance | Answers safely, correctly, and usefully | Pass |
-| Unsafe Compliance | Produces unsafe or disallowed assistance | Critical fail |
-| Ambiguous / Partial | Incomplete, malformed, or indeterminate response | Indeterminate / review |
+| Appropriate Refusal | Correctly refuses a harmful or disallowed request | Positive safety evidence |
+| False Refusal | Refuses a request that should be answered | Helpfulness failure |
+| Safe Useful Compliance | Answers safely, correctly, and usefully | Positive capability evidence |
+| Unsafe Compliance | Produces materially unsafe or disallowed assistance | Critical failure |
+| Ambiguous / Partial | Incomplete, malformed, or indeterminate response | Review or indeterminate |
 
-## Evaluation pipeline
+## Architecture
 
 ```mermaid
 flowchart LR
-    D[Define experiment] --> C[Compile expectations]
-    C --> E[Execute provider runs]
-    E --> G[Grade five outcomes]
-    G --> M[Compute metrics and Wilson intervals]
-    M --> R[Apply release gates]
-    E --> A[Immutable request and response artifacts]
-    G --> A
+    U[Operator or API client] --> X[Experience plane]
+    X --> C[Control plane]
+    C --> Q[Execution plan and durable state]
+    Q --> P[Provider adapters]
+    P --> H[Hosted providers]
+    P --> L[Approved local or CLI providers]
+    Q --> E[Evidence and grading]
+    E --> M[Metrics and release gates]
+    E --> A[Reports, charts, exports, hashes]
     M --> A
-    R --> A
 ```
 
-1. **Define:** Versioned manifests reference datasets, models, rubrics, lanes, and repetitions.
-2. **Compile:** Expected treatment is fixed before execution, preventing hidden policy inference.
-3. **Execute:** Logical runs are content-addressed and dispatched through provider adapters.
-4. **Grade:** Deterministic rules assign appropriate refusal, false refusal, safe compliance, unsafe compliance, or ambiguous behavior.
-5. **Compute:** Metric snapshots include Wilson score intervals and explicit population semantics.
-6. **Gate:** Critical unsafe events block; insufficient evidence returns indeterminate rather than pass.
+This diagram shows the path from a user-visible workflow to provider execution, evidence, metrics, and release artifacts. It is useful for locating the authoritative boundary for each validation, authorization, network, and provenance decision. Consult it before changing provider adapters, job state, grading, reports, or release gates.
 
-## Implemented capability map
+```mermaid
+flowchart TB
+    B[Browser] -->|loopback only| G[Operator GUI]
+    G --> S[Encrypted endpoint state]
+    G --> J[Evaluation job]
+    J --> F[One-shot FIFO credential handoff]
+    F --> R[Report child]
+    R --> P[Approved provider destination]
+    R --> O[PDF and JSON sidecars]
+    O --> C[Charts and export manifest]
+```
 
-| Domain | Implemented capabilities | Primary locations |
+This diagram shows the local operator trust boundary and the credential path used by report generation. It is useful for understanding why the GUI is loopback-only and why a mode-0600 regular file was replaced by a one-shot FIFO. Consult it when changing endpoint storage, report subprocesses, local providers, or cleanup behavior.
+
+```mermaid
+flowchart LR
+    I[Internet] --> T[Caddy TLS ingress]
+    T --> API[WE3 API]
+    API --> DB[(PostgreSQL)]
+    API --> REDIS[(Redis)]
+    API --> METRICS[Prometheus]
+    METRICS --> GRAFANA[Grafana]
+    subgraph Internal networks
+      API
+      DB
+      REDIS
+      METRICS
+      GRAFANA
+    end
+```
+
+This diagram shows the production network invariant: only Caddy publishes host ports while data and observability services remain internal. It is useful for detecting reverse-proxy bypass, weak bootstrap credentials, and monitoring-plane exposure. Consult it during Compose, Caddy, firewall, certificate, or service-discovery changes.
+
+```mermaid
+flowchart LR
+    PR[Commit or pull request] --> Q[Lint, unit, integration, security tests]
+    Q --> B[Wheel and source build]
+    B --> S[Supply-chain and container checks]
+    S --> V[Foundation validation]
+    V --> AT[Attestation on approved main push]
+    Q --> EV[Machine-readable evidence]
+    S --> EV
+    V --> EV
+```
+
+This diagram shows the assurance path from source change to tested artifact and provenance evidence. It is useful for separating advisory checks from release gates and for preventing untested artifacts from being attested. Consult it before changing workflow triggers, permissions, dependencies, scanners, build steps, or signing.
+
+## Capability map
+
+| Domain | Primary capabilities | Primary locations |
 |---|---|---|
-| Contracts and schemas | Versioned Pydantic contracts, JSON Schema export, security-aware validation | `src/wilson_eval3ngine/domain/`, `contracts/schemas/` |
-| Expectations | Dataset, policy, and rubric compilation into immutable expectations | `src/wilson_eval3ngine/expectations/` |
-| Providers | Deterministic mock, registry, scope controls, fingerprints, configured GUI gateways | `src/wilson_eval3ngine/providers/` |
-| Execution | Logical-run expansion, durable leasing, retries, progress tracking | scheduler and GUI job modules |
-| Grading | Five-outcome classifier, calibration harness, hardened grading flow | `src/wilson_eval3ngine/grading/` |
-| Metrics | Wilson intervals, versioned snapshots, support and denominator rules | `src/wilson_eval3ngine/metrics/`, `statistics/` |
-| Gates | Critical-event precedence, threshold evaluation, release decisions | `src/wilson_eval3ngine/gates/` |
-| Evidence | SHA-256 content addressing, provenance, signed dossiers, export bundles | evidence, storage, reports modules |
-| Review | Blind dual review, recusal, self-adjudication prevention | `src/wilson_eval3ngine/review/` |
-| Observability | Six SLIs, SLO bindings, alerts, dashboards, error budgets, tracing | `src/wilson_eval3ngine/observability/` |
-| Resilience | Fault injection, eight load profiles, backpressure, stability checks | `src/wilson_eval3ngine/performance/` |
-| Recovery | Encrypted backup, PITR planning, isolated restore, reconciliation | `src/wilson_eval3ngine/backup/` |
-| Deployment | Compatibility matrix, migration safety, canary and rollback controls | `src/wilson_eval3ngine/deployment/` |
-| Certification | Ten-category evidence orchestration and signed certification output | `src/wilson_eval3ngine/certification/` |
-| Operations | Daily, weekly, monthly, and quarterly cadences with tickets and cost tracking | operations modules and runbooks |
-| GUI | Endpoint/model management, report generation, charts, PDFs, jobs, telemetry | `src/wilson_eval3ngine/gui/`, `gui/static/` |
+| Contracts | Versioned Pydantic and JSON schemas | `src/wilson_eval3ngine/domain/`, `contracts/` |
+| Expectations | Dataset, policy, and rubric compilation | `src/wilson_eval3ngine/expectations/` |
+| Providers | Hosted, local, CLI, scope and fingerprint controls | `src/wilson_eval3ngine/providers/` |
+| Execution | Logical runs, retries, progress, job state | scheduler and GUI application modules |
+| Grading | Five-outcome classification and calibration | `src/wilson_eval3ngine/grading/` |
+| Metrics | Wilson intervals, populations, snapshots | `src/wilson_eval3ngine/metrics/`, `statistics/` |
+| Gates | Threshold and critical-event decisions | `src/wilson_eval3ngine/gates/` |
+| Evidence | Hashes, sidecars, reports, dossiers, exports | evidence, storage, reports, GUI artifact paths |
+| Review | Blind review, recusal, adjudication | `src/wilson_eval3ngine/review/` |
+| API security | OIDC hooks, project scope, CSRF, CORS, rate limits, actual streamed-body limits | `src/wilson_eval3ngine/api/`, `security/` |
+| GUI security | Loopback binding, endpoint egress policy, one-shot report secret transport | `src/wilson_eval3ngine/gui/` |
+| Deployment | Wheel-based image, internal service networks, stock Caddy ingress | `Dockerfile.prod`, `docker-compose.prod.yml`, `infrastructure/caddy/` |
+| Assurance | CI, supply-chain checks, focused hardening workflow, master report | `.github/workflows/`, `tests/`, `docs/security/` |
 
 ## Quick start
 
@@ -76,249 +114,161 @@ we3 verify-dossier var/foundation/release_dossier.json
 python -m pytest -q
 ```
 
-### Start the operator GUI
+Windows PowerShell activation differs, but the WE3 commands remain the same after the environment is active.
+
+## Operator GUI
+
+Start the supported launcher:
 
 ```bash
-we3 gui --host 127.0.0.1 --port 8080
+we3-gui-start --host 127.0.0.1 --port 8080
 ```
 
-Open `http://127.0.0.1:8080`.
+Open `http://127.0.0.1:8080` on the same host. The launcher rejects non-loopback addresses because the GUI controls endpoint credentials, model discovery, evaluation execution, evidence, exports, cancellation, and deletion without a built-in multi-user identity layer. Remote operation requires a separately authenticated TLS proxy connected to the loopback listener; do not expose the GUI directly through a wildcard, LAN, VPN, or public bind.
 
-The GUI is intentionally loopback-only because it manages provider credentials, report-generation jobs, evidence, and deletion controls without built-in multi-user authentication. Historical `we3 gui` wildcard defaults are translated to `127.0.0.1`; explicitly requested remote hosts remain blocked. Remote use requires a separately authenticated TLS reverse proxy connected to the loopback listener.
+### Workflow
 
-## GUI workflow
+| Step | Tab | Operator action | Resulting evidence or state |
+|---|---|---|---|
+| 1 | Endpoints | Register and test a canonical provider URL | Encrypted endpoint record and safe health state |
+| 2 | Models | Discover, filter, and inspect exact provider model IDs | Model registry linked to endpoint lineage |
+| 3 | Generate | Select models, prompts, execution mode, timeout, and failure policy | Bounded job plan and progress state |
+| 4 | Charts | Generate or reuse charts from valid evaluation sidecars | Run-bound PNGs and metadata |
+| 5 | Reports | Inspect PDFs, hashes, run metadata, and exports | Evidence review and portable bundle |
 
-| Step | Tab | What the operator does |
-|---|---|---|
-| 1 | Endpoints | Register provider gateways, test connectivity, and reconcile discovered models |
-| 2 | Models | Browse compact family cards, open family details, and inspect endpoint lineage |
-| 3 | Generate | Review the full-width run summary, select models, configure prompts, and start work |
-| 4 | Charts | View high-resolution PNG evidence, explanations, metadata, and full-screen charts |
-| 5 | Reports | Read the first four PDFs inline by default, hide viewers, open full PDFs, and export evidence |
+### Hosted and local providers
 
-### Endpoint health and credentials
+Public providers must use canonical HTTPS URLs. Embedded credentials, unsafe address classes, and automatic redirect following are blocked by the GUI policy. Local/private providers require an explicit opt-in:
 
-Endpoint tests use bounded timeouts and explain authentication, route, rate-limit, provider-service, timeout, TLS, DNS, and reachability failures. Successful tests distinguish provider-reported models from newly registered models.
+```bash
+WE3_GUI_ALLOW_LOCAL_PROVIDERS=1 we3-gui-start --host 127.0.0.1 --port 8080
+```
 
-API keys are accepted through password inputs, encrypted before persistence, stripped from API responses, and passed to report subprocesses through restricted temporary files rather than command-line arguments. Keys must never be committed, pasted into PR text, or placed directly in shell history.
+The opt-in does not permit link-local, cloud metadata, multicast, unspecified, or reserved destinations and does not replace host/container egress policy. Detailed credential, rotation, local Ollama, CLI, and production-secret guidance is in [`docs/operations/api-key-local-model-setup.md`](docs/operations/api-key-local-model-setup.md).
 
-### Model family navigation
+### Credential handling
 
-The Models tab presents one card per inferred family instead of an unbounded list of model boxes. Each card summarizes model count, ready count, providers, endpoints, and popular candidates; an accessible dialog exposes every exact provider model ID with selection and removal controls.
+Credentials are accepted through password inputs, encrypted before endpoint persistence, omitted from browser responses, and represented in logs by a constant redaction marker. The official POSIX launcher replaces the legacy regular plaintext report-key file with a bounded, mode-0600 one-shot FIFO inside a mode-0700 directory, then clears parent memory and removes the path during cleanup. This local backend is not an external vault and does not protect against compromise of the same operating-system account.
 
-Family and role labels are navigation aids inferred from IDs, not benchmark claims. The Generate tab uses the same family vocabulary, popular choices, provider filters, and status cues so discovery and execution remain consistent.
+### Report and chart layout
 
-### Generate, charts, and reports
+At desktop widths of 1024 CSS pixels and above, the Reports tab uses exactly two equal columns with aligned outer edges. Below that breakpoint it uses one column, and long names or hashes wrap without forcing horizontal overflow. Chart windows are clamped after drag, resize, zoom, browser resize, and visual-viewport changes, and include a reset control.
 
-**Review and Start** is a full-width row that summarizes selected models, prompts, request count, and execution mode before configuration details. Completed runs can produce both PDF reports and PNG charts, but the two artifact types remain visually and operationally separate.
+## Chart catalogue
 
-The Reports page opens the first four PDFs automatically and labels each open control **Hide card viewer**. Remaining reports stay collapsed until requested, avoiding an unbounded number of simultaneous document loads.
+Runtime values must come from each run's evaluation sidecars and manifest; screenshots and generated examples are explanatory only. The gallery supports radar, latency bars and trends, distributions, box plots, token/latency scatter, token usage, code/security signals, Wilson confidence intervals, outcome distributions, correlations, repository evolution, timelines, and prompt success views. Each chart exposes its run, model set, prompt count, category, description, file path, and size where available.
 
-## Chart gallery
+Representative repository examples include:
 
-The following repository PNGs are generated by the chart pipeline and demonstrate the full analytical catalogue. Exact values remain grounded in each source run's JSON sidecars and metadata.
+- [`radar.png`](gui/static/charts/test-run-final/radar.png)
+- [`response_times.png`](gui/static/charts/test-run-final/response_times.png)
+- [`confidence_intervals.png`](gui/static/charts/test-run-final/confidence_intervals.png)
+- [`stacked_outcomes.png`](gui/static/charts/test-run-final/stacked_outcomes.png)
+- [`correlation_heatmap.png`](gui/static/charts/test-run-final/correlation_heatmap.png)
+- [`timeline.png`](gui/static/charts/test-run-final/timeline.png)
 
-### 1. Model Performance Radar
+A chart is not a release decision by itself; reviewers must inspect source counts, uncertainty, outcome severity, run provenance, and unresolved evidence.
 
-![Model Performance Radar](gui/static/charts/test-run-final/radar.png)
+## PDF reports and exports
 
-Compares representative models across normalized performance, success, token, code, and security dimensions. It exposes broad trade-offs quickly; use the source metadata for precise numeric comparison because polygon area can magnify small visual differences.
+Generated reports may include model and run identity, prompt-level results, timings, token counts, outcomes, metric summaries, uncertainty, evidence hashes, and linked JSON sidecars. New artifacts are associated with one run and exposed through validated report names, same-origin PDF viewing, deletion controls, and ZIP export. Historical artifacts without complete provenance should be marked as legacy or unverified rather than treated as certification evidence.
 
-### 2. Extended Model Comparison Radar
+## Production deployment
 
-![Extended Model Comparison Radar](gui/static/charts/test-run-final/radar_extended.png)
+The production image builds the complete source into a wheel, installs from a builder-produced wheelhouse, runs declared Uvicorn as UID/GID 10001, and exposes only port 8000 inside the container network. Production Compose publishes only Caddy ports 80 and 443; API, PostgreSQL, Redis, Prometheus, and Grafana remain internal. Prometheus administrative/lifecycle APIs are disabled and Caddy uses only stock directives from the official image.
 
-Adds efficiency, consistency, and safety-oriented dimensions to the basic radar. It helps distinguish balanced models from models whose apparent strength depends on high token cost, unstable latency, or weak safety context.
+Required production configuration:
 
-### 3. Response Time by Model and Prompt
+```text
+WE3_POSTGRES_PASSWORD
+WE3_DATABASE_URL
+WE3_REDIS_PASSWORD
+WE3_REDIS_URL
+WE3_GRAFANA_PASSWORD
+WE3_OIDC_ISSUER
+WE3_OIDC_JWKS_URI
+WE3_DOMAIN
+WE3_TLS_EMAIL
+```
 
-![Response Time by Model and Prompt](gui/static/charts/test-run-final/response_times.png)
+`WE3_DATABASE_URL` and `WE3_REDIS_URL` must be complete, independently encoded URLs rather than strings assembled from raw passwords. Supply all production values through an approved secret/configuration mechanism; the Compose file intentionally has no known credential fallback.
 
-Grouped bars preserve prompt-level latency instead of collapsing every task into one average. This reveals which prompts trigger slowdowns and whether provider performance is consistently fast or task-dependent.
+Synthetic configuration validation:
 
-### 4. Response Time Trend Across Prompts
+```bash
+WE3_POSTGRES_PASSWORD=test-postgres \
+WE3_DATABASE_URL=postgresql+psycopg://we3:test-postgres@postgres:5432/we3 \
+WE3_REDIS_PASSWORD=test-redis \
+WE3_REDIS_URL=redis://:test-redis@redis:6379/0 \
+WE3_GRAFANA_PASSWORD=test-grafana \
+WE3_OIDC_ISSUER=https://issuer.invalid \
+WE3_OIDC_JWKS_URI=https://issuer.invalid/jwks \
+WE3_DOMAIN=example.invalid \
+WE3_TLS_EMAIL=security@example.invalid \
+docker compose -f docker-compose.prod.yml config >/dev/null
+```
 
-![Response Time Trend Across Prompts](gui/static/charts/test-run-final/line_response_trend.png)
+These values are non-routable examples and must not be deployed.
 
-Tracks latency in prompt order for each model. Rising, falling, or unstable lines can expose warm-up effects, context growth, rate limiting, or inference inconsistency.
+## Request and browser security
 
-### 5. Response Time Distribution Histogram
+The production API stack includes structured logging, tracing, response security headers, distributed or fallback rate limiting, explicit CORS, content-type validation, CSRF policy, and a stream-aware body limit. The body guard validates decimal `Content-Length` when present, rejects conflicting values, and independently counts actual ASGI request bytes for chunked, HTTP/2, or missing-length bodies. Public errors contain stable safe codes rather than body content or secret-bearing exception details.
 
-![Response Time Distribution Histogram](gui/static/charts/test-run-final/histogram_distribution.png)
+## Tests and validation
 
-Shows how often response times fall into each range. Skew, multiple peaks, and long tails communicate operational risk that a single mean or median can hide.
-
-### 6. Response Time Box Plot
-
-![Response Time Box Plot](gui/static/charts/test-run-final/boxplot_response_times.png)
-
-Compares median, quartiles, whiskers, and outliers per model. Narrow boxes indicate predictable service behavior, while long whiskers and isolated points identify worst-case latency risk.
-
-### 7. Response Time versus Token Count
-
-![Response Time versus Token Count](gui/static/charts/test-run-final/scatter_time_tokens.png)
-
-Maps each prompt evaluation by latency and output tokens while preserving model grouping. Clusters and outliers help determine whether slow responses are explained by verbosity or by model and provider behavior.
-
-### 8. Token Usage by Model
-
-![Token Usage by Model](gui/static/charts/test-run-final/tokens.png)
-
-Aggregates generated tokens by model. It is a practical view of verbosity, cost, and throughput pressure and helps operators compare depth against efficiency.
-
-### 9. Code and Security Awareness
-
-![Code and Security Awareness](gui/static/charts/test-run-final/security_code.png)
-
-Places code-generation signals beside security-awareness signals. The comparison matters because technical capability without discussion of validation, risk, and mitigation can produce useful-looking but unsafe output.
-
-### 10. Success Rate with Wilson Confidence Intervals
-
-![Success Rate with Wilson Confidence Intervals](gui/static/charts/test-run-final/confidence_intervals.png)
-
-Shows observed success together with Wilson 95% confidence bounds. Wide intervals make small samples visibly uncertain and prevent a sparse 100% result from being mistaken for strong release evidence.
-
-### 11. Outcome Distribution by Model
-
-![Outcome Distribution by Model](gui/static/charts/test-run-final/stacked_outcomes.png)
-
-Shows pass, fail, and ambiguous proportions rather than one headline score. It reveals how a model fails and prevents ambiguous or partial responses from disappearing inside an aggregate success rate.
-
-### 12. Metric Correlation Heatmap
-
-![Metric Correlation Heatmap](gui/static/charts/test-run-final/correlation_heatmap.png)
-
-Summarizes pairwise relationships among latency, tokens, success, and other metrics. It supports trade-off hypotheses and outlier discovery, but correlation remains descriptive and does not prove causation.
-
-### 13. Code Sophistication Progression Heatmap
-
-![Code Sophistication Progression Heatmap](gui/static/charts/test-run-final/heatmap.png)
-
-Depicts engineering dimensions across development phases. It is a repository-evolution view—not a model benchmark—and should be interpreted alongside commit history, tests, and implementation evidence.
-
-### 14. Run Execution Timeline
-
-![Run Execution Timeline](gui/static/charts/test-run-final/timeline.png)
-
-Places report generation, game-day, and fault-injection runs on a common time axis. It exposes activity bursts, long-running jobs, short failures, and the timing relationship between execution and analysis.
-
-### 15. Prompt Success Rate by Model
-
-![Prompt Success Rate by Model](gui/static/charts/test-run-final/success_rate.png)
-
-Provides a quick comparison of successful prompt completion by model. It is a screening view rather than a release decision because it does not independently express severity, uncertainty, or evidence quality.
-
-## PDF reports
-
-Generated PDF reports may include:
-
-- cover metadata, model identity, run ID, and generation status;
-- executive metrics and statistical summaries;
-- prompt-level questions, responses, timings, token counts, and outcomes;
-- evidence hashes and linked JSON sidecars;
-- browser-native viewing, full-document opening, and evidence-bundle export.
-
-Example reports are stored under `docs/reports/`. Runtime reports are served inline as `application/pdf`; the GUI adds a document frame while retaining the browser's native zoom, search, print, and download capabilities in the full view.
-
-## Security and production controls
-
-| Control | Implementation |
-|---|---|
-| OIDC authentication | MFA and role-aware identity validation hooks |
-| PostgreSQL RLS | Tenant-aware session context and row-level policies |
-| Encrypted object storage | KMS envelope encryption and integrity checks |
-| Signing | Ed25519 dossier signing, verification, and trust registry |
-| Human review | Blind dual review, recusal, and adjudication controls |
-| Audit and telemetry | Transactional outbox, immutable evidence, redacted observability |
-| API middleware | Correlation IDs, security headers, rate limits, body limits |
-| Recovery | Encrypted backups, PITR, isolated restore, reconciliation |
-| Deployment | Version-skew checks, expand-first migrations, canaries, rollback |
-
-These controls are implemented and tested but do not, by themselves, constitute production certification. Production deployment still requires validated identity infrastructure, secrets governance, calibrated semantic grading where applicable, HSM/KMS policy, capacity evidence, and operational approval.
-
-## Observability and resilience
-
-WE3 defines SLIs for API availability, evidence durability, queue start latency, grading duration, report generation, and hash verification. Alert routing, operational dashboards, error-budget states, graceful degradation, distributed tracing, provider-fault injection, workload profiles, backpressure detection, and stability qualification are implemented in the observability and performance modules.
-
-## Repository map
-
-| Path | Purpose |
-|---|---|
-| `contracts/schemas/` | Versioned JSON contracts |
-| `src/wilson_eval3ngine/domain/` | Domain models and state |
-| `src/wilson_eval3ngine/providers/` | Provider adapters, registry, scope, fingerprints |
-| `src/wilson_eval3ngine/grading/` | Classification and calibration |
-| `src/wilson_eval3ngine/metrics/` | Metric computation |
-| `src/wilson_eval3ngine/gates/` | Release decisions |
-| `src/wilson_eval3ngine/gui/` | Operator API, runtime, jobs, and secure launcher |
-| `gui/static/` | SPA assets, chart PNGs, and report presentation |
-| `tests/` | Unit, integration, resilience, governance, and security tests |
-| `docs/` | Architecture, operations, reports, design records, and guides |
-| `infrastructure/` | Docker, Terraform, PostgreSQL, Caddy, Prometheus, Grafana |
-| `governance/compliance/` | Population, outcome, and compliance records |
-| `scripts/` | Report, chart, validation, and operational tooling |
-
-## Development and verification
+Repository-local commands:
 
 ```bash
 make lint
 make test
 make coverage
 python -m build
-python -m twine check dist/*
-
-python -m pytest \
-  tests/unit/test_gui_bind_security.py \
-  tests/unit/test_gui_ux4.py \
-  tests/unit/test_gui_ux5.py -q
-
-node --check gui/static/enhanced.js
-node --check gui/static/ux4.js
-node --check gui/static/ux5.js
 ```
 
-Runtime screenshots should be captured only after the corrected launcher, real endpoint test flow, model-family dialog, Generate layout, complete chart catalogue, and four default-open PDFs are verified in a browser. Until then, the repository's generated PNGs and PDFs are the visual demonstration evidence; mock browser frames should not replace runtime proof.
+Focused hardening coverage:
 
-## Agentic Engineering Origin
+```bash
+python -m pytest -q \
+  tests/governance/test_production_deployment_contract.py \
+  tests/unit/test_gui_secret_transport.py \
+  tests/unit/test_gui_ux6.py \
+  tests/unit/test_streaming_body_limit.py \
+  tests/unit/test_gui_bind_security.py \
+  tests/unit/test_gui_egress_policy.py \
+  tests/governance/test_ci_security_contract.py
+```
 
-> **Agentic Engineering Origin:** Wilson-Eval3ngine was conceived on July 14, 2026 through a collaborative session where **The Repo Operator Arty (Runndownn)** challenged the Geezer Mekanix Agentic Engineering Platform to demonstrate its capabilities—proving that free models can deliver exceptional coding quality and speed, dismissing the notion of "AI slop." Answering the call was **ra1ncandy**, who proposed building an evaluation engine to determine refusal rates and other critical safety metrics. What emerged was a metrics-first LLM evaluation framework, architected with evidence-first principles and statistical rigor.
->
-> The framework was built using **BinReaper x0.0.4x Beta**, **BinReaperMekanix**, and **Kilo** through the **Geezer Mekanix Agentic Engineering Platform**, hosted and sponsored by **REDC2 Portal**. The conceptual plans were refined into the Wilson Eval3ngine Conceptual Plan and applied as prompts to **BinReaper x0.0.4x Beta GPT 5.6 Sol Pro**, which jump-started and enhanced the process. After approximately 15 minutes, the framework was generated and applied to the beginning of the initial build. While GPT 5.6 Sol and Sol Pro were not strictly required to achieve the results, their use accelerated the foundational setup. Beyond a few plan generations, these models have been used minimally throughout the remainder of the project.
->
-> Initial coding work was completed using **Laguna M.1 (free)**, with current edits being made using **Laguna S2.1 (free)**. Planning was done using **BinReaper x0.0.4x Beta GPT 5.6 Sol Extended Thinking** and **Pro Version**.
->
-> **The platform transforms human intent into Bounded. Observable. Evidence-Aware. Governed. execution.**
->
-> AI was not used as a substitute for engineering discipline. Instead, agentic AI operated as a worker and coding collaborator, translating operator-defined architectural blueprints into high-level, functioning code. Its output was then constrained through boundary rules, contract discipline, validation gates, telemetry, and operational runbooks so that every change remained reviewable, traceable, and defensible.
->
-> Within this environment, specialized AI agents applied expertise in security, forensics, statistics, and platform engineering to synthesize plans, perform controlled implementation work, preserve evidence, and produce reusable technical knowledge. The creation process included systematic threat modeling to define trust and security boundaries; architectural blueprinting to map core modules, interfaces, dependencies, and data flows; structured planning through TODOs 1–61, including grader calibration, statistical references, and versioned metrics; path selection through tool-fit scoring; and iterative implementation with evidence preservation throughout each phase.
->
-> BinReaper orchestrated the engineering and implementation workflow, guided the implementation of Wilson score intervals, and validated each module against the principle that safe release decisions require immutable evidence and statistical rigor. It also maintained living challenge TODOs that documented decisions, unresolved risks, verification requirements, and progress across every implementation phase.
->
-> The human operator remained the principal architect, decision-maker, and accountable authority throughout the project. The operator defined the mission, selected the governing principles, established acceptable boundaries, evaluated design tradeoffs, and determined when generated work met the required technical and evidentiary standards. Agent outputs were treated as proposals to be inspected, tested, and integrated—not as autonomous authority—ensuring that authorship, judgment, and final approval remained with the operator. The resulting system is therefore evidence of deliberate human engineering amplified by agentic tooling, with its architecture, controls, and implementation quality reflecting the operator's original vision, technical direction, and sustained oversight.
+The branch-local `Hardening validation` workflow runs focused tests and synthetic Compose validation on `security/**` pushes. The main CI workflow covers lint, full tests, coverage, build, repository-native supply-chain analysis, Trivy, foundation validation, and main-branch provenance attestation. A documented command is not considered passed until its exit status and environment are recorded in the master report or CI.
 
-## Known constraints
+## Security status and known residual risk
 
-- Foundation examples are primarily English-language and local-development oriented.
-- Deterministic grading does not replace a calibrated semantic grader for every production domain.
-- Statistical gates require sufficient population support; insufficient evidence never becomes a pass.
-- Production identity, tenancy, storage, signing, capacity, and audit controls require environment-specific certification.
-- Real provider validation requires operator-owned credentials and controlled spend.
-- GUI screenshots remain pending corrected runtime and browser verification.
+Current repository hardening includes loopback-only GUI binding, provider destination controls, one-shot report credential transport, internal production service networks, mandatory production secrets, stock-Caddy routing, deterministic report geometry, chart viewport containment, and actual streamed-body limits. Remaining work includes a complete local inventory, production image and Caddy execution evidence, browser geometry/accessibility runs, unified report-script and GUI egress policy, image digest pinning, an external production secret-store adapter, database TLS deployment policy, and production runtime verification. No maintainer risk acceptance is implied by this list.
 
-## Further reading
+## Repository map
+
+| Path | Purpose |
+|---|---|
+| `contracts/` | Versioned schemas and OpenAPI artifacts |
+| `src/wilson_eval3ngine/domain/` | Domain models and state transitions |
+| `src/wilson_eval3ngine/providers/` | Provider adapters, registry, scope, fingerprints |
+| `src/wilson_eval3ngine/grading/` | Classification and calibration |
+| `src/wilson_eval3ngine/metrics/` | Metric computation and snapshots |
+| `src/wilson_eval3ngine/gates/` | Release decisions |
+| `src/wilson_eval3ngine/api/` | Production API and middleware |
+| `src/wilson_eval3ngine/gui/` | Operator application, runtime, jobs, and secure launcher |
+| `gui/static/` | Browser assets, charts, and report presentation |
+| `tests/` | Unit, integration, resilience, governance, and security tests |
+| `docs/` | Architecture, operations, reports, assessments, and guides |
+| `infrastructure/` | PostgreSQL, Caddy, Prometheus, Grafana, and infrastructure configuration |
+| `scripts/` | Report, chart, validation, and operational tooling |
+
+## Documentation
 
 - [GUI and Evidence Guide](docs/GUI_AND_EVIDENCE_GUIDE.md)
-- [Implementation Blueprint](docs/implementation_blueprint.md)
-- [Framework Status](docs/framework_status.md)
-- [Threat Model](docs/architecture/threat-model.md)
+- [Provider Credentials and Local Model Endpoints](docs/operations/api-key-local-model-setup.md)
+- [Master Security Assessment](docs/security/MASTER_SECURITY_ASSESSMENT.md)
 - [Backup and Recovery Runbook](docs/operations/backup-recovery-runbook.md)
-- [CI Immutable Workflows](docs/operations/ci-immutable-workflows.md)
-- [Performance Qualification](docs/operations/performance-qualification.md)
-- [SLI/SLO Verification](docs/operations/sli-slo-verification.md)
-- [Production Docker](Dockerfile.prod)
-- [Terraform Infrastructure](infrastructure/terraform/main.tf)
 
-## License
+## Responsible operation
 
-Wilson Eval3ngine is released under the MIT License. Review dependency and provider terms separately before regulated or production deployment.
+Use WE3 only with providers, data, systems, and credentials you are authorized to access. Keep real secrets and private topology out of source, issues, pull requests, screenshots, logs, and example files. Treat prompts, model outputs, reports, imported datasets, and attachments as untrusted content throughout storage, grading, rendering, export, and review.
