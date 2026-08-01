@@ -6,21 +6,36 @@ import os
 from pathlib import Path
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from wilson_eval3ngine.gui import application
+from wilson_eval3ngine.gui import application, runtime
+from wilson_eval3ngine.gui.application import ChartGenerateRequest
 from wilson_eval3ngine.gui.runtime import app
 
 
-def test_runtime_registers_one_chart_generation_route() -> None:
-    routes = [
-        route
+def _route_count(path: str, method: str) -> int:
+    return sum(
+        1
         for route in app.router.routes
-        if getattr(route, "path", None) == "/api/charts/generate"
-        and "POST" in (getattr(route, "methods", None) or set())
-    ]
-    assert len(routes) == 1
+        if getattr(route, "path", None) == path
+        and method in (getattr(route, "methods", None) or set())
+    )
+
+
+def test_runtime_registers_one_chart_generation_route() -> None:
+    assert _route_count("/api/charts/generate", "POST") == 1
+
+
+def test_job_creation_route_accepts_post() -> None:
+    assert _route_count("/api/jobs", "POST") == 1
+
+
+def test_chart_inventory_and_delete_routes_are_unique() -> None:
+    assert _route_count("/api/charts/runs", "GET") == 1
+    assert _route_count("/api/charts/runs/{run_id}/all", "DELETE") == 1
+    assert _route_count("/api/charts/runs/{run_id}/{chart_name}", "DELETE") == 1
 
 
 def test_health_response_has_browser_security_headers() -> None:
@@ -136,7 +151,7 @@ def test_restart_marks_nonterminal_jobs_interrupted(
 
 def test_endpoint_url_rejects_public_plaintext_http() -> None:
     with pytest.raises(Exception) as captured:
-        application._normalize_endpoint_url("openai", "http://8.8.8.8/v1")
+        application._normalize_endpoint_url("openai", "http://example.com/v1")
 
     assert getattr(captured.value, "status_code", None) == 422
 
@@ -153,3 +168,83 @@ def test_endpoint_sanitization_removes_credentials() -> None:
     )
 
     assert sanitized == {"id": "ep-1", "name": "Provider"}
+
+
+def test_existing_chart_inventory_has_no_generation_side_effect(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    chart_root = tmp_path / "charts"
+    chart_root.mkdir()
+    monkeypatch.setattr(runtime.legacy, "CHARTS_DIR", chart_root)
+    monkeypatch.setattr(runtime, "_load_telemetry", lambda: [])
+    monkeypatch.setattr(
+        runtime.legacy,
+        "_generate_charts_impl",
+        lambda *_args, **_kwargs: pytest.fail("inventory reads must not generate charts"),
+    )
+
+    assert runtime._existing_chart_runs() == []
+
+
+def test_chart_generation_reuses_existing_artifacts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        runtime,
+        "_existing_chart_runs",
+        lambda: [
+            {
+                "runId": "run-1",
+                "charts": [
+                    {
+                        "name": "radar",
+                        "url": "/static/charts/run-1/radar.png",
+                    }
+                ],
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        runtime.legacy,
+        "_generate_charts_for_run_sync",
+        lambda *_args, **_kwargs: pytest.fail("existing charts must be reused"),
+    )
+
+    result = asyncio.run(
+        runtime.generate_charts(
+            ChartGenerateRequest.model_validate({"runId": "run-1"})
+        )
+    )
+
+    assert result["reused"] is True
+    assert result["generated"] == 0
+    assert result["charts"]["radar"].endswith("/radar.png")
+
+
+def test_chart_generation_rejects_runs_without_real_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(runtime, "_existing_chart_runs", lambda: [])
+    monkeypatch.setattr(
+        runtime,
+        "_load_telemetry",
+        lambda: [
+            {
+                "runId": "run-no-evidence",
+                "type": "report_generation",
+                "models": ["model-a"],
+                "prompts": ["prompt"],
+            }
+        ],
+    )
+    monkeypatch.setattr(runtime, "_run_has_evaluation_data", lambda _run: False)
+
+    with pytest.raises(HTTPException) as captured:
+        asyncio.run(
+            runtime.generate_charts(
+                ChartGenerateRequest.model_validate({"runId": "run-no-evidence"})
+            )
+        )
+
+    assert captured.value.status_code == 409
