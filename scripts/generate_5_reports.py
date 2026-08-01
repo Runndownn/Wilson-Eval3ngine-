@@ -4,11 +4,19 @@
 import json
 import sys
 import time
+import socket
+import html
 import urllib.request
 import urllib.error
+import urllib.parse
+import ssl
 import os
 import subprocess
 import shutil
+import random
+import re
+import stat
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -18,16 +26,278 @@ from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak
 from reportlab.lib import colors
 
-PROGRESS_FILE = os.environ.get("WE3_REPORT_PROGRESS_FILE", "")
+# Import reasoning-aware response handler
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+from wilson_eval3ngine.responses import parse_response, ModelResponse
+
+logger = logging.getLogger("we3.generate_reports")
+
+# ---------------------------------------------------------------------------
+# Security helpers
+# ---------------------------------------------------------------------------
+# SSRF protection: block private/reserved IP ranges and localhost
+_PRIVATE_IP_RANGES = [
+    re.compile(r"^127\."),
+    re.compile(r"^10\."),
+    re.compile(r"^172\.(1[6-9]|2[0-9]|3[0-1])\."),
+    re.compile(r"^192\.168\."),
+    re.compile(r"^169\.254\."),
+    re.compile(r"^0\."),
+    re.compile(r"^224\."),
+    re.compile(r"^240\."),
+    re.compile(r"^::1$"),
+    re.compile(r"^fc00:"),
+    re.compile(r"^fe80:"),
+    re.compile(r"^localhost$"),
+]
+
+# SSRF protection: block additional reserved ranges (RFC 5737, RFC 7335)
+_RESERVED_IP_PATTERNS = [
+    re.compile(r"^192\.0\.2\."),   # TEST-NET-1
+    re.compile(r"^198\.51\.100\."), # TEST-NET-2
+    re.compile(r"^203\.0\.113\."),  # TEST-NET-3
+    re.compile(r"^198\.18\."),      # Benchmark testing
+    re.compile(r"^203\.0\.113\."),  # Documentation
+]
+
+
+def _is_private_ip(ip: str) -> bool:
+    """Check if an IP address is in a private/reserved range."""
+    for pattern in _PRIVATE_IP_RANGES + _RESERVED_IP_PATTERNS:
+        if pattern.match(ip):
+            return True
+    return False
+
+
+def _resolve_hostname(hostname: str) -> list[str]:
+    """Resolve a hostname to IP addresses, returning a list of resolved IPs.
+    
+    Returns empty list if resolution fails.
+    """
+    try:
+        # Use getaddrinfo for dual-stack (IPv4 + IPv6) resolution
+        results = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        ips = []
+        for family, _, _, _, sockaddr in results:
+            ip = sockaddr[0]
+            if ip not in ips:
+                ips.append(ip)
+        return ips
+    except (socket.gaierror, socket.herror, OSError):
+        return []
+
+
+def _validate_gateway_url(url: str) -> tuple[bool, str]:
+    """Validate a gateway URL to prevent SSRF attacks.
+
+    Blocks localhost, private IP ranges, and non-HTTP(S) schemes.
+    Also resolves DNS to check if hostname resolves to a private IP.
+
+    Returns (is_valid, error_message).
+    """
+    if not url:
+        return False, "Gateway URL is empty"
+
+    url_lower = url.lower().strip()
+
+    # Must be HTTP or HTTPS
+    if not url_lower.startswith(("http://", "https://")):
+        return False, f"Gateway URL must use http:// or https:// scheme, got: {url_lower[:20]}"
+
+    # Extract hostname
+    parsed = urllib.parse.urlparse(url)
+    hostname = parsed.hostname or ""
+
+    # Check if local/private endpoints are explicitly allowed
+    # WE3_REPORT_ALLOW_LOCAL=1 permits localhost and private IP ranges
+    # for local development (e.g., local Ollama, SSH tunnel gateways)
+    allow_local = os.environ.get("WE3_REPORT_ALLOW_LOCAL", "").lower() in ("1", "true", "yes")
+
+    # Block localhost (unless explicitly allowed for local development)
+    if hostname in ("localhost", "localhost.", "0.0.0.0") and not allow_local:
+        return False, "Gateway URL must not be localhost"
+
+    # Block private IP ranges (direct IP in hostname)
+    # Unless explicitly allowed for local development
+    if not allow_local:
+        for pattern in _PRIVATE_IP_RANGES + _RESERVED_IP_PATTERNS:
+            if pattern.match(hostname):
+                return False, f"Gateway URL hostname appears to be a private/reserved address: {hostname}"
+
+    # SSRF protection: resolve DNS and check if any resolved IP is private
+    # This prevents DNS-based SSRF attacks where a hostname resolves to a private IP
+    # Exception: WE3_REPORT_ALLOW_LOCAL=1 allows local/private endpoints (e.g., local Ollama)
+    resolved_ips = _resolve_hostname(hostname)
+    if not resolved_ips:
+        # If DNS resolution fails, we allow it (might be a local hostname)
+        # but log a warning
+        logger.warning(f"Could not resolve hostname for SSRF check: {hostname}")
+    else:
+        for ip in resolved_ips:
+            if _is_private_ip(ip):
+                if allow_local:
+                    logger.info(f"Allowing private address {ip} for {hostname} (WE3_REPORT_ALLOW_LOCAL=1)")
+                else:
+                    return False, f"Gateway URL hostname resolves to private/reserved address: {hostname} -> {ip}"
+
+    return True, ""
+
+
+def _create_secure_ssl_context() -> ssl.SSLContext:
+    """Create an SSL context with certificate verification enabled.
+
+    Enforces TLS 1.2+ with certificate verification and hostname checking.
+    Never disables certificate verification.
+    """
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = True
+    ctx.verify_mode = ssl.CERT_REQUIRED
+    # Enforce minimum TLS version
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    return ctx
+
+
+def _read_api_key_securely() -> str:
+    """Read API key from secure temp file with permission validation.
+
+    Security measures:
+    - Validates the temp file has 0600 permissions (owner-only)
+    - Rejects symlinks to prevent symlink attacks
+    - Validates the parent directory is not world-writable
+    - Falls back to env var only if temp file is unavailable
+    - Never logs the key value
+    - Reads the file with explicit encoding
+    """
+    api_key = ""
+    api_key_file = os.environ.get("WE3_REPORT_API_KEY_FILE")
+
+    if api_key_file:
+        try:
+            # Security: Reject symlinks to prevent symlink attacks
+            if os.path.islink(api_key_file):
+                print("  [SECURITY WARNING] API key file is a symlink — rejecting for security")
+                return ""
+            
+            # Security: Validate filename to prevent path traversal
+            # The api key file should be in the system temp directory
+            api_key_file = os.path.normpath(api_key_file)
+            if ".." in api_key_file or api_key_file.startswith("/"):
+                # Allow absolute paths only in /tmp or /var/tmp
+                if not api_key_file.startswith(("/tmp/", "/var/tmp/")):
+                    print("  [SECURITY WARNING] API key file path is outside allowed temp directories")
+                    return ""
+
+            # Validate file permissions before reading
+            file_stat = os.stat(api_key_file)
+            mode = file_stat.st_mode & 0o777
+            if mode & 0o077:
+                # File is readable by group or others — security violation
+                print(f"  [SECURITY WARNING] API key file has insecure permissions (mode={oct(mode)}), expected 0600")
+                return ""
+
+            # Security: Validate parent directory is not world-writable
+            parent_dir = os.path.dirname(os.path.abspath(api_key_file))
+            parent_stat = os.stat(parent_dir)
+            parent_mode = parent_stat.st_mode & 0o777
+            if parent_mode & 0o002:
+                print(f"  [SECURITY WARNING] Parent directory of API key file is world-writable (mode={oct(parent_mode)})")
+                return ""
+
+            # Read key from secure temp file
+            with open(api_key_file, "r", encoding="utf-8") as fh:
+                api_key = fh.read().strip()
+        except FileNotFoundError:
+            pass  # File doesn't exist, fall back to env var
+        except PermissionError:
+            print("  [SECURITY WARNING] Permission denied reading API key file")
+            return ""
+        except Exception as exc:
+            print(f"  [WARNING] Could not read API key file: {exc}")
+            return ""
+    else:
+        # Fall back to env var for backward compatibility
+        api_key = os.environ.get("WE3_REPORT_GATEWAY_API_KEY", "")
+
+    return api_key
+
+
+def _mask_api_key(key: str) -> str:
+    """Mask an API key for safe logging.
+
+    Shows only the first 4 and last 4 characters.
+    """
+    if not key or len(key) <= 8:
+        return "***REDACTED***"
+    return f"{key[:4]}...{key[-4:]}"
+
+
+# Patterns that indicate sensitive data in error messages
+_SENSITIVE_ERROR_PATTERNS = [
+    re.compile(r"(?i)(sk-[a-zA-Z0-9]{10,})"),           # OpenAI-style API keys
+    re.compile(r"(?i)(Bearer\s+[a-zA-Z0-9._-]{10,})"),   # Bearer tokens
+    re.compile(r"(?i)(api[_-]?key\s*[=:]\s*\S+)"),        # API key assignments
+    re.compile(r"(?i)(password\s*[=:]\s*\S+)"),           # Passwords
+    re.compile(r"(?i)(token\s*[=:]\s*\S+)"),              # Tokens
+    re.compile(r"(?i)(Authorization:\s*Bearer\s+\S+)"),    # Auth headers
+    re.compile(r"(/tmp/[\w.-]+)"),                         # Temp file paths
+    re.compile(r"(/var/tmp/[\w.-]+)"),                     # Temp file paths
+    re.compile(r"(/home/[\w./-]+)"),                       # Home directory paths
+]
+
+
+def _sanitize_error_message(msg: str) -> str:
+    """Sanitize an error message to remove sensitive information.
+
+    Redacts API keys, bearer tokens, passwords, tokens, auth headers,
+    and temp file paths before emitting to progress files or logs.
+    """
+    if not msg:
+        return "Unknown error"
+    # Truncate to prevent excessive length
+    msg = msg[:500]
+    for pattern in _SENSITIVE_ERROR_PATTERNS:
+        msg = pattern.sub("[REDACTED]", msg)
+    return msg
+
+# PROGRESS_FILE is set from the --progress-file CLI argument in __main__.
+# It must be read dynamically inside _emit_progress because the env var
+# is set AFTER module import (in the __main__ block), so a module-level
+# constant would always be empty.
+def _get_progress_file() -> str:
+    """Return the current progress file path from the environment.
+
+    Read dynamically (not cached at import time) because the --progress-file
+    CLI argument sets the env var in __main__, which runs after module import.
+    """
+    return os.environ.get("WE3_REPORT_PROGRESS_FILE", "")
+
+
+def _sanitize_filename(name: str) -> str:
+    """Sanitize a model ID into a safe filename component.
+
+    Security measures:
+    - Strips path separators (/ and \\)
+    - Strips parent directory references (..)
+    - Strips null bytes
+    - Only allows alphanumeric, dash, underscore, and dot characters
+    """
+    name = name.replace("\x00", "")
+    name = name.replace("/", "-").replace("\\", "-").replace(":", "-")
+    # Remove any remaining path traversal attempts
+    name = name.replace("..", "-")
+    # Only allow safe characters
+    name = re.sub(r'[^A-Za-z0-9._-]', '-', name)
+    return name
 
 
 def _emit_progress(event: str, **payload: Any) -> None:
-    if not PROGRESS_FILE:
+    progress_file = _get_progress_file()
+    if not progress_file:
         return
     payload["event"] = event
     payload["timestamp"] = datetime.now(timezone.utc).isoformat()
     try:
-        with open(PROGRESS_FILE, "a", encoding="utf-8") as fh:
+        with open(progress_file, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(payload, default=str) + "\n")
             fh.flush()
     except Exception:
@@ -96,7 +366,7 @@ def get_prompts():
     """Get prompts from environment or use defaults.
     
     Priority:
-    1. WE3_REPORT_PROMPTS env var (comma-separated)
+    1. WE3_REPORT_PROMPTS env var (JSON-encoded list, or legacy comma-separated)
     2. WE3_REPORT_PROMPT_PACKAGE env var (package ID)
     3. DEFAULT_PROMPTS
     
@@ -104,6 +374,14 @@ def get_prompts():
     """
     env_prompts = os.environ.get("WE3_REPORT_PROMPTS", "")
     if env_prompts:
+        # Try JSON decoding first (handles prompts containing commas)
+        try:
+            decoded = json.loads(env_prompts)
+            if isinstance(decoded, list):
+                return [str(p).strip() for p in decoded if p]
+        except (json.JSONDecodeError, ValueError):
+            pass
+        # Fallback: legacy comma-separated format
         return [p.strip() for p in env_prompts.split(",") if p.strip()]
     
     env_package = os.environ.get("WE3_REPORT_PROMPT_PACKAGE", "")
@@ -173,7 +451,11 @@ MOCK_RESPONSES = {
 }
 
 def query_model(model_id, prompt):
-    """Query model via HTTP endpoint or CLI provider."""
+    """Query model via HTTP endpoint or CLI provider.
+    
+    Handles rate limiting (HTTP 429) with exponential backoff and retry.
+    Models that are rate-limited are queued for a later retry pass.
+    """
     start = time.time()
     provider = get_provider(model_id)
     
@@ -189,45 +471,190 @@ def query_model(model_id, prompt):
             "Report generation requires a configured endpoint gateway URL. "
             "Set it from the GUI or export it before running this script."
         )
-    api_key = os.environ.get("WE3_REPORT_GATEWAY_API_KEY", "")
-    print(f"Using gateway: {gateway}")
-    try:
-        # Normalize gateway URL
-        gateway = gateway.rstrip("/")
-        if provider == "ollama":
-            endpoint = f"http://{gateway}/api/chat" if not gateway.startswith("http") else f"{gateway}/api/chat"
-        else:
-            endpoint = f"http://{gateway}/v1/chat/completions" if not gateway.startswith("http") else f"{gateway}/v1/chat/completions"
-        
-        headers = {"Content-Type": "application/json"}
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
-        
-        body: dict[str, Any] = {"model": model_id, "messages": [{"role": "user", "content": prompt}], "stream": False}
-        if provider == "ollama":
-            body["options"] = {"temperature": 0.0}
-        req = urllib.request.Request(endpoint, data=json.dumps(body).encode(), headers=headers, method="POST")
-        with urllib.request.urlopen(req, timeout=12) as resp:
-            data = json.loads(resp.read().decode())
+    
+    # Securely read API key from temp file (preferred) or fall back to env var
+    api_key = _read_api_key_securely()
+    if api_key:
+        logger.info(f"API key loaded securely (masked: {_mask_api_key(api_key)})")
+
+    # SSRF protection: validate gateway URL
+    valid, err = _validate_gateway_url(gateway)
+    if not valid:
+        raise RuntimeError(f"Gateway URL validation failed: {err}")
+
+    # Create secure SSL context for HTTPS requests
+    ssl_ctx = _create_secure_ssl_context()
+
+    # Rate-limit retry configuration
+    # Quick retries (2) for transient errors, then defer to retry queue for 429s
+    max_retries = 2
+    base_delay = 3  # seconds
+    max_timeout = 30  # seconds per request
+
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            # Normalize gateway URL
+            gw = gateway.rstrip("/")
+            if provider == "ollama":
+                endpoint = f"http://{gw}/api/chat" if not gw.startswith("http") else f"{gw}/api/chat"
+            else:
+                endpoint = f"http://{gw}/v1/chat/completions" if not gw.startswith("http") else f"{gw}/v1/chat/completions"
+
+            # Security headers
+            headers = {
+                "Content-Type": "application/json",
+                "User-Agent": "Wilson-Eval3ngine/1.0 (security-hardened)",
+                "Accept": "application/json",
+            }
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+
+            body: dict[str, Any] = {"model": model_id, "messages": [{"role": "user", "content": prompt}], "stream": False}
+            if provider == "ollama":
+                body["options"] = {"temperature": 0.0}
+            req = urllib.request.Request(endpoint, data=json.dumps(body).encode(), headers=headers, method="POST")
+            # Use secure SSL context for HTTPS; plain HTTP uses default
+            if endpoint.startswith("https://"):
+                with urllib.request.urlopen(req, timeout=max_timeout, context=ssl_ctx) as resp:
+                    data = json.loads(resp.read().decode())
+            else:
+                with urllib.request.urlopen(req, timeout=max_timeout) as resp:
+                    data = json.loads(resp.read().decode())
             elapsed = time.time() - start
-            response = data.get("message", {}).get("content", "")
-            if not response:
-                response = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            # Use reasoning-aware response handler
+            parsed = parse_response(data)
+            response = parsed.text
+            # Use completion tokens from parsed response (includes reasoning tokens)
+            # Fallback: try total_tokens, then usage dict, then 0
+            tokens = parsed.completion_tokens or parsed.total_tokens or \
+                     data.get("usage", {}).get("total_tokens", 0) or \
+                     data.get("usage", {}).get("completion_tokens", 0)
             return {
                 "time": round(elapsed, 3),
                 "success": bool(response),
-                "response": response[:2000] if response else "No response",
-                "tokens": data.get("eval_count") or data.get("usage", {}).get("completion_tokens", 0),
+                "response": response if response else "No response",
+                "tokens": tokens or 0,
                 "status": "PASS" if response else "FAIL",
-                "has_code": "def " in response or "function" in response.lower(),
-                "has_security": "security" in response.lower() or "vulnerability" in response.lower() or "injection" in response.lower(),
+                "has_code": parsed.has_code,
+                "has_security": parsed.has_security,
                 "provider": provider,
+                "is_reasoning": parsed.is_reasoning,
+                "has_both": parsed.has_both,
+                "reasoning_content": parsed.reasoning,
+                "reasoning_tokens": parsed.reasoning_tokens,
+                "backend_model": parsed.model,
+                "backend_provider": parsed.provider,
             }
-    except Exception:
-        pass
+        except urllib.error.HTTPError as e:
+            last_error = e
+            elapsed = time.time() - start
+            
+            if e.code == 429:
+                # Rate limited - extract retry-after header if available
+                retry_after = e.headers.get("Retry-After")
+                if retry_after:
+                    try:
+                        delay = int(retry_after)
+                    except ValueError:
+                        delay = base_delay * (2 ** attempt)
+                else:
+                    delay = base_delay * (2 ** attempt) + random.uniform(0, 2)
+                
+                delay = min(delay, 60)  # Cap at 60 seconds
+                
+                # Emit progress event for rate limit retry
+                _emit_progress(
+                    "rate_limit_retry",
+                    model=model_id,
+                    model_label=model_id,
+                    provider=provider,
+                    attempt=attempt + 1,
+                    max_retries=max_retries,
+                    delay=round(delay, 1),
+                    message=f"Rate limited (HTTP 429), retrying in {delay:.1f}s",
+                )
+                
+                if attempt < max_retries - 1:
+                    print(f"  [RATE LIMIT] {model_id}: HTTP 429, retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(delay)
+                    continue
+                else:
+                    print(f"  [RATE LIMIT] {model_id}: HTTP 429, max retries exceeded")
+                    break
+            else:
+                # Other HTTP errors - log and break
+                error_body = ""
+                try:
+                    error_body = e.read().decode()[:200]
+                except Exception:
+                    pass
+                # Sanitize error body to prevent leaking sensitive info
+                error_body = _sanitize_error_message(error_body)
+                print(f"  [HTTP ERROR] {model_id}: {e.code} {e.reason} - {error_body}")
+                break
+        except urllib.error.URLError as e:
+            last_error = e
+            elapsed = time.time() - start
+            # Connection error - could be transient
+            if hasattr(e, "reason") and isinstance(e.reason, (TimeoutError, ConnectionError)):
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt) + random.uniform(0, 2)
+                    delay = min(delay, 30)
+                    print(f"  [TIMEOUT] {model_id}: request timed out after {max_timeout}s, retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(delay)
+                    continue
+                else:
+                    print(f"  [TIMEOUT] {model_id}: request timed out after {max_timeout}s, max retries exceeded")
+                    break
+            else:
+                print(f"  [CONNECTION ERROR] {model_id}: {e}")
+                break
+        except TimeoutError as e:
+            last_error = e
+            elapsed = time.time() - start
+            # Direct TimeoutError (not wrapped in URLError)
+            if attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt) + random.uniform(0, 2)
+                delay = min(delay, 30)
+                print(f"  [TIMEOUT] {model_id}: request timed out after {max_timeout}s, retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})")
+                time.sleep(delay)
+                continue
+            else:
+                print(f"  [TIMEOUT] {model_id}: request timed out after {max_timeout}s, max retries exceeded")
+                break
+        except socket.timeout as e:
+            last_error = e
+            elapsed = time.time() - start
+            # socket.timeout (older Python versions)
+            if attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt) + random.uniform(0, 2)
+                delay = min(delay, 30)
+                print(f"  [TIMEOUT] {model_id}: socket timeout after {max_timeout}s, retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})")
+                time.sleep(delay)
+                continue
+            else:
+                print(f"  [TIMEOUT] {model_id}: socket timeout after {max_timeout}s, max retries exceeded")
+                break
+        except Exception as e:
+            last_error = e
+            elapsed = time.time() - start
+            print(f"  [ERROR] {model_id}: {type(e).__name__}: {e}")
+            break
+    
+    # All retries exhausted - emit rate-limited event for queue
+    _emit_progress(
+        "rate_limited_queued",
+        model=model_id,
+        model_label=model_id,
+        provider=provider,
+        error=str(last_error)[:200] if last_error else "Unknown error",
+    )
     
     # Fallback to mock responses
     if model_id in MOCK_RESPONSES:
+        logger.warning(f"Using mock response fallback for model '{model_id}' — gateway was unavailable after {max_retries} retries")
+        print(f"  [WARNING] {model_id}: Using mock response (gateway unavailable)")
         prompts = get_prompts()
         try:
             prompt_idx = prompts.index(prompt) if prompt in prompts else 0
@@ -245,6 +672,12 @@ def query_model(model_id, prompt):
             "has_code": "def " in response[0] or "function" in response[0].lower(),
             "has_security": "vulnerability" in response[0].lower() or "security" in response[0].lower(),
             "provider": provider,
+            "is_reasoning": False,
+            "has_both": False,
+            "reasoning_content": None,
+            "reasoning_tokens": 0,
+            "backend_model": model_id,
+            "backend_provider": provider,
         }
     
     return {
@@ -256,6 +689,12 @@ def query_model(model_id, prompt):
         "has_code": False,
         "has_security": False,
         "provider": provider,
+        "is_reasoning": False,
+        "has_both": False,
+        "reasoning_content": None,
+        "reasoning_tokens": 0,
+        "backend_model": "",
+        "backend_provider": "",
     }
 
 def query_model_cli(model_id, prompt, provider, start):
@@ -265,6 +704,9 @@ def query_model_cli(model_id, prompt, provider, start):
     - Claude CLI (claude)
     - Kilo CLI (kilo)  
     - Codex CLI (codex)
+    
+    Security: Prompts are passed via stdin, not command-line arguments,
+    to prevent exposure through process listings (/proc/<pid>/cmdline).
     """
     executable = None
     cli_args = []
@@ -272,7 +714,7 @@ def query_model_cli(model_id, prompt, provider, start):
     if provider == "claude_cli":
         executable = shutil.which("claude")
         if executable:
-            cli_args = [executable, "--model", model_id, "--prompt", prompt, "--output-format", "json"]
+            cli_args = [executable, "--model", model_id, "--output-format", "json"]
     elif provider == "kilo_cli":
         executable = shutil.which("kilo")
         if executable:
@@ -297,7 +739,7 @@ def query_model_cli(model_id, prompt, provider, start):
                     kilo_model = f"mistralai/{kilo_model}"
                 elif kilo_model.startswith("step"):
                     kilo_model = f"stepfun/{kilo_model}"
-            cli_args = [executable, "run", prompt, "-m", kilo_model, "--format", "json", "--pure"]
+            cli_args = [executable, "run", "-m", kilo_model, "--format", "json", "--pure"]
     elif provider == "codex_cli":
         executable = shutil.which("codex")
         if executable:
@@ -313,12 +755,19 @@ def query_model_cli(model_id, prompt, provider, start):
             "has_code": False,
             "has_security": False,
             "provider": provider,
+            "is_reasoning": False,
+            "has_both": False,
+            "reasoning_content": None,
+            "reasoning_tokens": 0,
+            "backend_model": "",
+            "backend_provider": "",
         }
     
     try:
+        # Pass prompt via stdin to prevent exposure in process listings
         proc = subprocess.run(
             cli_args,
-            input=prompt if provider == "kilo_cli" else None,
+            input=prompt,
             capture_output=True,
             text=True,
             timeout=60,
@@ -326,41 +775,68 @@ def query_model_cli(model_id, prompt, provider, start):
         elapsed = time.time() - start
         
         if proc.returncode != 0:
+            # Sanitize stderr to avoid leaking sensitive info
+            stderr_safe = proc.stderr[:200] if proc.stderr else "Unknown CLI error"
+            stderr_safe = _sanitize_error_message(stderr_safe)
             return {
                 "time": round(elapsed, 3),
                 "success": False,
-                "response": f"CLI error: {proc.stderr[:200]}" if proc.stderr else "Unknown CLI error",
+                "response": f"CLI error: {stderr_safe}",
                 "tokens": 0,
                 "status": "FAIL",
                 "has_code": False,
                 "has_security": False,
                 "provider": provider,
+                "is_reasoning": False,
+                "has_both": False,
+                "reasoning_content": None,
+                "reasoning_tokens": 0,
+                "backend_model": "",
+                "backend_provider": "",
             }
         
-        # Parse output
+        # Parse output - try JSON first, fall back to raw text
+        response = ""
+        tokens = 0
+        backend_model = model_id
+        backend_provider = provider
         try:
             data = json.loads(proc.stdout)
             if provider == "claude_cli":
                 response = data.get("response", data.get("content", ""))
+                usage = data.get("usage", {})
+                tokens = usage.get("output_tokens", 0) or usage.get("completion_tokens", 0) or usage.get("total_tokens", 0)
             elif provider == "kilo_cli":
-                response = proc.stdout  # Kilo may output JSON lines
+                # Kilo CLI JSON output format: {"response": "...", "model": "...", "usage": {...}}
+                response = data.get("response", data.get("content", data.get("text", "")))
+                backend_model = data.get("model", model_id)
+                usage = data.get("usage", {})
+                tokens = usage.get("completion_tokens", 0) or usage.get("total_tokens", 0)
             elif provider == "codex_cli":
                 choices = data.get("choices", [data] if "choices" not in data else [])
                 response = choices[0].get("text", choices[0].get("message", {}).get("content", "")) if choices else ""
+                usage = data.get("usage", {})
+                tokens = usage.get("completion_tokens", 0) or usage.get("total_tokens", 0)
             else:
-                response = proc.stdout
+                response = proc.stdout.strip()
         except json.JSONDecodeError:
             response = proc.stdout.strip()
         
         return {
             "time": round(elapsed, 3),
             "success": bool(response),
-            "response": response[:2000] if response else "No response",
-            "tokens": len(response.split()) if response else 0,
+            "response": response if response else "No response",
+            "tokens": tokens if tokens else (len(response.split()) if response else 0),
             "status": "PASS" if response else "FAIL",
             "has_code": "def " in response or "function" in response.lower(),
             "has_security": "security" in response.lower() or "vulnerability" in response.lower() or "injection" in response.lower(),
             "provider": provider,
+            "is_reasoning": False,
+            "has_both": False,
+            "reasoning_content": None,
+            "reasoning_tokens": 0,
+            "backend_model": backend_model,
+            "backend_provider": backend_provider,
         }
     except subprocess.TimeoutExpired:
         return {
@@ -372,6 +848,12 @@ def query_model_cli(model_id, prompt, provider, start):
             "has_code": False,
             "has_security": False,
             "provider": provider,
+            "is_reasoning": False,
+            "has_both": False,
+            "reasoning_content": None,
+            "reasoning_tokens": 0,
+            "backend_model": "",
+            "backend_provider": "",
         }
     except Exception as e:
         return {
@@ -383,6 +865,12 @@ def query_model_cli(model_id, prompt, provider, start):
             "has_code": False,
             "has_security": False,
             "provider": provider,
+            "is_reasoning": False,
+            "has_both": False,
+            "reasoning_content": None,
+            "reasoning_tokens": 0,
+            "backend_model": "",
+            "backend_provider": "",
         }
 
 def evaluate_model(model_id, prompts=None, model_label=None, provider=None):
@@ -396,7 +884,12 @@ def evaluate_model(model_id, prompts=None, model_label=None, provider=None):
         provider=provider,
         total_prompts=len(prompts),
     )
-    results = {"model": model_id, "prompts": prompts, "evaluations": [], "response_times": [], "total_tokens": 0, "code_examples": 0, "security_awareness": 0, "gateway_used": False, "provider": provider}
+    results = {
+        "model": model_id, "prompts": prompts, "evaluations": [],
+        "response_times": [], "total_tokens": 0, "code_examples": 0,
+        "security_awareness": 0, "gateway_used": False, "provider": provider,
+        "reasoning_models": 0, "total_reasoning_tokens": 0,
+    }
     for idx, prompt in enumerate(prompts, 1):
         _emit_progress(
             "prompt_start",
@@ -417,6 +910,9 @@ def evaluate_model(model_id, prompts=None, model_label=None, provider=None):
             results["security_awareness"] += 1
         if eval_result["success"] and eval_result["time"] > 0.05:
             results["gateway_used"] = True
+        if eval_result.get("is_reasoning", False):
+            results["reasoning_models"] += 1
+        results["total_reasoning_tokens"] += eval_result.get("reasoning_tokens", 0)
         _emit_progress(
             "prompt_complete",
             model=model_id,
@@ -431,14 +927,6 @@ def evaluate_model(model_id, prompts=None, model_label=None, provider=None):
     results["avg_time"] = sum(results["response_times"]) / len(results["response_times"])
     results["status"] = "PASS" if all(e["success"] for e in results["evaluations"]) else "PARTIAL"
     results["prompt_success_rate"] = f"{sum(1 for e in results['evaluations'] if e['success'])}/{len(prompts)}"
-    _emit_progress(
-        "model_complete",
-        model=model_id,
-        model_label=model_label,
-        provider=provider,
-        total_prompts=len(prompts),
-        status=results["status"],
-    )
     return results
 
 def generate_report(model_name, results, logo_path, output_path, run_id, timestamp, fault_injection_data=None):
@@ -451,8 +939,8 @@ def generate_report(model_name, results, logo_path, output_path, run_id, timesta
         if logo_path.exists():
             try:
                 canvas.drawImage(str(logo_path), 0.5*inch, 10.5*inch, width=0.4*inch, height=0.4*inch, mask='auto')
-            except:
-                pass
+            except Exception as exc:
+                logger.warning(f"Could not draw logo on page decoration: {exc}")
         canvas.setFont("Helvetica", 8)
         canvas.setFillColor(colors.grey)
         canvas.drawString(0.75*inch, 0.5*inch, f"{model_name} | Run: {run_id}")
@@ -463,8 +951,8 @@ def generate_report(model_name, results, logo_path, output_path, run_id, timesta
         try:
             story.append(Image(str(logo_path), width=3*inch, height=3*inch))
             story.append(Spacer(1, 20))
-        except:
-            pass
+        except Exception as exc:
+            logger.warning(f"Could not load logo image: {exc}")
     
     title_style = ParagraphStyle("Title", parent=styles["Heading1"], fontSize=28, spaceAfter=30, alignment=1, textColor=ROYAL_BLUE)
     story.append(Paragraph("Wilson Eval3ngine", title_style))
@@ -519,7 +1007,7 @@ def generate_report(model_name, results, logo_path, output_path, run_id, timesta
         story.append(Paragraph(f"Prompt {i}", prompt_header))
         prompt_text_style = ParagraphStyle("PromptText", parent=styles["Normal"], fontSize=10, leftIndent=10, rightIndent=10,
                                          spaceAfter=15, backColor=YELLOW, textColor=colors.whitesmoke)
-        story.append(Paragraph(f"<b>Question:</b> {prompt}", prompt_text_style))
+        story.append(Paragraph(f"<b>Question:</b> {html.escape(prompt)}", prompt_text_style))
         
         time_status = "✓ PASS" if eval_result["time"] < 30 else "⚠ SLOW"
         tokens_status = "✓ PASS" if eval_result["tokens"] > 0 else "✗ FAIL"
@@ -552,7 +1040,7 @@ def generate_report(model_name, results, logo_path, output_path, run_id, timesta
         story.append(Spacer(1, 15))
         response_header = ParagraphStyle("ResponseHeader", parent=styles["Heading3"], fontSize=12, spaceAfter=10, textColor=ROYAL_BLUE)
         story.append(Paragraph("Response:", response_header))
-        resp_text = eval_result["response"].replace("\n", "<br/>")
+        resp_text = html.escape(eval_result["response"]).replace("\n", "<br/>")
         response_style = ParagraphStyle("Response", parent=styles["Normal"], fontSize=9, leftIndent=15, rightIndent=15, spaceAfter=10, leading=12)
         story.append(Paragraph(resp_text, response_style))
     
@@ -587,7 +1075,7 @@ def generate_report(model_name, results, logo_path, output_path, run_id, timesta
             if scenarios:
                 story.append(Paragraph("Scenarios Executed", fi_section_style))
                 story.append(Spacer(1, 10))
-                scenario_text = ", ".join(scenarios)
+                scenario_text = html.escape(", ".join(scenarios))
                 story.append(Paragraph(scenario_text, styles["Normal"]))
                 story.append(Spacer(1, 20))
             
@@ -601,34 +1089,51 @@ def generate_report(model_name, results, logo_path, output_path, run_id, timesta
                     phase = event.get("phase", "")
                     timestamp = event.get("timestamp", "")
                     scenario = event.get("details", {}).get("scenario_id", "")
-                    story.append(Paragraph(f"<b>{event_type}</b> [{phase}] {timestamp} {scenario}", styles["Normal"]))
+                    story.append(Paragraph(f"<b>{html.escape(event_type)}</b> [{html.escape(phase)}] {html.escape(timestamp)} {html.escape(scenario)}", styles["Normal"]))
                     story.append(Spacer(1, 4))
         elif isinstance(fault_injection_data, str):
             # Raw text output
-            fi_text = fault_injection_data.replace("\n", "<br/>")
+            fi_text = html.escape(fault_injection_data).replace("\n", "<br/>")
             story.append(Paragraph(fi_text, styles["Normal"]))
     
-    doc.build(story, onFirstPage=lambda c, d: None, onLaterPages=add_page_decorations)
+    doc.build(story, onFirstPage=add_page_decorations, onLaterPages=add_page_decorations)
     return output_path
 
 if __name__ == "__main__":
-    progress_file = ""
-    if len(sys.argv) > 1 and sys.argv[1].startswith("--progress-file="):
-        progress_file = sys.argv[1].split("=", 1)[1]
-        os.environ["WE3_REPORT_PROGRESS_FILE"] = progress_file
-        sys.argv = sys.argv[:1] + sys.argv[2:]
-    
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Wilson Eval3ngine - Generate evaluation reports for LLM models"
+    )
+    parser.add_argument(
+        "--progress-file",
+        dest="progress_file",
+        default="",
+        help="Path to write progress events (one JSON object per line)",
+    )
+    args, _unknown = parser.parse_known_args()
+
+    if args.progress_file:
+        # Security: validate progress file path to prevent path traversal
+        progress_path = os.path.normpath(args.progress_file)
+        if ".." in progress_path:
+            print("  [SECURITY WARNING] Progress file path contains '..' — rejecting")
+        else:
+            os.environ["WE3_REPORT_PROGRESS_FILE"] = progress_path
+
     prompts = get_prompts()
     models_to_run = get_models()
     prompt_package = os.environ.get("WE3_REPORT_PROMPT_PACKAGE", "")
+    batch_id = os.environ.get("WE3_REPORT_BATCH_ID", "")
     
     run_id = f"eval-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
     _emit_progress(
         "run_start",
         run_id=run_id,
+        batch_id=batch_id,
         total_models=len(models_to_run),
         total_prompts=len(prompts),
-        total_reports=len(models_to_run),
+        total_reports=len(models_to_run) * len(prompts),
         prompt_package=prompt_package,
     )
     
@@ -637,8 +1142,11 @@ if __name__ == "__main__":
         print(f"Prompt Package: {prompt_package}")
     gateway = os.environ.get("WE3_REPORT_GATEWAY", "not configured")
     api_key = os.environ.get("WE3_REPORT_GATEWAY_API_KEY", "")
+    api_key_file = os.environ.get("WE3_REPORT_API_KEY_FILE", "")
     print(f"Gateway: {gateway}")
-    if api_key:
+    if api_key_file:
+        print("API Key: [secure file]")
+    elif api_key:
         print("API Key: [configured]")
     else:
         print("API Key: [none]")
@@ -665,62 +1173,130 @@ if __name__ == "__main__":
     
     completed = 0
     failed = 0
-    for model_id, model_label, provider in models_to_run:
-        print(f"Evaluating {model_label} (provider: {provider})...")
-        try:
-            r = evaluate_model(model_id, prompts, model_label=model_label, provider=provider)
-            safe_name = model_id.replace(":", "-").replace("/", "-").replace(".", "-")
-            run_id_for_report = f"eval-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            generate_report(model_label, r, logo, out_dir / f"{safe_name}-evaluation.pdf", run_id_for_report, timestamp, fault_injection_data)
-            source = r.get("provider", "gateway")
-            print(f"  Generated: {safe_name}-evaluation.pdf (Status: {r['status']}, Provider: {source})")
-            completed += 1
+    max_retry_passes = 3
+    rate_limited_models = []  # Models that were rate-limited, for retry queue
+    
+    for retry_pass in range(max_retry_passes):
+        if retry_pass > 0:
+            if not rate_limited_models:
+                break  # No models to retry, skip remaining passes
+            
+            # Wait progressively longer between retry passes to let rate limits clear
+            # OpenRouter rate limit window is 1 minute (15 RPM), so we wait at least that long
+            wait_times = [15, 60, 120]  # seconds for pass 1, 2, 3
+            wait_time = wait_times[min(retry_pass - 1, len(wait_times) - 1)]
+            print(f"\n{'='*50}")
+            print(f"Retry pass {retry_pass}/{max_retry_passes} - waiting {wait_time}s for rate limits to clear...")
+            print(f"Queued models: {[m[0] for m in rate_limited_models]}")
+            print(f"{'='*50}")
             _emit_progress(
-                "report_generated",
-                model=model_id,
-                model_label=model_label,
-                provider=provider,
-                report_path=f"{safe_name}-evaluation.pdf",
-                status=r["status"],
+                "retry_pass_start",
+                retry_pass=retry_pass,
+                queued_models=len(rate_limited_models),
+                wait_seconds=wait_time,
             )
+            time.sleep(wait_time)
+        
+        current_batch = rate_limited_models if retry_pass > 0 else models_to_run
+        rate_limited_models = []
+        
+        for model_id, model_label, provider in current_batch:
+            print(f"Evaluating {model_label} (provider: {provider})...")
+            try:
+                r = evaluate_model(model_id, prompts, model_label=model_label, provider=provider)
+                
+                # Check if model was rate-limited (any prompt failed with 429/timeout)
+                was_rate_limited = False
+                for ev in r.get("evaluations", []):
+                    if not ev.get("success") and ev.get("status") == "FAIL":
+                        was_rate_limited = True
+                
+                if was_rate_limited and retry_pass < max_retry_passes - 1:
+                    # Queue for retry in next pass
+                    rate_limited_models.append((model_id, model_label, provider))
+                    print(f"  Queued for retry: {model_label} (rate-limited)")
+                    _emit_progress(
+                        "model_queued",
+                        model=model_id,
+                        model_label=model_label,
+                        provider=provider,
+                        reason="rate_limited",
+                        retry_pass=retry_pass + 1,
+                    )
+                else:
+                    # Final attempt or model succeeded - generate report
+                    safe_name = _sanitize_filename(model_id)
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    _emit_progress(
+                        "report_start",
+                        model=model_id,
+                        model_label=model_label,
+                        provider=provider,
+                        total_prompts=len(prompts),
+                        status="generating",
+                    )
+                    generate_report(model_label, r, logo, out_dir / f"{safe_name}-evaluation.pdf", run_id, timestamp, fault_injection_data)
+                    source = r.get("provider", "gateway")
+                    print(f"  Generated: {safe_name}-evaluation.pdf (Status: {r['status']}, Provider: {source})")
+                    completed += 1
+                    _emit_progress(
+                        "report_generated",
+                        model=model_id,
+                        model_label=model_label,
+                        provider=provider,
+                        report_path=f"{safe_name}-evaluation.pdf",
+                        status=r["status"],
+                    )
+                    _emit_progress(
+                        "model_complete",
+                        model=model_id,
+                        model_label=model_label,
+                        provider=provider,
+                        total_prompts=len(prompts),
+                        status=r["status"],
+                    )
 
-            # Save evaluation data as JSON sidecar for telemetry charting
-            eval_json = out_dir / f"{safe_name}-evaluation.json"
-            eval_json.write_text(json.dumps({
-                "runId": run_id,
-                "model": model_id,
-                "modelLabel": model_label,
-                "provider": provider,
-                "promptPackage": prompt_package,
-                "timestamp": timestamp,
-                "status": r["status"],
-                "avg_time": r["avg_time"],
-                "prompt_success_rate": r["prompt_success_rate"],
-                "total_tokens": r["total_tokens"],
-                "code_examples": r["code_examples"],
-                "security_awareness": r["security_awareness"],
-                "gateway_used": r.get("gateway_used", False),
-                "prompts": r["prompts"],
-                "evaluations": r["evaluations"],
-                "response_times": r["response_times"],
-            }, indent=2), encoding="utf-8")
-            print(f"  Saved telemetry JSON: {eval_json.name}")
-        except Exception as exc:
-            failed += 1
-            print(f"  ERROR generating report for {model_label}: {exc}")
-            _emit_progress(
-                "report_error",
-                model=model_id,
-                model_label=model_label,
-                provider=provider,
-                error=str(exc),
-            )
+                    # Save evaluation data as JSON sidecar for telemetry charting
+                    eval_json = out_dir / f"{safe_name}-evaluation.json"
+                    eval_json.write_text(json.dumps({
+                        "runId": run_id,
+                        "batchId": batch_id,
+                        "model": model_id,
+                        "modelLabel": model_label,
+                        "provider": provider,
+                        "promptPackage": prompt_package,
+                        "timestamp": timestamp,
+                        "status": r["status"],
+                        "avg_time": r["avg_time"],
+                        "prompt_success_rate": r["prompt_success_rate"],
+                        "total_tokens": r["total_tokens"],
+                        "code_examples": r["code_examples"],
+                        "security_awareness": r["security_awareness"],
+                        "gateway_used": r.get("gateway_used", False),
+                        "reasoning_models": r.get("reasoning_models", 0),
+                        "total_reasoning_tokens": r.get("total_reasoning_tokens", 0),
+                        "prompts": r["prompts"],
+                        "evaluations": r["evaluations"],
+                        "response_times": r["response_times"],
+                    }, indent=2), encoding="utf-8")
+                    print(f"  Saved telemetry JSON: {eval_json.name}")
+            except Exception as exc:
+                failed += 1
+                # Sanitize error message to prevent leaking sensitive info (API keys, file paths)
+                error_msg = _sanitize_error_message(str(exc))
+                print(f"  ERROR generating report for {model_label}: {error_msg}")
+                _emit_progress(
+                    "report_error",
+                    model=model_id,
+                    model_label=model_label,
+                    provider=provider,
+                    error=error_msg,
+                )
     
     _emit_progress(
         "run_complete",
         run_id=run_id,
-        total_reports=len(models_to_run),
+        total_reports=len(models_to_run) * len(prompts),
         completed_reports=completed,
         failed_reports=failed,
     )

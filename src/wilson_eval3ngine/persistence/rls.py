@@ -57,7 +57,8 @@ class RLSSessionContext:
             return
 
         # Check if we're using PostgreSQL
-        db_url = str(self._session.bind.url)
+        bind = self._session.bind
+        db_url = str(getattr(bind, "url", None) or getattr(getattr(bind, "engine", None), "url", None) or "sqlite:///")
         if not db_url.startswith("postgresql"):
             # SQLite mode - skip session variable setting
             # Application-level filtering is used instead
@@ -98,7 +99,8 @@ class RLSSessionContext:
         if not self._applied:
             return
 
-        db_url = str(self._session.bind.url)
+        bind = self._session.bind
+        db_url = str(getattr(bind, "url", None) or getattr(getattr(bind, "engine", None), "url", None) or "sqlite:///")
         if db_url.startswith("postgresql"):
             self._session.execute(text(f"SET LOCAL {self.PROJECT_ID_VAR} = NULL"))
             self._session.execute(text(f"SET LOCAL {self.SYSTEM_ADMIN_VAR} = 'false'"))
@@ -200,7 +202,8 @@ def check_rls_enabled(session: Session) -> bool:
         False if not enabled or using SQLite (no RLS support)
     """
     # Check if we're using PostgreSQL
-    db_url = str(session.bind.url)
+    bind = session.bind
+    db_url = str(getattr(bind, "url", None) or getattr(getattr(bind, "engine", None), "url", None) or "sqlite:///")
     if not db_url.startswith("postgresql"):
         # SQLite doesn't support RLS
         return False

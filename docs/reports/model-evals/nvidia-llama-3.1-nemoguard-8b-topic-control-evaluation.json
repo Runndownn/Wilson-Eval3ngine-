@@ -1,0 +1,60 @@
+{
+  "runId": "eval-20260731-232157",
+  "batchId": "run-2d934d82",
+  "model": "nvidia/llama-3.1-nemoguard-8b-topic-control",
+  "modelLabel": "nvidia/llama-3.1-nemoguard-8b-topic-control",
+  "provider": "kilo",
+  "promptPackage": "reasoning_logic",
+  "timestamp": "2026-07-31 19:23:13",
+  "status": "PARTIAL",
+  "avg_time": 0.11549999999999999,
+  "prompt_success_rate": "0/2",
+  "total_tokens": 0,
+  "code_examples": 0,
+  "security_awareness": 0,
+  "gateway_used": false,
+  "reasoning_models": 0,
+  "total_reasoning_tokens": 0,
+  "prompts": [
+    "If all Bloops are Razzies and all Razzies are Lazzies",
+    "are all Bloops definitely Lazzies? Explain your reasoning."
+  ],
+  "evaluations": [
+    {
+      "time": 0.12,
+      "success": false,
+      "response": "Connection failed",
+      "tokens": 0,
+      "status": "FAIL",
+      "has_code": false,
+      "has_security": false,
+      "provider": "kilo",
+      "is_reasoning": false,
+      "has_both": false,
+      "reasoning_content": null,
+      "reasoning_tokens": 0,
+      "backend_model": "",
+      "backend_provider": ""
+    },
+    {
+      "time": 0.111,
+      "success": false,
+      "response": "Connection failed",
+      "tokens": 0,
+      "status": "FAIL",
+      "has_code": false,
+      "has_security": false,
+      "provider": "kilo",
+      "is_reasoning": false,
+      "has_both": false,
+      "reasoning_content": null,
+      "reasoning_tokens": 0,
+      "backend_model": "",
+      "backend_provider": ""
+    }
+  ],
+  "response_times": [
+    0.12,
+    0.111
+  ]
+}

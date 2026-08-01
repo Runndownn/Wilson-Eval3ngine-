@@ -239,27 +239,18 @@ class TestReconciliationReport:
 class TestDurableScheduler:
     """Test DurableScheduler behavior."""
 
-    def test_scheduler_requires_postgresql(self) -> None:
-        from wilson_eval3ngine.persistence.database import Database
-
+    def test_scheduler_requires_postgresql(self, db) -> None:
         # SQLite should raise error
-        db = Database(url="sqlite:///test.db")
         scheduler = DurableScheduler(db)
 
         with pytest.raises(SchedulerError, match="requires PostgreSQL"):
             scheduler.claim_job("worker_1")
 
-    def test_scheduler_lease_seconds_default(self) -> None:
-        from wilson_eval3ngine.persistence.database import Database
-
-        db = Database(url="sqlite:///:memory:")
+    def test_scheduler_lease_seconds_default(self, db) -> None:
         scheduler = DurableScheduler(db)
         assert scheduler.lease_seconds == 300
 
-    def test_scheduler_custom_lease_seconds(self) -> None:
-        from wilson_eval3ngine.persistence.database import Database
-
-        db = Database(url="sqlite:///:memory:")
+    def test_scheduler_custom_lease_seconds(self, db) -> None:
         scheduler = DurableScheduler(db, lease_seconds=600)
         assert scheduler.lease_seconds == 600
 
@@ -267,12 +258,8 @@ class TestDurableScheduler:
 class TestSchedulerLeaseFencing:
     """Test lease fencing logic."""
 
-    def test_lease_token_mismatch_prevents_completion(self) -> None:
+    def test_lease_token_mismatch_prevents_completion(self, db) -> None:
         """Stale workers cannot complete after newer lease issued."""
-        from wilson_eval3ngine.persistence.database import Database
-
-        db = Database(url="sqlite:///:memory:")
-        db.initialize()
         scheduler = DurableScheduler(db)
 
         # Create a job

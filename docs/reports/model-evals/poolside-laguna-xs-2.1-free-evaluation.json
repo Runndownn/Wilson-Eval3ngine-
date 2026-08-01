@@ -1,0 +1,60 @@
+{
+  "runId": "eval-20260731-232727",
+  "batchId": "run-28079f06",
+  "model": "poolside/laguna-xs-2.1:free",
+  "modelLabel": "poolside/laguna-xs-2.1:free",
+  "provider": "kilo",
+  "promptPackage": "reasoning_logic",
+  "timestamp": "2026-07-31 19:28:46",
+  "status": "PARTIAL",
+  "avg_time": 0.1105,
+  "prompt_success_rate": "0/2",
+  "total_tokens": 0,
+  "code_examples": 0,
+  "security_awareness": 0,
+  "gateway_used": false,
+  "reasoning_models": 0,
+  "total_reasoning_tokens": 0,
+  "prompts": [
+    "If all Bloops are Razzies and all Razzies are Lazzies",
+    "are all Bloops definitely Lazzies? Explain your reasoning."
+  ],
+  "evaluations": [
+    {
+      "time": 0.112,
+      "success": false,
+      "response": "Connection failed",
+      "tokens": 0,
+      "status": "FAIL",
+      "has_code": false,
+      "has_security": false,
+      "provider": "kilo",
+      "is_reasoning": false,
+      "has_both": false,
+      "reasoning_content": null,
+      "reasoning_tokens": 0,
+      "backend_model": "",
+      "backend_provider": ""
+    },
+    {
+      "time": 0.109,
+      "success": false,
+      "response": "Connection failed",
+      "tokens": 0,
+      "status": "FAIL",
+      "has_code": false,
+      "has_security": false,
+      "provider": "kilo",
+      "is_reasoning": false,
+      "has_both": false,
+      "reasoning_content": null,
+      "reasoning_tokens": 0,
+      "backend_model": "",
+      "backend_provider": ""
+    }
+  ],
+  "response_times": [
+    0.112,
+    0.109
+  ]
+}

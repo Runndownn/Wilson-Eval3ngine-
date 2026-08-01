@@ -1,0 +1,59 @@
+# Prometheus configuration for Wilson Eval3ngine
+# Scrapes metrics from the API and Node exporter
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: "we3"
+    environment: "${WE3_ENVIRONMENT}"
+
+rule_files:
+  - "rules/*.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+scrape_configs:
+  # Wilson Eval3ngine API
+  - job_name: "we3-api"
+    static_configs:
+      - targets: ["api:8000"]
+    metrics_path: "/metrics"
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+    metric_relabel_configs:
+      # Drop high-cardinality metrics
+      - source_labels: [__name__]
+        regex: 'we3_slo_(breach|warning|ok)'
+        action: keep
+
+  # PostgreSQL metrics
+  - job_name: "we3-postgres"
+    static_configs:
+      - targets: ["postgres:9187"]
+    scrape_interval: 30s
+
+  # Redis metrics
+  - job_name: "we3-redis"
+    static_configs:
+      - targets: ["redis:9121"]
+    scrape_interval: 30s
+
+  # Node exporter
+  - job_name: "node"
+    static_configs:
+      - targets: ["node-exporter:9100"]
+    scrape_interval: 30s
+
+  # Caddy metrics
+  - job_name: "caddy"
+    static_configs:
+      - targets: ["caddy:2019"]
+    scrape_interval: 30s

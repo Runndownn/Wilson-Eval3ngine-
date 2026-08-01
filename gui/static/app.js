@@ -19,9 +19,33 @@ let modalZoom = 1.0;
 const pdfPairs = {}; // { "left-0": { doc, currentPage, url }, "right-0": { doc, currentPage, url } }
 let currentJobId = localStorage.getItem("we3.currentJobId") || null;
 let currentRunId = localStorage.getItem("we3.currentRunId") || null;
+let modelsLastFetchedAt = null;  // Timestamp of last auto_detect_models
+let modelsRefreshTimer = null;   // Interval for live "N seconds ago" update
+
 let activeJobStatus = null;
 let rateLimited = false;
 let searchDebounceTimer = null;
+
+// --- Progress dashboard module-level state ---
+// The dashboard used to rewrite the entire model-card grid on every
+// WebSocket message, causing visible flicker and DOM thrash on
+// completed models. These caches let us do keyed DOM updates and
+// freeze finished cards.
+let modelCardCache = {};
+let modelStatusCache = {};
+let modelPercentageCache = {};
+let modelTimers = {};
+
+// Charts tab state
+let chartRunsCache = [];
+let chartMetadataCache = {};
+let chartOrderCache = [];
+let chartCardCache = {};
+let chartStatusCache = {};
+let chartGenerationActive = false;
+let chartGenerationTotal = 0;
+let chartGenerationDone = 0;
+let chartGenerationRunId = '';
 
 // Utility functions
 function escapeHtml(text) {
@@ -80,8 +104,7 @@ function connectWebSocket() {
         if (statusEl) statusEl.textContent = "Online";
         // Send initial data fetches only after WebSocket is fully open
         sendWs({ action: "list_endpoints" });
-        sendWs({ action: "list_models" });
-        console.error('[PDF] sending list_reports');
+        sendWs({ action: "auto_detect_models" });
         sendWs({ action: "list_reports" });
         sendWs({ action: "list_prompt_packages" });
         
@@ -117,6 +140,9 @@ function handleMessage(message) {
     if (message.action === "list_reports") {
         console.error('[PDF] list_reports received', { reportCount: message.reports?.length, runCount: message.reportRuns?.length });
         renderReports(message.reports || [], message.reportRuns || []);
+        // Show "View Reports" link only when real PDF reports exist
+        const hasReports = (message.reports?.length > 0) || (message.reportRuns?.length > 0);
+        updateViewReportsLink(hasReports);
     }
     if (message.action === "generate_reports") {
         const output = document.getElementById("report-output");
@@ -171,6 +197,8 @@ function handleMessage(message) {
         const output = document.getElementById("report-output");
         if (output) output.textContent = `Generation complete. Status: ${message.status}`;
         showProgressActions(message.status);
+        // Refresh the Reports tab so newly generated PDFs appear immediately
+        sendWs({ action: "list_reports" });
         if (message.status === "completed" || message.status === "completed_with_errors" || message.status === "failed" || message.status === "cancelled") {
             // Hide only the progress dashboard (not actions which should remain visible)
             const dashboard = document.getElementById("progress-dashboard");
@@ -237,7 +265,7 @@ function handleMessage(message) {
         populatePromptPackageSelect();
     }
     if (message.action === "test_endpoint") {
-        const statusEl = document.getElementById("kilo-login-status");
+        const statusEl = document.getElementById("login-status");
         if (statusEl) {
             if (message.ok) {
                 statusEl.textContent = `Connection OK - ${message.models?.length || 0} models found`;
@@ -261,7 +289,7 @@ function handleMessage(message) {
         }
     }
     if (message.action === "auto_detect_endpoints") {
-        const statusEl = document.getElementById("kilo-login-status");
+        const statusEl = document.getElementById("login-status");
         if (statusEl) {
             const count = (message.endpoints || []).length;
             statusEl.textContent = `Auto-detected ${count} endpoint${count !== 1 ? 's' : ''}`;
@@ -286,11 +314,12 @@ function handleMessage(message) {
     if (message.action === "endpoints_status") {
         applyEndpointAvailability(message.statuses || []);
     }
-    if (message.action === "kilo_login") {
-        const statusEl = document.getElementById("kilo-login-status");
+    // Handle login responses for all providers (kilo, nvidia, ollama, codex)
+    if (["kilo_login", "nvidia_login", "ollama_login", "codex_login"].includes(message.action)) {
+        const statusEl = document.getElementById("login-status");
         if (statusEl) {
             if (message.ok) {
-                statusEl.textContent = message.message || `Kilo Gateway reachable: ${message.models?.length || 0} models found`;
+                statusEl.textContent = message.message || `${message.provider || 'Provider'} reachable: ${message.models?.length || 0} models found`;
                 statusEl.className = "status-message success";
                 rateLimited = false;
             } else {
@@ -304,11 +333,51 @@ function handleMessage(message) {
             }
             updateRateLimitStatus();
         }
-        // Refresh endpoints and models after Kilo login so the new endpoint appears
+        // Refresh endpoints and models after successful login so the new endpoint appears
         if (message.ok) {
             sendWs({ action: "list_endpoints" });
             sendWs({ action: "auto_detect_models" });
         }
+    }
+    if (message.action === "list_chart_runs") {
+        chartRunsCache = message.runs || [];
+        renderChartsGallery(chartRunsCache);
+    }
+    if (message.action === "chart_metadata") {
+        chartMetadataCache = message.charts || {};
+        chartOrderCache = message.order || [];
+        renderChartsGallery(chartRunsCache);
+    }
+    if (message.action === "chart_progress") {
+        updateChartGenerationProgress(message);
+    }
+     if (message.action === "generate_charts") {
+        chartGenerationActive = false;
+        if (message.charts) {
+            const runId = message.runId || chartGenerationRunId || "test-run-final";
+            // Use server's isSample flag — trust it over runId name
+            const isSample = message.isSample === true;
+            const charts = Object.entries(message.charts).map(([name, url]) => ({
+                name,
+                displayName: (chartMetadataCache[name] || {}).name || name,
+                description: (chartMetadataCache[name] || {}).description || "",
+                category: (chartMetadataCache[name] || {}).category || "General",
+                url,
+                size_bytes: 0,
+            }));
+            const existing = chartRunsCache.find(r => r.runId === runId);
+            if (existing) {
+                existing.charts = charts;
+                existing.isSample = isSample;
+            } else {
+                chartRunsCache.push({
+                    runId, type: isSample ? "sample_generation" : "report_generation",
+                    models: [], prompts: [], charts, isSample,
+                });
+            }
+            renderChartsGallery(chartRunsCache);
+        }
+        showChartStatus(`Generated ${message.generated || 0} of ${message.total || 0} charts`, false);
     }
 }
 
@@ -319,6 +388,7 @@ function initTabs() {
     const savedTab = localStorage.getItem("we3.activeTab");
     const defaultTab = savedTab || (tabs[0] && (tabs[0].dataset.tab)) || "tab-endpoints";
     
+    // Apply initial active state
     tabs.forEach((tab) => {
         const target = tab.dataset.tab || "";
         if (target === defaultTab) {
@@ -326,6 +396,10 @@ function initTabs() {
             const panel = document.getElementById(target);
             if (panel) panel.classList.add("active");
         }
+    });
+
+    tabs.forEach((tab) => {
+        const target = tab.dataset.tab || "";
         tab.addEventListener("click", () => {
             tabs.forEach((t) => t.classList.remove("active"));
             panels.forEach((p) => p.classList.remove("active"));
@@ -339,6 +413,14 @@ function initTabs() {
             }
         });
     });
+}
+
+// Programmatically switch to a tab (used by links and cross-tab navigation)
+function switchToTab(tabId) {
+    const tab = document.querySelector(`.tab-link[data-tab="${tabId}"]`);
+    if (tab) {
+        tab.click();
+    }
 }
 
 // Direction buttons (help text toggles)
@@ -379,10 +461,69 @@ function initEndpoints() {
     const testBtn = document.getElementById("test-endpoint");
     const autoDetectBtn = document.getElementById("auto-detect-endpoints");
     
+    // Preset URL values map to (display URL, provider). Choosing a preset
+    // pre-fills the URL field, provider dropdown, and helps the operator
+    // understand which authentication is required.
+    const PRESETS = {
+        "__nvidia__": {
+            url: "https://integrate.api.nvidia.com/v1",
+            provider: "nvidia",
+            needsApiKey: true,
+            apiKeyHint: "nvapi-...",
+        },
+        "__kilo__": {
+            url: "https://api.kilo.ai/api/gateway",
+            provider: "kilo",
+            needsApiKey: false,  // OAuth via CLI works too
+            apiKeyHint: "Bearer token (optional — Login button also works)",
+        },
+        "__ollama__": {
+            url: "http://localhost:11434",
+            provider: "ollama",
+            needsApiKey: false,
+            apiKeyHint: "Not required for local Ollama",
+        },
+        "__codex__": {
+            url: "cli://codex",
+            provider: "codex_cli",
+            needsApiKey: false,
+            apiKeyHint: "Not required for Codex CLI",
+        },
+    };
+
+    function applyPreset(value) {
+        const preset = PRESETS[value];
+        if (preset) {
+            const providerSelect = document.getElementById("endpoint-provider");
+            if (providerSelect) providerSelect.value = preset.provider;
+            showLoginForProvider(preset.provider);
+            if (urlCustom) {
+                urlCustom.classList.remove("hidden");
+                urlCustom.value = preset.url;
+                urlCustom.focus();
+            }
+            // Update status message to guide the user
+            const status = document.getElementById("endpoint-status");
+            if (status) {
+                let msg = `Selected ${preset.provider} preset. URL: ${preset.url}`;
+                if (preset.needsApiKey) {
+                    msg += ` Enter your API key (starts with ${preset.apiKeyHint}) and click Login.`;
+                } else {
+                    msg += ` ${preset.apiKeyHint}. Click Login to test connectivity.`;
+                }
+                status.textContent = msg;
+                status.className = "status-message status-info";
+            }
+        }
+    }
+
     urlSelect?.addEventListener("change", () => {
-        if (urlSelect.value === "__custom__") {
+        const v = urlSelect.value;
+        if (v === "__custom__") {
             urlCustom?.classList.remove("hidden");
             urlCustom?.focus();
+        } else if (PRESETS[v]) {
+            applyPreset(v);
         } else {
             urlCustom?.classList.add("hidden");
         }
@@ -393,13 +534,24 @@ function initEndpoints() {
         const nameInput = document.getElementById("endpoint-name");
         const apiKeyInput = document.getElementById("endpoint-api-key");
         const providerInput = document.getElementById("endpoint-provider");
-        
-        const url = urlSelect.value === "__custom__" 
-            ? (urlCustom?.value || "") 
-            : urlSelect.value;
-        
-        if (!url) return;
-        
+
+        // Resolve URL: if a preset was selected, use its mapped URL even if
+        // the custom field was populated by the preset handler.
+        let url = "";
+        const preset = PRESETS[urlSelect.value];
+        if (preset) {
+            url = preset.url;
+        } else if (urlSelect.value === "__custom__") {
+            url = urlCustom?.value || "";
+        } else {
+            url = urlSelect.value;
+        }
+
+        if (!url) {
+            showEndpointStatus("Please pick a preset or enter a custom URL", true);
+            return;
+        }
+
         sendWs({
             action: "create_endpoint",
             name: nameInput?.value || "Unnamed",
@@ -407,10 +559,24 @@ function initEndpoints() {
             apiKey: apiKeyInput?.value || null,
             provider: providerInput?.value || "ollama",
         });
+
+        // Show guided next-step message
+        showEndpointStatus(
+            `Endpoint saved. Switch to the Models tab and click Auto-Detect to pull the available models.`,
+            false
+        );
+
         form.reset();
         urlCustom?.classList.add("hidden");
         sendWs({ action: "list_endpoints" });
     });
+
+    function showEndpointStatus(text, isError) {
+        const status = document.getElementById("endpoint-status");
+        if (!status) return;
+        status.textContent = text;
+        status.className = "status-message " + (isError ? "status-error" : "status-info");
+    }
     
     testBtn?.addEventListener("click", () => {
         const url = urlSelect.value === "__custom__" 
@@ -429,26 +595,76 @@ function initEndpoints() {
         sendWs({ action: "auto_detect_endpoints" });
     });
     
-    const kiloLoginBtn = document.getElementById("kilo-login");
-    kiloLoginBtn?.addEventListener("click", () => {
-        // Use the selected endpoint URL if it's a Kilo Gateway, otherwise fall back to cloud
-        const selectedEndpointId = document.getElementById("model-endpoint")?.value;
-        const selectedEndpoint = endpoints.find(ep => ep.id === selectedEndpointId);
-        let loginUrl = "https://api.kilo.ai/api/gateway";
+    // --- Provider login buttons ---
+    // Each provider gets its own Login button. The button visible depends on
+    // the provider selected in the dropdown. When clicked, it sends a
+    // provider-specific WebSocket action that tests connectivity and persists
+    // the endpoint on success.
+    const loginButtons = {
+        kilo: document.getElementById("login-kilo"),
+        nvidia: document.getElementById("login-nvidia"),
+        ollama: document.getElementById("login-ollama"),
+        codex_cli: document.getElementById("login-codex"),
+    };
+    const loginStatus = document.getElementById("login-status");
+    const providerSelect = document.getElementById("endpoint-provider");
+    const apiKeyInput = document.getElementById("endpoint-api-key");
+    
+    function showLoginForProvider(provider) {
+        Object.entries(loginButtons).forEach(([p, btn]) => {
+            if (btn) btn.classList.toggle("hidden", p !== provider);
+        });
+    }
+    
+    function resolveLoginUrl(provider) {
+        // Use the URL from the endpoint form if a preset or custom URL was entered
+        const preset = PRESETS[urlSelect.value];
+        if (preset && preset.provider === provider) {
+            return preset.url;
+        }
+        if (urlSelect.value === "__custom__") {
+            return urlCustom?.value || "";
+        }
+        // Fall back to provider defaults
+        const defaults = {
+            kilo: "https://api.kilo.ai/api/gateway",
+            nvidia: "https://integrate.api.nvidia.com/v1",
+            ollama: "http://localhost:11434",
+            codex_cli: "cli://codex",
+        };
+        return defaults[provider] || "";
+    }
+    
+    function handleProviderLogin(provider) {
+        const url = resolveLoginUrl(provider);
+        const apiKey = apiKeyInput?.value || null;
+        const wsAction = `${provider}_login`;
         
-        if (selectedEndpoint && selectedEndpoint.provider === "kilo") {
-            loginUrl = selectedEndpoint.url;
-        } else if (selectedEndpoint) {
-            // If a non-Kilo endpoint is selected, use that URL with kilo provider
-            loginUrl = selectedEndpoint.url;
+        // Show a pending status
+        if (loginStatus) {
+            loginStatus.textContent = `Logging in to ${provider}...`;
+            loginStatus.className = "status-message status-info";
         }
         
-        sendWs({ 
-            action: "kilo_login", 
-            url: loginUrl,
-            apiKey: document.getElementById("endpoint-api-key")?.value || null,
+        sendWs({
+            action: wsAction,
+            url: url,
+            apiKey: apiKey,
         });
+    }
+    
+    // Wire up each login button
+    Object.entries(loginButtons).forEach(([provider, btn]) => {
+        btn?.addEventListener("click", () => handleProviderLogin(provider));
     });
+    
+    // Show the login button for the currently selected provider
+    providerSelect?.addEventListener("change", () => {
+        showLoginForProvider(providerSelect.value);
+    });
+    
+    // Initial display: show login button for default selected provider
+    showLoginForProvider(providerSelect?.value || "ollama");
 }
 
 function renderEndpoints() {
@@ -568,6 +784,64 @@ function initModels() {
     });
 }
 
+// Resolve the display name for a model's endpoint. Priority:
+//   1. endpointName already enriched by the server (most reliable)
+//   2. Live endpoint lookup by endpointId
+//   3. Provider field from the model itself
+//   4. URL hint from endpointId
+//   5. "Unknown" with the raw id so the operator can debug
+function resolveEndpointDisplay(m, endpoints) {
+    if (m.endpointName) return { name: m.endpointName, provider: m.provider || m.endpointProvider || "unknown" };
+    const ep = endpoints.find(e => e.id === m.endpointId);
+    if (ep && ep.name) return { name: ep.name, provider: ep.provider || m.provider || "unknown" };
+    if (m.provider) {
+        const nice = m.provider.charAt(0).toUpperCase() + m.provider.slice(1);
+        return { name: `${nice} (endpoint not found)`, provider: m.provider };
+    }
+    if (m.endpointId && (m.endpointId.startsWith("http") || m.endpointId.startsWith("https"))) {
+        try {
+            const host = new URL(m.endpointId).hostname;
+            return { name: host, provider: "unknown" };
+        } catch (_) {}
+    }
+    return { name: `Unknown (id: ${m.endpointId || "?"})`, provider: "unknown" };
+}
+
+function formatRelativeTime(isoTs) {
+    if (!isoTs) return "never";
+    const then = new Date(isoTs).getTime();
+    if (isNaN(then)) return "unknown";
+    const diff = Math.max(0, (Date.now() - then) / 1000);
+    if (diff < 5) return "just now";
+    if (diff < 60) return `${Math.floor(diff)}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return new Date(isoTs).toLocaleString();
+}
+
+function wireRefreshButton() {
+    const btn = document.getElementById("models-refresh-now");
+    if (!btn) return;
+    btn.onclick = () => {
+        btn.disabled = true;
+        btn.textContent = "Refreshing...";
+        sendWs({ action: "auto_detect_models" });
+        // Re-enable after a short timeout in case the WS is slow
+        setTimeout(() => {
+            btn.disabled = false;
+            btn.textContent = "Refresh now";
+        }, 5000);
+    };
+    // Start the live-update ticker that refreshes the "N seconds ago" text
+    if (modelsRefreshTimer) clearInterval(modelsRefreshTimer);
+    modelsRefreshTimer = setInterval(() => {
+        const stamp = document.querySelector(".models-refresh-stamp");
+        if (stamp && modelsLastFetchedAt) {
+            stamp.textContent = `Last refreshed: ${formatRelativeTime(modelsLastFetchedAt)}`;
+        }
+    }, 1000);
+}
+
 function getModelFamily(modelId) {
     let base = modelId.replace(/:latest$/, '');
     const colonIdx = base.indexOf(':');
@@ -612,6 +886,15 @@ function groupModelsByEndpointAndFamily(models, endpoints) {
 function renderModels() {
     const grouped = document.getElementById("models-grouped-container");
     if (!grouped) return;
+
+    // Show a live "last refreshed" indicator so the operator knows how fresh
+    // the model list is. Updates automatically via the modelsLastFetchedAt
+    // timestamp set after auto_detect_models or list_models responses.
+    const stamp = modelsLastFetchedAt ? formatRelativeTime(modelsLastFetchedAt) : "never";
+    const refreshBanner = `<div class="models-refresh-banner">
+        <span class="models-refresh-stamp">Last refreshed: ${escapeHtml(stamp)}</span>
+        <button id="models-refresh-now" class="secondary" type="button">Refresh now</button>
+   </div>`;
     
     const freeModels = [];
     const standardModels = [];
@@ -689,20 +972,20 @@ function updateModelChips() {
         container.innerHTML = '<div class="empty-message">No models loaded. Click Auto-Detect or add models manually.</div>';
     } else {
         const freeModels = [];
-        const kiloCol = [];
-        const ollamaCol = [];
-        const cliCol = [];
+        // Group models by endpoint name so every provider is represented.
+        const endpointGroups = {};
 
         for (const m of models) {
             if (isFreeModel(m.id)) {
                 freeModels.push(m);
                 continue;
             }
-            const ep = endpoints.find(e => e.id === m.endpointId);
-            const provider = (ep ? ep.provider : 'unknown').toLowerCase();
-            if (provider === 'kilo') kiloCol.push(m);
-            else if (provider === 'ollama') ollamaCol.push(m);
-            else if (provider === 'kilo_cli') cliCol.push(m);
+            const resolved = resolveEndpointDisplay(m, endpoints);
+            const epName = resolved.name;
+            if (!endpointGroups[epName]) {
+                endpointGroups[epName] = [];
+            }
+            endpointGroups[epName].push(m);
         }
 
         const sortAlpha = (arr) => [...arr].sort((a, b) => a.id.localeCompare(b.id));
@@ -719,12 +1002,15 @@ function updateModelChips() {
             </div>
         ` : "";
 
+        const groupCols = Object.entries(endpointGroups)
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([name, items]) => col(name, items))
+            .join("");
+
         container.innerHTML = `
             <div class="model-chip-columns">
-                ${col("DEBUG-NEW-CODE Free Models", freeModels)}
-                ${col("Kilo Gateway", kiloCol)}
-                ${col("Ollama", ollamaCol)}
-                ${col("Kilo CLI", cliCol)}
+                ${col("Free Models", freeModels)}
+                ${groupCols}
             </div>
         `;
     }
@@ -761,8 +1047,8 @@ function initModelsSelector() {
         if (!list) return;
 
         const freeModels = [];
-        const endpointColumns = { kilo: [], ollama: [], kilo_cli: [] };
-        const endpointNames = { kilo: "Kilo Gateway", ollama: "Ollama Gateway", kilo_cli: "Kilo CLI" };
+        // Group models by their endpoint name so every provider is represented.
+        const endpointGroups = {};
 
         for (const m of models) {
             if (isFreeModel(m.id)) {
@@ -770,10 +1056,12 @@ function initModelsSelector() {
                 continue;
             }
             const ep = endpoints.find(e => e.id === m.endpointId);
-            const provider = (ep ? ep.provider : 'unknown').toLowerCase();
-            if (provider === 'kilo') endpointColumns.kilo.push(m);
-            else if (provider === 'ollama') endpointColumns.ollama.push(m);
-            else if (provider === 'kilo_cli') endpointColumns.kilo_cli.push(m);
+            const epName = ep ? ep.name : 'Unknown Endpoint';
+            const epProvider = ep ? ep.provider : 'unknown';
+            if (!endpointGroups[epName]) {
+                endpointGroups[epName] = { name: epName, provider: epProvider, models: [] };
+            }
+            endpointGroups[epName].models.push(m);
         }
 
         const sortChips = (arr) => [...arr].sort((a, b) => a.id.localeCompare(b.id));
@@ -785,30 +1073,20 @@ function initModelsSelector() {
             </div>
         `;
 
+        const groupEntries = Object.entries(endpointGroups).sort((a, b) => a[1].name.localeCompare(b[1].name));
+
         list.innerHTML = `
             ${freeModels.length > 0 ? `
                 <div class="selector-free-column">
                     ${sortChips(freeModels).map(chipHtml).join("")}
                 </div>
             ` : ""}
-            ${endpointColumns.kilo.length > 0 ? `
+            ${groupEntries.map(([key, group]) => `
                 <div class="selector-endpoint-column">
-                    <div class="selector-column-header">${escapeHtml(endpointNames.kilo)}</div>
-                    ${sortChips(endpointColumns.kilo).map(chipHtml).join("")}
+                    <div class="selector-column-header">${escapeHtml(group.name)} · ${escapeHtml(group.provider)}</div>
+                    ${sortChips(group.models).map(chipHtml).join("")}
                 </div>
-            ` : ""}
-            ${endpointColumns.ollama.length > 0 ? `
-                <div class="selector-endpoint-column">
-                    <div class="selector-column-header">${escapeHtml(endpointNames.ollama)}</div>
-                    ${sortChips(endpointColumns.ollama).map(chipHtml).join("")}
-                </div>
-            ` : ""}
-            ${endpointColumns.kilo_cli.length > 0 ? `
-                <div class="selector-endpoint-column">
-                    <div class="selector-column-header">${escapeHtml(endpointNames.kilo_cli)}</div>
-                    ${sortChips(endpointColumns.kilo_cli).map(chipHtml).join("")}
-                </div>
-            ` : ""}
+            `).join("")}
         `;
         if (modal) modal.classList.add("show");
         if (countEl) countEl.textContent = `${selectedModelIds.size} selected`;
@@ -982,6 +1260,14 @@ function initGenerateReports() {
         alert("Retry functionality: please regenerate reports from the Generate Reports tab.");
     });
     
+    // View Reports link: navigate to the Reports tab and refresh the list
+    const viewLink = document.getElementById("view-reports-link");
+    viewLink?.addEventListener("click", (e) => {
+        e.preventDefault();
+        switchToTab("tab-reports");
+        sendWs({ action: "list_reports" });
+    });
+    
     const selectAllBtn = document.getElementById("select-all-models");
     const selectNoneBtn = document.getElementById("select-none-models");
     
@@ -1097,14 +1383,25 @@ function showProgressActions(status) {
     const actions = document.getElementById("progress-actions");
     const cancelBtn = document.getElementById("cancel-reports");
     const retryBtn = document.getElementById("retry-reports");
-    const viewLink = document.getElementById("view-reports-link");
     if (!actions) return;
     actions.classList.remove("hidden");
-    if (cancelBtn) cancelBtn.classList.toggle("hidden", status === "completed" || status === "failed" || status === "cancelled" || status === "completed_with_errors");
+    if (cancelBtn) cancelBtn.classList.toggle("hidden", status === "completed" || status === "completed_with_errors" || status === "failed" || status === "cancelled");
     if (retryBtn) retryBtn.classList.toggle("hidden", status !== "failed" && status !== "completed_with_errors");
-    if (viewLink) {
-        viewLink.classList.toggle("hidden", status !== "completed" && status !== "completed_with_errors");
+    // The "View Reports" link visibility is controlled by updateViewReportsLink()
+    // based on whether real PDF reports actually exist — not just on job status.
+}
+
+// Show the "View Reports" link only when real PDF reports exist.
+// This prevents a dead link from being shown when no reports were generated.
+function updateViewReportsLink(hasReports) {
+    const viewLink = document.getElementById("view-reports-link");
+    if (!viewLink) return;
+    if (hasReports) {
+        viewLink.classList.remove("hidden");
+    } else {
+        viewLink.classList.add("hidden");
     }
+}
 }
 
 function formatElapsed(seconds) {
@@ -1226,14 +1523,28 @@ function updateProgressDashboard(message) {
 function renderProgressModels(modelsState) {
     const container = document.getElementById("progress-models");
     if (!container) return;
-    
+
     const entries = Object.entries(modelsState);
     if (entries.length === 0) {
-        container.innerHTML = "";
+        Object.values(modelCardCache).forEach(el => el.remove());
+        modelCardCache = {};
+        modelStatusCache = {};
+        modelPercentageCache = {};
+        Object.values(modelTimers).forEach(t => {
+            if (t.intervalId) clearInterval(t.intervalId);
+        });
+        modelTimers = {};
+        rateLimited = false;
+        updateRateLimitStatus();
         return;
     }
-    
-    container.innerHTML = entries.map(([modelKey, modelState]) => {
+
+    const terminalStatuses = ["completed", "completed_with_errors", "failed", "cancelled"];
+    const activeKeys = new Set();
+
+    entries.forEach(([modelKey, modelState]) => {
+        activeKeys.add(modelKey);
+
         const pct = modelState.percentage || 0;
         const provider = modelState.provider || "unknown";
         const label = modelState.label || modelKey;
@@ -1242,40 +1553,158 @@ function renderProgressModels(modelsState) {
         const failed = modelState.failed_reports || 0;
         const total = modelState.total_reports || 0;
         const elapsed = formatElapsed(modelState.elapsed_seconds);
-        const status = modelState.status || "processing";
-        const statusColor = getStatusColor(status);
+        const incomingStatus = modelState.status || "processing";
         const modelError = modelState.error || "";
-        
+
+        // Status regression guard: once terminal, do not let incoming
+        // processing/queued regress it. Important for retry passes where the
+        // server momentarily emits a non-terminal status for a model that
+        // already finished its initial pass.
+        const prevStatus = modelStatusCache[modelKey] || "processing";
+        const prevIsTerminal = terminalStatuses.includes(prevStatus);
+        const incomingIsTerminal = terminalStatuses.includes(incomingStatus);
+        const status = (prevIsTerminal && !incomingIsTerminal) ? prevStatus : incomingStatus;
+        modelStatusCache[modelKey] = status;
+
         if (modelError && isRateLimitError(modelError)) {
             rateLimited = true;
             updateRateLimitStatus();
         }
-        
-        return `
-            <div class="progress-model-card">
-                <div class="progress-model-header">
-                    <span class="progress-model-name">${escapeHtml(label)}</span>
-                    <span class="progress-model-provider">${escapeHtml(provider)}</span>
-                </div>
-                <div class="progress-model-step">${escapeHtml(step)}</div>
-                <div class="progress-model-bar-container">
-                    <div class="progress-model-bar" style="width: ${pct}%"></div>
-                </div>
-                <div class="progress-model-meta">
-                    <span>${completed}/${total} complete</span>
-                    <span class="progress-failed-text">${failed} failed</span>
-                    <span>${elapsed}</span>
-                    <span style="color: ${statusColor}; font-weight: 600;">${getStatusLabel(status)}</span>
-                </div>
-                ${modelError ? `<div style="font-size: 11px; color: var(--fail); margin-top: 6px;">${escapeHtml(modelError)}</div>` : ""}
-            </div>
-        `;
-    }).join("");
-    
-    if (entries.length === 0) {
-        rateLimited = false;
-        updateRateLimitStatus();
-    }
+
+        const isResponding = status === "processing" &&
+            (step.includes("Validating") || step.includes("Preparing prompt") || step.includes("Sending prompt"));
+
+        let card = modelCardCache[modelKey];
+        const cardIsNew = !card;
+        if (!card) {
+            // Build the card structure using DOM API to avoid any HTML-string
+            // parsing issues. We capture references to the dynamic bits so we
+            // can update them in place on later renders.
+            card = document.createElement("div");
+            card.className = "progress-model-card";
+            card.id = `model-card-${modelKey.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+            card.dataset.modelKey = modelKey;
+
+            const header = document.createElement("div");
+            header.className = "progress-model-header";
+            const nameEl = document.createElement("span");
+            nameEl.className = "progress-model-name";
+            const providerEl = document.createElement("span");
+            providerEl.className = "progress-model-provider";
+            header.appendChild(nameEl);
+            header.appendChild(providerEl);
+            card.appendChild(header);
+
+            const stepEl = document.createElement("div");
+            stepEl.className = "progress-model-step";
+            card.appendChild(stepEl);
+
+            const barContainer = document.createElement("div");
+            barContainer.className = "progress-model-bar-container";
+            const barEl = document.createElement("div");
+            barEl.className = "progress-model-bar";
+            barEl.style.width = "0%";
+            barContainer.appendChild(barEl);
+            card.appendChild(barContainer);
+
+            const metaEl = document.createElement("div");
+            metaEl.className = "progress-model-meta";
+            const s0 = document.createElement("span");  // complete count
+            const s1 = document.createElement("span");  // failed count
+            s1.className = "progress-failed-text";
+            s1.style.display = "none";
+            const s2 = document.createElement("span");  // elapsed
+            const s3 = document.createElement("span");  // status label
+            s3.style.fontWeight = "600";
+            metaEl.appendChild(s0);
+            metaEl.appendChild(s1);
+            metaEl.appendChild(s2);
+            metaEl.appendChild(s3);
+            card.appendChild(metaEl);
+
+            container.appendChild(card);
+            modelCardCache[modelKey] = card;
+        }
+
+        // FROZEN-CARD optimization: skip DOM writes for cards already in a
+        // terminal state. The server emits state every ~200ms; without this
+        // gate, completed cards would visibly flicker their text / numbers /
+        // bar while the rest of the job runs. The card stays frozen until
+        // the server reports a non-terminal status for this model again
+        // (e.g. a retry pass re-queues it).
+        if (!cardIsNew && prevIsTerminal && status === prevStatus && card.dataset.frozen === "1") {
+            return;
+        }
+
+        const statusColor = getStatusColor(status);
+
+        const nameEl = card.querySelector(".progress-model-name");
+        if (nameEl) nameEl.textContent = label;
+        const providerEl = card.querySelector(".progress-model-provider");
+        if (providerEl) providerEl.textContent = provider;
+        const stepEl = card.querySelector(".progress-model-step");
+        if (stepEl) {
+            stepEl.textContent = step;
+            stepEl.className = "progress-model-step" + (isResponding ? " model-responding" : "");
+        }
+        const barEl = card.querySelector(".progress-model-bar");
+        if (barEl) {
+            // Monotonic percentage: never go backward on a still-running model
+            if (status === "completed" || status === "completed_with_errors") {
+                modelPercentageCache[modelKey] = 100;
+            } else {
+                modelPercentageCache[modelKey] = Math.max(modelPercentageCache[modelKey] || 0, pct);
+            }
+            barEl.style.width = `${modelPercentageCache[modelKey]}%`;
+        }
+        const metaEl = card.querySelector(".progress-model-meta");
+        if (metaEl) {
+            const spans = metaEl.querySelectorAll("span");
+            if (spans[0]) spans[0].textContent = `${completed}/${total} complete`;
+            if (spans[1]) {
+                spans[1].textContent = `${failed} failed`;
+                spans[1].className = "progress-failed-text";
+                spans[1].style.display = failed > 0 ? "inline" : "none";
+            }
+            if (spans[2]) spans[2].textContent = elapsed;
+            if (spans[3]) {
+                spans[3].textContent = getStatusLabel(status);
+                spans[3].style.color = statusColor;
+                spans[3].style.fontWeight = "600";
+            }
+        }
+
+        let errorEl = card.querySelector(".progress-model-error");
+        if (modelError) {
+            if (!errorEl) {
+                errorEl = document.createElement("div");
+                errorEl.className = "progress-model-error";
+                card.appendChild(errorEl);
+            }
+            errorEl.textContent = modelError;
+            errorEl.style.fontSize = "11px";
+            errorEl.style.color = "var(--fail)";
+            errorEl.style.marginTop = "6px";
+        } else if (errorEl) {
+            errorEl.remove();
+        }
+
+        if (terminalStatuses.includes(status)) {
+            card.dataset.frozen = "1";
+        } else {
+            delete card.dataset.frozen;
+        }
+    });
+
+    // Remove cards for models no longer present in state
+    Object.keys(modelCardCache).forEach(key => {
+        if (!activeKeys.has(key)) {
+            modelCardCache[key].remove();
+            delete modelCardCache[key];
+            delete modelStatusCache[key];
+            delete modelPercentageCache[key];
+        }
+    });
 }
 
 function renderProgressReports(reports, jobStatus) {
@@ -1332,6 +1761,8 @@ function initReports() {
     const modalZoomIn = document.getElementById("pdf-modal-zoom-in");
     const modalZoomOut = document.getElementById("pdf-modal-zoom-out");
     const modalZoomLabel = document.getElementById("pdf-modal-zoom");
+    const rawDataModal = document.getElementById("raw-data-modal");
+    const rawDataModalClose = document.getElementById("raw-data-modal-close");
     
     refreshButton?.addEventListener("click", () => {
         sendWs({ action: "list_reports" });
@@ -1362,9 +1793,33 @@ function initReports() {
             sendWs({ action: "list_reports" });
         }, 300);
     });
+    // PDF modal: X button, backdrop click, and Esc key all close.
     modalClose?.addEventListener("click", closePdfModal);
     modal?.addEventListener("click", (e) => {
-        if (e.target === modal) closePdfModal();
+        if (e.target === modal ||
+            e.target.classList?.contains("pdf-modal-backdrop")) {
+            closePdfModal();
+        }
+    });
+    const pdfBackdrop = document.getElementById("pdf-modal-backdrop");
+    if (pdfBackdrop) pdfBackdrop.addEventListener("click", closePdfModal);
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && modal?.classList.contains("show")) {
+            closePdfModal();
+        }
+    });
+    // Raw-data modal: same treatment
+    rawDataModalClose?.addEventListener("click", closeRawDataModal);
+    rawDataModal?.addEventListener("click", (e) => {
+        if (e.target === rawDataModal ||
+            e.target.classList?.contains("raw-data-modal-backdrop")) {
+            closeRawDataModal();
+        }
+    });
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && rawDataModal?.classList.contains("show")) {
+            closeRawDataModal();
+        }
     });
     
     // Modal zoom controls
@@ -1856,9 +2311,12 @@ async function openPdfModal(url) {
     const titleEl = document.getElementById("pdf-modal-title");
     const modal = document.getElementById("pdf-modal");
     const modalZoomLabel = document.getElementById("pdf-modal-zoom");
+    const openLink = document.getElementById("pdf-open");
     if (!container) return;
     
     if (titleEl) titleEl.textContent = url.split("/").pop() || "";
+    // Set "Open Original" to point to the real report URL so it opens in a new tab
+    if (openLink) openLink.href = url;
     
     // Show loading state
     container.innerHTML = '<div class="pdf-placeholder" style="color:#1f3a8a;background:#e6e9f5;border:1px solid #9aa3c7">Loading PDF...</div>';
@@ -2035,11 +2493,47 @@ function initTelemetry() {
         }
     });
     
-    chartModalClose?.addEventListener("click", () => {
-        if (chartModal) chartModal.classList.remove("show");
-    });
-    chartModal?.addEventListener("click", (e) => {
-        if (e.target === chartModal) chartModal.classList.remove("show");
+    // Chart modal close: X button, click-on-backdrop, Esc key.
+    // The X button click bubbles through the content; if the modal content has
+    // its own pointerdown/mousedown handlers (drag/resize), they should call
+    // stopPropagation so the close handler can still fire on the X button.
+    if (chartModalClose) {
+        const closeHandler = (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            closeChartModal();
+        };
+        chartModalClose.addEventListener("click", closeHandler);
+        chartModalClose.addEventListener("pointerup", closeHandler);
+        // Also explicitly stop pointerdown/mousedown so drag handlers don't capture
+        chartModalClose.addEventListener("pointerdown", (e) => e.stopPropagation());
+        chartModalClose.addEventListener("mousedown", (e) => e.stopPropagation());
+    }
+    // Click outside the modal content (on the backdrop or the modal container
+    // itself) closes the modal. The backdrop is the .chart-modal-backdrop div;
+    // clicking anywhere except .chart-modal-content closes.
+    if (chartModal) {
+        chartModal.addEventListener("click", (e) => {
+            // e.target === chartModal means user clicked the empty fixed-
+            // positioned container itself; .chart-modal-backdrop means they
+            // clicked the semi-transparent overlay. Both should close.
+            if (e.target === chartModal ||
+                e.target.classList?.contains("chart-modal-backdrop")) {
+                closeChartModal();
+            }
+        });
+    }
+    // Also handle the backdrop explicitly in case pointer-events behave oddly
+    const chartBackdrop = document.getElementById("chart-modal-backdrop");
+    if (chartBackdrop) {
+        chartBackdrop.addEventListener("click", closeChartModal);
+    }
+
+    // Esc key closes the chart modal if it's open
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && chartModal?.classList.contains("show")) {
+            closeChartModal();
+        }
     });
 }
 
@@ -2113,11 +2607,84 @@ function closeRawDataModal() {
     if (modal) modal.classList.remove("show");
 }
 
-function openChartModal(url) {
+function openChartModal(chart, runId, isSample) {
     const modal = document.getElementById("chart-modal");
     const imgEl = document.getElementById("chart-modal-img");
     if (!modal || !imgEl) return;
-    imgEl.src = url;
+
+    // chart can be a string (legacy URL) or an object
+    const chartUrl = typeof chart === "string" ? chart : (chart?.url || "");
+    const chartName = typeof chart === "string" ? "" : (chart?.name || "");
+    const chartDisplay = typeof chart === "string" ? "" : (chart?.displayName || chartName);
+    const chartDesc = typeof chart === "string" ? "" : (chart?.description || "");
+
+    imgEl.src = chartUrl;
+
+    // Set title
+    const titleEl = document.getElementById("chart-modal-title");
+    if (titleEl) titleEl.textContent = chartDisplay || chartName || "Chart Viewer";
+
+    // Set description
+    const descEl = document.getElementById("chart-modal-desc");
+    if (descEl) descEl.textContent = chartDesc || "";
+
+    // Show/hide sample badge
+    const sampleBadge = modal.querySelector(".chart-modal-sample-badge");
+    if (sampleBadge) sampleBadge.style.display = isSample ? "inline-flex" : "none";
+
+    // Mark the modal as sample/non-sample
+    modal.classList.toggle("chart-modal-sample", !!isSample);
+
+    // Set up the delete button with run_id and chart_name
+    const deleteBtn = document.getElementById("chart-modal-delete");
+    if (deleteBtn) {
+        deleteBtn.onclick = null; // Remove any existing handler
+        if (chartName && runId) {
+            deleteBtn.onclick = (e) => {
+                e.stopPropagation();
+                fetch(`/api/charts/runs/${encodeURIComponent(runId)}/${encodeURIComponent(chartName)}`, { method: "DELETE" })
+                    .then(() => {
+                        closeChartModal();
+                        // Re-render gallery to remove the card
+                        const idx = chartRunsCache.findIndex(r => r.runId === runId);
+                        if (idx >= 0) {
+                            chartRunsCache[idx].charts = chartRunsCache[idx].charts.filter(c => c.name !== chartName);
+                        }
+                        renderChartsGallery(chartRunsCache);
+                    })
+                    .catch(err => console.error("Failed to delete chart:", err));
+            };
+            deleteBtn.style.display = "inline-flex";
+        } else {
+            deleteBtn.style.display = "none";
+        }
+    }
+
+    // Set up close-all button
+    const closeAllBtn = document.getElementById("chart-modal-close-all");
+    if (closeAllBtn) {
+        closeAllBtn.onclick = null;
+        closeAllBtn.onclick = (e) => {
+            e.stopPropagation();
+            closeChartModal();
+        };
+        closeAllBtn.style.display = "inline-flex";
+    }
+
+    // Set up maximize button
+    const maximizeBtn = document.getElementById("chart-modal-maximize");
+    if (maximizeBtn) {
+        maximizeBtn.onclick = null;
+        maximizeBtn.onclick = (e) => {
+            e.stopPropagation();
+            const content = document.getElementById("chart-modal-content");
+            if (content) content.classList.toggle("chart-modal-maximized");
+            const isMax = content?.classList.contains("chart-modal-maximized");
+            maximizeBtn.textContent = isMax ? "↖" : "Maximize";
+        };
+        maximizeBtn.style.display = "inline-flex";
+    }
+
     modal.classList.add("show");
 }
 
@@ -2167,6 +2734,407 @@ function collapseRunWindow() {
 }
 
 // ---------------------------------------------------------------------------
+// Charts tab
+// ---------------------------------------------------------------------------
+function initCharts() {
+    const generateBtn = document.getElementById("generate-charts-btn");
+    const refreshBtn = document.getElementById("refresh-charts-btn");
+
+    if (generateBtn) {
+        generateBtn.addEventListener("click", () => {
+            if (chartGenerationActive) {
+                alert("Chart generation already in progress. Please wait.");
+                return;
+            }
+            startChartGeneration();
+        });
+    }
+
+    if (refreshBtn) {
+        refreshBtn.addEventListener("click", () => {
+            sendWs({ action: "list_chart_runs" });
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                fetch("/api/charts/metadata").then(r => r.json()).then(d => {
+                    chartMetadataCache = d.charts || {};
+                    chartOrderCache = d.order || [];
+                }).catch(() => {});
+                fetch("/api/charts/runs").then(r => r.json()).then(d => {
+                    chartRunsCache = d.runs || [];
+                    renderChartsGallery(chartRunsCache);
+                }).catch(() => {});
+            }
+        });
+    }
+
+    // Initial load: fetch metadata + runs via REST (works without WS)
+    // When no chart runs exist on disk, the backend auto-generates sample
+    // charts so the gallery always has something to show.
+    showChartStatus("Loading charts...", true);
+    fetch("/api/charts/metadata").then(r => r.json()).then(d => {
+        chartMetadataCache = d.charts || {};
+        chartOrderCache = d.order || [];
+    }).catch(() => {}).finally(() => {
+        fetch("/api/charts/runs").then(r => r.json()).then(d => {
+            chartRunsCache = d.runs || [];
+            renderChartsGallery(chartRunsCache);
+        }).catch(() => {}).finally(() => {
+            showChartStatus("", false);
+        });
+    });
+}
+
+function startChartGeneration() {
+    let runId = "test-run-final";
+    if (chartRunsCache.length > 0) {
+        // Prefer non-sample runs — never send "sample-charts" as the runId
+        // when real data could be available, so real charts never land in
+        // the sample-charts directory.
+        const reportRuns = chartRunsCache.filter(r =>
+            !r.isSample && (r.type === "report_generation" || (r.runId && r.runId.startsWith("run-")))
+        );
+        const fallbackRuns = chartRunsCache.filter(r => !r.isSample);
+        const selected = reportRuns[0] || fallbackRuns[0];
+        runId = selected ? selected.runId : "test-run-final";
+    }
+
+    chartGenerationActive = true;
+    chartGenerationTotal = chartOrderCache.length || 22;
+    chartGenerationDone = 0;
+    chartGenerationRunId = runId;
+
+    showChartStatus(`Starting chart generation for ${runId}...`, true);
+    updateChartProgressBar(0, chartGenerationTotal);
+
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        sendWs({ action: "generate_charts", runId });
+    } else {
+        fetch("/api/charts/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ runId }),
+        }).then(r => r.json()).then(result => {
+            chartGenerationActive = false;
+            showChartStatus(`Generated ${result.generated || 0} of ${result.total || 0} charts`, false);
+            if (result.charts) {
+                // Use the server's isSample flag; fall back to runId check only as safety net
+                const isSample = result.isSample === true || runId === "sample-charts";
+                const responseRunId = result.runId || runId;
+                const charts = Object.entries(result.charts).map(([name, url]) => ({
+                    name,
+                    displayName: (chartMetadataCache[name] || {}).name || name,
+                    description: (chartMetadataCache[name] || {}).description || "",
+                    category: (chartMetadataCache[name] || {}).category || "General",
+                    url,
+                    size_bytes: 0,
+                }));
+                const existing = chartRunsCache.find(r => r.runId === responseRunId);
+                if (existing) existing.charts = charts;
+                else chartRunsCache.push({ runId: responseRunId, type: isSample ? "sample_generation" : "report_generation", models: [], prompts: [], charts, isSample });
+                renderChartsGallery(chartRunsCache);
+            }
+        }).catch(err => {
+            chartGenerationActive = false;
+            showChartStatus(`Generation failed: ${err}`, false);
+        });
+    }
+}
+
+function updateChartGenerationProgress(msg) {
+    if (msg.status === "started") {
+        chartGenerationActive = true;
+        chartGenerationTotal = msg.total || chartGenerationTotal;
+        chartGenerationDone = msg.index || 0;
+        showChartStatus(msg.chartDisplayName || "Generating charts...", true);
+        updateChartProgressBar(chartGenerationDone, chartGenerationTotal);
+    } else if (msg.status === "completed" || msg.status === "complete") {
+        chartGenerationDone = Math.max(chartGenerationDone, (msg.index || 0) + 1);
+        showChartStatus(`${msg.chartDisplayName || msg.chartName} done (${chartGenerationDone}/${chartGenerationTotal})`, true);
+        updateChartProgressBar(chartGenerationDone, chartGenerationTotal);
+    } else if (msg.status === "failed") {
+        showChartStatus(`Failed: ${msg.chartName} - ${msg.error || "unknown error"}`, true);
+    }
+}
+
+function showChartStatus(text, isActive) {
+    const bar = document.getElementById("charts-status-bar");
+    const textEl = document.getElementById("charts-status-text");
+    const spinner = document.getElementById("charts-spinner");
+    if (bar) bar.classList.toggle("hidden", !text);
+    if (textEl) textEl.textContent = text;
+    if (spinner) spinner.style.display = isActive ? "inline-block" : "none";
+}
+
+function updateChartProgressBar(done, total) {
+    const bar = document.getElementById("charts-progress-bar");
+    const progressEl = document.getElementById("charts-status-progress");
+    if (bar) {
+        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+        bar.style.width = `${pct}%`;
+    }
+    if (progressEl) progressEl.textContent = `${done} / ${total}`;
+}
+
+function renderChartsGallery(runs) {
+    const gallery = document.getElementById("charts-gallery");
+    if (!gallery) return;
+
+    if (!runs || runs.length === 0) {
+        gallery.innerHTML = `<div class="empty-message">No chart runs found. Chart generation may have failed — try clicking "Generate Charts" to create sample visualizations.</div>`;
+        return;
+    }
+
+    const activeRunIds = new Set();
+
+    runs.forEach(run => {
+        const runId = run.runId || run.run_id || "unknown";
+        activeRunIds.add(runId);
+
+        let section;
+        const isSample = run.isSample === true || (run.runId || "").toLowerCase().includes("sample");
+
+        // Check if this run was already deleted in session
+        // (The backend excludes these, but we guard for edge cases)
+
+        section = chartCardCache[runId];
+        if (!section) {
+            section = document.createElement("div");
+            section.className = isSample
+                ? "chart-run-section chart-run-section-sample"
+                : "chart-run-section";
+            section.dataset.runId = runId;
+            if (isSample) section.dataset.isSample = "true";
+
+            const header = document.createElement("div");
+            header.className = isSample
+                ? "chart-run-header chart-run-header-sample"
+                : "chart-run-header";
+            const titleEl = document.createElement("span");
+            titleEl.className = "chart-run-title";
+            const sampleBadge = document.createElement("span");
+            sampleBadge.className = "chart-sample-badge";
+            sampleBadge.textContent = "SAMPLE";
+            sampleBadge.title = "Sample chart — generated from synthetic data. Not tied to any real evaluation run.";
+            const metaEl = document.createElement("span");
+            metaEl.className = "chart-run-meta";
+            const countEl = document.createElement("span");
+            countEl.className = "chart-run-count";
+
+            // Action buttons: minimize/expand and close (delete) for the run frame
+            const actionsEl = document.createElement("div");
+            actionsEl.className = "chart-run-actions";
+
+            const minimizeBtn = document.createElement("button");
+            minimizeBtn.className = "chart-run-minimize";
+            minimizeBtn.title = "Minimize/expand this run frame";
+            minimizeBtn.textContent = "−";
+            minimizeBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                const grid = section.querySelector(".chart-run-charts");
+                if (!grid) return;
+                const isMin = grid.classList.toggle("minimized");
+                minimizeBtn.textContent = isMin ? "+" : "−";
+            });
+
+            const deleteBtn = document.createElement("button");
+            deleteBtn.className = "chart-run-delete-all";
+            deleteBtn.title = "Remove this run and all its charts";
+            deleteBtn.textContent = "×";
+            deleteBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                // No confirmation — clicking × should just close/delete the frame.
+                fetch(`/api/charts/runs/${encodeURIComponent(runId)}/all`, { method: "DELETE" })
+                    .then(() => {
+                        chartCardCache[runId]?.remove();
+                        delete chartCardCache[runId];
+                        Object.keys(chartStatusCache).forEach(k => {
+                            if (k.startsWith(runId + "::")) delete chartStatusCache[k];
+                        });
+                        const idx = chartRunsCache.findIndex(r => r.runId === runId);
+                        if (idx >= 0) chartRunsCache.splice(idx, 1);
+                        // Re-render to update cache view
+                        renderChartsGallery(chartRunsCache);
+                    })
+                    .catch(err => console.error("Failed to delete run charts:", err));
+            });
+
+            actionsEl.appendChild(minimizeBtn);
+            actionsEl.appendChild(deleteBtn);
+
+            header.appendChild(titleEl);
+            header.appendChild(sampleBadge);
+            header.appendChild(metaEl);
+            header.appendChild(countEl);
+            header.appendChild(actionsEl);
+
+            const grid = document.createElement("div");
+            grid.className = "chart-run-charts";
+
+            section.appendChild(header);
+            section.appendChild(grid);
+            gallery.appendChild(section);
+            chartCardCache[runId] = section;
+        }
+
+        const titleEl = section.querySelector(".chart-run-title");
+        if (titleEl) titleEl.textContent = `Run: ${runId}`;
+
+        // Update or create the sample badge
+        let badge = section.querySelector(".chart-sample-badge");
+        if (!badge) {
+            badge = document.createElement("span");
+            badge.className = "chart-sample-badge";
+            badge.textContent = "SAMPLE";
+            badge.title = "Sample chart — generated from synthetic data. Not tied to any real evaluation run.";
+            const hdr = section.querySelector(".chart-run-header");
+            if (hdr) hdr.insertBefore(badge, hdr.querySelector(".chart-run-meta"));
+        }
+        badge.style.display = isSample ? "inline-flex" : "none";
+
+        const header = section.querySelector(".chart-run-header");
+        if (header) {
+            header.classList.toggle("chart-run-header-sample", isSample);
+        }
+        section.classList.toggle("chart-run-section-sample", isSample);
+        section.dataset.isSample = isSample ? "true" : "false";
+
+        const metaEl = section.querySelector(".chart-run-meta");
+        if (metaEl) {
+            const models = run.models || [];
+            const prompts = run.prompts || [];
+            const type = isSample ? "sample" : (run.type || "report_generation");
+            metaEl.textContent = `${type} • ${models.length} model${models.length !== 1 ? "s" : ""} • ${prompts.length} prompt${prompts.length !== 1 ? "s" : ""}`;
+        }
+        const countEl = section.querySelector(".chart-run-count");
+        const charts = run.charts || [];
+        if (countEl) countEl.textContent = `${charts.length} chart${charts.length !== 1 ? "s" : ""}`;
+
+        const grid = section.querySelector(".chart-run-charts");
+        if (!grid) return;
+
+        const seenCardNames = new Set();
+        charts.forEach(chart => {
+            const cardKey = runId + "::" + chart.name;
+            seenCardNames.add(cardKey);
+
+            let entry = chartStatusCache[cardKey];
+            let card = entry && entry.card;
+            if (!card) {
+                card = document.createElement("div");
+                card.className = isSample ? "chart-card chart-card-sample" : "chart-card";
+                card.href = chart.url || "#";
+                card.dataset.chartName = chart.name;
+                card.dataset.runId = runId;
+
+                // Build card content via DOM API (no HTML strings to mangle)
+                const img = document.createElement("img");
+                img.className = "chart-card-img";
+                img.loading = "lazy";
+
+                const body = document.createElement("div");
+                body.className = "chart-card-body";
+                const ct = document.createElement("div");
+                ct.className = "chart-card-title";
+                const cc = document.createElement("div");
+                cc.className = "chart-card-category";
+                const cd = document.createElement("div");
+                cd.className = "chart-card-desc";
+                const cm = document.createElement("div");
+                cm.className = "chart-card-meta";
+                
+                // Sample badge
+                const sb = document.createElement("span");
+                sb.className = "chart-card-sample-badge";
+                sb.textContent = "S";
+                sb.title = "Sample chart — generated from synthetic data";
+
+                // Delete button for individual chart deletion
+                const delBtn = document.createElement("button");
+                delBtn.className = "chart-card-delete-btn";
+                delBtn.title = "Delete this chart";
+                delBtn.innerHTML = "×";
+                delBtn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    fetch(`/api/charts/runs/${encodeURIComponent(runId)}/${encodeURIComponent(chart.name)}`, { method: "DELETE" })
+                        .then(() => {
+                            card.remove();
+                            const cacheKey = runId + "::" + chart.name;
+                            delete chartStatusCache[cacheKey];
+                            // Update run chart count
+                            const charts = run.charts.filter(c => c.name !== chart.name);
+                            run.charts = charts;
+                            const countEl = section.querySelector(".chart-run-count");
+                            if (countEl) countEl.textContent = `${charts.length} chart${charts.length !== 1 ? "s" : ""}`;
+                        })
+                        .catch(err => console.error("Failed to delete chart:", err));
+                });
+
+                body.appendChild(ct);
+                body.appendChild(cc);
+                body.appendChild(cd);
+                body.appendChild(cm);
+                body.appendChild(sb);
+                body.appendChild(delBtn);
+                card.appendChild(img);
+                card.appendChild(body);
+
+                card.addEventListener("click", (e) => {
+                    // Don't open modal if delete button was clicked
+                    if (e.target === delBtn) return;
+                    if (typeof openChartModal === "function") {
+                        openChartModal(chart, runId, isSample);
+                    } else {
+                        window.open(chart.url, "_blank");
+                    }
+                });
+
+                grid.appendChild(card);
+                chartStatusCache[cardKey] = { card };
+            } else if (grid !== card.parentElement) {
+                grid.appendChild(card);
+            }
+
+            const img = card.querySelector(".chart-card-img");
+            if (img) {
+                const newSrc = chart.url || "";
+                if (img.getAttribute("src") !== newSrc) img.src = newSrc;
+                img.alt = chart.displayName || chart.name || "Chart";
+            }
+            const titleE = card.querySelector(".chart-card-title");
+            if (titleE) titleE.textContent = chart.displayName || chart.name || "Chart";
+            const catE = card.querySelector(".chart-card-category");
+            if (catE) catE.textContent = chart.category || "Chart";
+            const descE = card.querySelector(".chart-card-desc");
+            if (descE) descE.textContent = chart.description || "";
+            const metaE = card.querySelector(".chart-card-meta");
+            if (metaE) metaE.textContent = formatBytes(chart.size_bytes || 0);
+            // Store chart URL on the card for the click handler
+            card.dataset.chartUrl = chart.url || "#";
+        });
+
+        // Remove chart cards no longer in this run
+        Array.from(grid.children).forEach(child => {
+            const childKey = runId + "::" + child.dataset.chartName;
+            if (!seenCardNames.has(childKey)) {
+                child.remove();
+                delete chartStatusCache[childKey];
+            }
+        });
+    });
+
+    // Remove run sections no longer present
+    Object.keys(chartCardCache).forEach(rid => {
+        if (!activeRunIds.has(rid)) {
+            chartCardCache[rid].remove();
+            delete chartCardCache[rid];
+            Object.keys(chartStatusCache).forEach(k => {
+                if (k.startsWith(rid + "::")) delete chartStatusCache[k];
+            });
+        }
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
 
@@ -2180,6 +3148,8 @@ document.addEventListener("DOMContentLoaded", () => {
     initPromptsEditor();
     initModelsSelector();
     initReports();
+    initCharts();
+    initTelemetry();
     connectWebSocket();
     if (localStorage.getItem("we3.activeTab") === "tab-generate" || document.getElementById("tab-generate")?.classList.contains("active")) {
         restoreProgressIfActive();

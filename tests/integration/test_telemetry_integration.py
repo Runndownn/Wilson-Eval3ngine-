@@ -20,28 +20,28 @@ from wilson_eval3ngine.telemetry import (
 class TestTelemetryApiIntegration:
     """Tests for telemetry integration with API."""
 
-    def test_health_endpoint_includes_trace_id(self, tmp_path):
+    def test_health_endpoint_includes_trace_id(self, db, tmp_path):
         """Health endpoint includes correlation in response."""
         settings = Settings(
-            database_url=f"sqlite:///{tmp_path / 'telemetry.api.db'}",
+            database_url="sqlite://",
             artifact_root=tmp_path / "artifacts",
             auth_mode="dev",
             environment="test",
         )
-        client = TestClient(create_app(settings))
+        client = TestClient(create_app(settings, database=db))
 
         response = client.get("/health")
         assert response.status_code == 200
 
-    def test_operation_emits_telemetry(self, tmp_path, foundation_manifest):
+    def test_operation_emits_telemetry(self, db, tmp_path, foundation_manifest):
         """Operations emit telemetry events."""
         settings = Settings(
-            database_url=f"sqlite:///{tmp_path / 'telemetry.op.db'}",
+            database_url="sqlite://",
             artifact_root=tmp_path / "artifacts",
             auth_mode="dev",
             environment="test",
         )
-        client = TestClient(create_app(settings))
+        client = TestClient(create_app(settings, database=db))
 
         ctx = CorrelationContext(
             trace_id="trc_telemetry_test",
@@ -123,15 +123,15 @@ class TestTelemetrySpanIntegration:
 class TestTelemetryOutboxIntegration:
     """Tests for telemetry integration with outbox events."""
 
-    def test_outbox_event_telemetry(self, tmp_path):
+    def test_outbox_event_telemetry(self, db, tmp_path):
         """Outbox events are logged with telemetry context."""
         settings = Settings(
-            database_url=f"sqlite:///{tmp_path / 'outbox_telem.db'}",
+            database_url="sqlite://",
             artifact_root=tmp_path / "artifacts",
             auth_mode="dev",
             environment="test",
         )
-        client = TestClient(create_app(settings))
+        client = TestClient(create_app(settings, database=db))
 
         response = client.post(
             "/v1/experiments:run",

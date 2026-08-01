@@ -1,0 +1,10 @@
+apiVersion: 1
+
+providers:
+  - name: "Wilson Eval3ngine"
+    folder: "Wilson Eval3ngine"
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    options:
+      path: /etc/grafana/provisioning/dashboards

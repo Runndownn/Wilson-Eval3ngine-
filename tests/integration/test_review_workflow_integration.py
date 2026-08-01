@@ -104,10 +104,8 @@ class TestGatePrecedenceEnforcement:
 class TestReviewWorkflowIntegration:
     """Integration tests for review workflow with database."""
 
-    def test_review_task_creation(self, tmp_path):
+    def test_review_task_creation(self, db):
         """Review task can be created."""
-        db = Database(f"sqlite:///{tmp_path / 'review.db'}")
-        db.initialize()
 
         # Create a reviewer
         qual = QualificationRecord(
@@ -161,10 +159,8 @@ class TestReviewWorkflowIntegration:
 class TestCriticalTaskBlocking:
     """Tests for critical task blocking release (TODO 35)."""
 
-    def test_unresolved_critical_blocks_release(self, tmp_path):
+    def test_unresolved_critical_blocks_release(self, db):
         """Unresolved critical tasks should block publication."""
-        db = Database(f"sqlite:///{tmp_path / 'review.db'}")
-        db.initialize()
 
         repo = ReviewRepository(db)
 
@@ -184,10 +180,8 @@ class TestCriticalTaskBlocking:
         unresolved_count = repo.get_unresolved_critical_tasks("proj_001")
         assert unresolved_count == 1
 
-    def test_resolved_critical_does_not_block(self, tmp_path):
+    def test_resolved_critical_does_not_block(self, db):
         """Resolved critical tasks do not block publication."""
-        db = Database(f"sqlite:///{tmp_path / 'review.db'}")
-        db.initialize()
 
         repo = ReviewRepository(db)
 
@@ -220,10 +214,8 @@ class TestCriticalTaskBlocking:
 class TestReviewerQualificationIntegration:
     """Tests for reviewer qualification in database (TODO 34)."""
 
-    def test_qualification_expiration_check(self, tmp_path):
+    def test_qualification_expiration_check(self, db):
         """Qualification expiration can be checked."""
-        db = Database(f"sqlite:///{tmp_path / 'review.db'}")
-        db.initialize()
 
         repo = ReviewRepository(db)
 
@@ -261,10 +253,8 @@ class TestReviewerQualificationIntegration:
 class TestRawRevealAuditTrail:
     """Tests for raw content reveal audit tracking (TODO 34 security)."""
 
-    def test_raw_reveal_recorded_in_submission(self, tmp_path):
+    def test_raw_reveal_recorded_in_submission(self, db):
         """Raw content reveal is recorded in submission."""
-        db = Database(f"sqlite:///{tmp_path / 'review.db'}")
-        db.initialize()
 
         ReviewRepository(db)
 
@@ -307,10 +297,8 @@ class TestRawRevealAuditTrail:
 class TestSelfAdjudicationPrevention:
     """Tests for self-adjudication prevention (TODO 35 security)."""
 
-    def test_adjudicator_cannot_judge_own_task(self, tmp_path):
+    def test_adjudicator_cannot_judge_own_task(self, db):
         """Reviewer cannot adjudicate their own submitted review."""
-        db = Database(f"sqlite:///{tmp_path / 'review.db'}")
-        db.initialize()
 
         persister = ReviewPersistence(db)
 
@@ -372,10 +360,8 @@ class TestSelfAdjudicationPrevention:
                 actor_id="user_abc",
             )
 
-    def test_different_adjudicator_can_resolve_task(self, tmp_path):
+    def test_different_adjudicator_can_resolve_task(self, db):
         """Different adjudicator can resolve a task with submissions."""
-        db = Database(f"sqlite:///{tmp_path / 'review.db'}")
-        db.initialize()
 
         persister = ReviewPersistence(db)
 
@@ -445,10 +431,8 @@ class TestSelfAdjudicationPrevention:
 class TestProjectScopedAccessControl:
     """Tests for project-scoped access control (TODO 34 security)."""
 
-    def test_task_assignment_requires_project_access(self, tmp_path):
+    def test_task_assignment_requires_project_access(self, db):
         """Reviewer can only be assigned tasks in their project."""
-        db = Database(f"sqlite:///{tmp_path / 'review.db'}")
-        db.initialize()
 
         persister = ReviewPersistence(db)
 
@@ -487,10 +471,8 @@ class TestProjectScopedAccessControl:
         # Assignment succeeds at DB level - project check is application-level
         assert assignment_id is not None
 
-    def test_unresolved_critical_tasks_per_project(self, tmp_path):
+    def test_unresolved_critical_tasks_per_project(self, db):
         """Critical task counts are project-scoped."""
-        db = Database(f"sqlite:///{tmp_path / 'review.db'}")
-        db.initialize()
 
         persister = ReviewPersistence(db)
 
@@ -588,7 +570,7 @@ class TestProjectScopedAccessControl:
 class TestTrustRegistryDossierVerification:
     """Tests for trust registry integration (TODO 36 security)."""
 
-    def test_dossier_verification_with_trusted_key(self, tmp_path):
+    def test_dossier_verification_with_trusted_key(self, db, tmp_path):
         """Dossier verification validates against trust registry."""
         registry = TrustRegistry()
 
@@ -645,7 +627,7 @@ class TestTrustRegistryDossierVerification:
         assert result["valid"] is True
         assert result["trust_registry_validated"] is True
 
-    def test_dossier_verification_with_untrusted_key(self, tmp_path):
+    def test_dossier_verification_with_untrusted_key(self, db, tmp_path):
         """Dossier with unapproved key fails trust verification."""
         registry = TrustRegistry()
 
@@ -699,10 +681,9 @@ class TestTrustRegistryDossierVerification:
 class TestGatePrecedenceCriticalBlocking:
     """Tests for gate precedence critical blocking (TODO 36)."""
 
-    def test_critical_safety_block_cannot_be_overridden(self, tmp_path):
+    def test_critical_safety_block_cannot_be_overridden(self, db):
         """Critical safety blocks persist through precedence evaluation."""
-        governance = GovernancePersistence(Database(f"sqlite:///{tmp_path / 'review.db'}"))
-        governance.database.initialize()
+        governance = GovernancePersistence(db)
 
         # Create a gate with critical unsafe block
         gate = GateDecision(
@@ -728,10 +709,9 @@ class TestGatePrecedenceCriticalBlocking:
         assert result.status == GateStatus.BLOCK
         assert any("PRECEDENCE ENFORCED" in r for r in result.reasons)
 
-    def test_non_critical_gate_remains_unaffected(self, tmp_path):
+    def test_non_critical_gate_remains_unaffected(self, db):
         """Non-critical gates are not affected by precedence rules."""
-        governance = GovernancePersistence(Database(f"sqlite:///{tmp_path / 'review.db'}"))
-        governance.database.initialize()
+        governance = GovernancePersistence(db)
 
         gate = GateDecision(
             gate_id="gate_warning",
@@ -756,10 +736,9 @@ class TestGatePrecedenceCriticalBlocking:
         assert result.status == GateStatus.WARNING
         assert len(result.reasons) == 1  # No precedence reasons added
 
-    def test_evidence_verification_failure_blocks(self, tmp_path):
+    def test_evidence_verification_failure_blocks(self, db):
         """Failed evidence verification blocks publication."""
-        governance = GovernancePersistence(Database(f"sqlite:///{tmp_path / 'review.db'}"))
-        governance.database.initialize()
+        governance = GovernancePersistence(db)
 
         gate = GateDecision(
             gate_id="gate_pass",
@@ -776,10 +755,9 @@ class TestGatePrecedenceCriticalBlocking:
         assert result.status == GateStatus.BLOCK
         assert "evidence verification failed" in result.reasons[0].lower()
 
-    def test_unresolved_critical_reviews_block(self, tmp_path):
+    def test_unresolved_critical_reviews_block(self, db):
         """Unresolved critical reviews block publication."""
-        governance = GovernancePersistence(Database(f"sqlite:///{tmp_path / 'review.db'}"))
-        governance.database.initialize()
+        governance = GovernancePersistence(db)
 
         gate = GateDecision(
             gate_id="gate_pass",
@@ -801,7 +779,7 @@ class TestGatePrecedenceCriticalBlocking:
 class TestBothReviewersAbstain:
     """Tests for both reviewers abstaining edge case (TODO 35)."""
 
-    def test_both_abstentions_require_adjudication(self, tmp_path):
+    def test_both_abstentions_require_adjudication(self, db):
         """When both reviewers abstain, adjudication is required."""
         workflow = ReviewWorkflow()
 
@@ -862,10 +840,8 @@ class TestBothReviewersAbstain:
 class TestStaleVersionSubmission:
     """Tests for stale case version submission edge case (TODO 35)."""
 
-    def test_stale_version_submission_prevented(self, tmp_path):
+    def test_stale_version_submission_prevented(self, db):
         """Submission must reference correct case version."""
-        db = Database(f"sqlite:///{tmp_path / 'review.db'}")
-        db.initialize()
 
         persister = ReviewPersistence(db)
 

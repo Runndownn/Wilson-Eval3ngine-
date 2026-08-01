@@ -34,9 +34,17 @@ oidc = [
   "python-jose[cryptography]>=3.3,<4",
   "requests>=2.32,<3",
 ]
+redis = [
+  "redis>=5.0,<6",
+]
 backup = [
   "psycopg[binary]>=3.2,<4",
   "boto3>=1.35,<2",
+]
+security = [
+  "bandit>=1.7,<2",
+  "pip-audit>=2.7,<3",
+  "safety>=3.3,<4",
 ]
 
 [project.scripts]
@@ -51,6 +59,7 @@ where = ["src"]
 pythonpath = ["src"]
 testpaths = ["tests"]
 addopts = "-q"
+timeout = 300
 
 [tool.coverage.run]
 branch = true
