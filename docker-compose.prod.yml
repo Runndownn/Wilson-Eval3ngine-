@@ -1,8 +1,10 @@
 # Wilson Eval3ngine production deployment
 #
 # Required environment:
-#   WE3_POSTGRES_PASSWORD, WE3_REDIS_PASSWORD, WE3_GRAFANA_PASSWORD
-#   WE3_OIDC_ISSUER, WE3_OIDC_JWKS_URI, WE3_DOMAIN, WE3_TLS_EMAIL
+#   WE3_POSTGRES_PASSWORD, WE3_DATABASE_URL
+#   WE3_REDIS_PASSWORD, WE3_REDIS_URL
+#   WE3_GRAFANA_PASSWORD, WE3_OIDC_ISSUER, WE3_OIDC_JWKS_URI
+#   WE3_DOMAIN, WE3_TLS_EMAIL
 #
 # Only Caddy publishes host ports. API, database, cache, metrics, and dashboard
 # services remain reachable solely on purpose-specific internal networks.
@@ -94,8 +96,8 @@ services:
       redis:
         condition: service_healthy
     environment:
-      WE3_DATABASE_URL: postgresql+psycopg://we3:${WE3_POSTGRES_PASSWORD:?WE3_POSTGRES_PASSWORD is required}@postgres:5432/we3
-      WE3_REDIS_URL: redis://:${WE3_REDIS_PASSWORD:?WE3_REDIS_PASSWORD is required}@redis:6379/0
+      WE3_DATABASE_URL: ${WE3_DATABASE_URL:?WE3_DATABASE_URL is required}
+      WE3_REDIS_URL: ${WE3_REDIS_URL:?WE3_REDIS_URL is required}
       WE3_ARTIFACT_ROOT: /var/lib/we3/artifacts
       WE3_AUTH_MODE: oidc
       WE3_ENVIRONMENT: production
