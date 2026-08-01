@@ -4,9 +4,8 @@ from pathlib import Path
 
 import pytest
 
-playwright = pytest.importorskip("playwright.sync_api")
+pytest.importorskip("playwright.sync_api")
 from playwright.sync_api import sync_playwright
-
 
 ROOT = Path(__file__).resolve().parents[2]
 CSS = (ROOT / "gui" / "static" / "ux6.css").read_text(encoding="utf-8")
@@ -15,7 +14,11 @@ JAVASCRIPT = (ROOT / "gui" / "static" / "ux6.js").read_text(encoding="utf-8")
 HTML = """
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>WE3 browser contract</title></head>
+<head>
+  <meta charset="utf-8">
+  <title>WE3 browser contract</title>
+  <style>* { box-sizing: border-box; } html, body { margin: 0; min-width: 0; }</style>
+</head>
 <body>
   <main>
     <section class="report-grid" aria-label="Evaluation reports">
@@ -32,15 +35,30 @@ HTML = """
 """
 
 
-def _browser_page(viewport: dict[str, int]):
+def _browser_page(
+    viewport: dict[str, int],
+    *,
+    device_scale_factor: float = 1.0,
+):
     manager = sync_playwright().start()
     browser = manager.chromium.launch()
-    page = browser.new_page(viewport=viewport)
+    context = browser.new_context(
+        viewport=viewport,
+        device_scale_factor=device_scale_factor,
+        reduced_motion="reduce",
+    )
+    page = context.new_page()
     page.set_content(HTML)
     page.add_style_tag(content=CSS)
     page.add_script_tag(content=JAVASCRIPT)
     page.wait_for_timeout(100)
     return manager, browser, page
+
+
+def _horizontal_overflow(page) -> float:
+    return page.evaluate(
+        "document.documentElement.scrollWidth - document.documentElement.clientWidth"
+    )
 
 
 @pytest.mark.browser
@@ -56,7 +74,8 @@ def test_desktop_reports_are_exactly_two_equal_columns() -> None:
         assert boxes[0]["right"] <= boxes[1]["left"]
         main_box = page.locator("main").bounding_box()
         assert main_box is not None
-        assert main_box["width"] >= 1400
+        assert main_box["width"] >= 1439
+        assert _horizontal_overflow(page) <= 1
     finally:
         browser.close()
         manager.stop()
@@ -71,10 +90,7 @@ def test_narrow_viewports_use_one_column_without_horizontal_overflow(width: int)
             "nodes => nodes.map(node => node.getBoundingClientRect())"
         )
         assert boxes[1]["top"] > boxes[0]["bottom"]
-        overflow = page.evaluate(
-            "document.documentElement.scrollWidth - document.documentElement.clientWidth"
-        )
-        assert overflow <= 1
+        assert _horizontal_overflow(page) <= 1
     finally:
         browser.close()
         manager.stop()
@@ -112,18 +128,22 @@ def test_chart_window_is_clamped_and_reset_is_keyboard_reachable() -> None:
 @pytest.mark.browser
 @pytest.mark.parametrize("scale", [1.25, 1.5, 2.0])
 def test_layout_survives_browser_zoom_emulation(scale: float) -> None:
-    manager, browser, page = _browser_page({"width": 1280, "height": 900})
+    # Browser zoom reduces the available CSS-pixel viewport while preserving the
+    # physical window. Device scale factor models the denser rendered surface.
+    viewport = {"width": int(1280 / scale), "height": int(900 / scale)}
+    manager, browser, page = _browser_page(
+        viewport,
+        device_scale_factor=scale,
+    )
     try:
-        page.evaluate("scale => { document.documentElement.style.zoom = String(scale); }", scale)
         page.dispatch_event("body", "pointerup")
         page.wait_for_timeout(50)
-        overflow = page.evaluate(
-            "document.documentElement.scrollWidth - document.documentElement.clientWidth"
-        )
         chart = page.locator("#chart-window").bounding_box()
-        assert overflow <= 1
+        assert _horizontal_overflow(page) <= 1
         assert chart is not None
-        assert chart["x"] >= 0 and chart["y"] >= 0
+        assert chart["x"] >= 8 and chart["y"] >= 8
+        assert chart["x"] + chart["width"] <= viewport["width"] - 8
+        assert chart["y"] + chart["height"] <= viewport["height"] - 8
     finally:
         browser.close()
         manager.stop()
