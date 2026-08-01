@@ -10,7 +10,6 @@ from wilson_eval3ngine.assurance.runtime_evidence import (
     verify_runtime_evidence,
 )
 
-
 COMMIT = "a" * 40
 FINGERPRINT = hashlib.sha256(b"private evidence retained outside repository").hexdigest()
 
@@ -30,12 +29,8 @@ def test_runtime_evidence_is_deterministic_and_order_independent() -> None:
         environment_class="staging",
         checks=reversed(checks),
     )
-
     assert first.bundle_sha256 == second.bundle_sha256
-    assert [check.check_id for check in first.checks] == [
-        "oidc.signature",
-        "tls.chain",
-    ]
+    assert [check.check_id for check in first.checks] == ["oidc.signature", "tls.chain"]
     assert verify_runtime_evidence(first.to_dict()) == first
 
 
@@ -48,7 +43,7 @@ def test_passed_check_requires_non_reversible_fingerprint() -> None:
         )
 
 
-def test_private_operational_material_is_rejected() -> None:
+def test_free_form_operational_material_is_rejected() -> None:
     for reason in {
         "https://internal.example",
         "server 10.0.0.8",
@@ -56,7 +51,7 @@ def test_private_operational_material_is_rejected() -> None:
         "password failed",
         "user@example.invalid",
     }:
-        with pytest.raises(ValueError, match="private operational material"):
+        with pytest.raises(ValueError, match="canonical reason code"):
             build_runtime_evidence(
                 source_commit=COMMIT,
                 environment_class="production",
@@ -71,6 +66,22 @@ def test_private_operational_material_is_rejected() -> None:
             )
 
 
+def test_reason_code_is_allowed_without_private_detail() -> None:
+    envelope = build_runtime_evidence(
+        source_commit=COMMIT,
+        environment_class="staging",
+        checks=[
+            RuntimeCheck(
+                "database.tls",
+                "blocked",
+                "database.v1",
+                safe_reason="dependency_unavailable",
+            )
+        ],
+    )
+    assert envelope.checks[0].safe_reason == "dependency_unavailable"
+
+
 def test_bundle_tampering_is_detected() -> None:
     envelope = build_runtime_evidence(
         source_commit=COMMIT,
@@ -78,7 +89,6 @@ def test_bundle_tampering_is_detected() -> None:
         checks=[RuntimeCheck("tls.chain", "passed", "tls.v1", FINGERPRINT)],
     ).to_dict()
     envelope["bundle_sha256"] = "0" * 64
-
     with pytest.raises(ValueError, match="bundle hash mismatch"):
         verify_runtime_evidence(envelope)
 
