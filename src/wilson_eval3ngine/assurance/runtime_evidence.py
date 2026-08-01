@@ -1,9 +1,9 @@
 """Sanitized evidence envelopes for private production verification.
 
 Private probes operate on real identities, endpoints, certificates, stores,
-providers, and network policy. Public evidence contains only bounded outcomes
-and non-reversible fingerprints; URLs, addresses, credentials, certificate
-bodies, paths, and free-form logs are rejected.
+providers, and network policy. Public evidence contains only check identifiers,
+statuses, control versions, non-reversible fingerprints, and bounded reason
+codes. No free-form operational text is accepted.
 """
 
 from __future__ import annotations
@@ -30,11 +30,7 @@ _REQUIRED_CHECKS = frozenset({
 _ENVIRONMENTS = frozenset({"isolated", "staging", "production"})
 _CHECK_ID = re.compile(r"^[a-z][a-z0-9_.-]{2,127}$")
 _FINGERPRINT = re.compile(r"^[a-f0-9]{64}$")
-_SAFE_REASON = re.compile(r"^[A-Za-z0-9 _.,:()/-]{0,240}$")
-_FORBIDDEN_TEXT = re.compile(
-    r"(?i)(https?://|\b(?:\d{1,3}\.){3}\d{1,3}\b|bearer\s|password|secret|token|"
-    r"private[_ -]?key|begin certificate|@|\\\\|/[a-z0-9_.-]+/[a-z0-9_.-]+)"
-)
+_REASON_CODE = re.compile(r"^(?:|[a-z][a-z0-9_]{0,63})$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,10 +52,8 @@ class RuntimeCheck:
             self.evidence_sha256
         ):
             raise ValueError("evidence fingerprint must be lowercase SHA-256")
-        if not _SAFE_REASON.fullmatch(self.safe_reason):
-            raise ValueError("safe_reason contains unsupported characters or is too long")
-        if _FORBIDDEN_TEXT.search(self.safe_reason):
-            raise ValueError("safe_reason appears to contain private operational material")
+        if not _REASON_CODE.fullmatch(self.safe_reason):
+            raise ValueError("safe_reason must be an empty or canonical reason code")
         if self.status == "passed" and self.evidence_sha256 is None:
             raise ValueError("passed checks require an evidence fingerprint")
 
