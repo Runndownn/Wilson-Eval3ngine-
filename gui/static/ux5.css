@@ -157,3 +157,139 @@
 @media (prefers-reduced-motion: reduce) {
   .model-family-dialog::backdrop { backdrop-filter: none; }
 }
+
+
+/* Ready-first model inventory */
+.model-grid.inventory-sections {
+  display: block !important;
+}
+
+.model-inventory-section,
+.offline-catalog {
+  width: 100%;
+}
+
+.model-inventory-section + .model-inventory-section,
+.model-inventory-section + .offline-catalog,
+.offline-catalog + .model-inventory-section {
+  margin-top: 24px;
+}
+
+.model-inventory-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 16px;
+}
+
+.model-inventory-heading h3 {
+  margin: 7px 0 5px;
+  font-size: 1.35rem;
+}
+
+.model-inventory-heading p {
+  max-width: 760px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.model-inventory-heading > strong {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: .9rem;
+}
+
+.model-family-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+
+.model-family-card.is-offline {
+  min-height: 310px;
+}
+
+.model-family-card.is-offline .family-card-open {
+  background: transparent;
+}
+
+.offline-catalog {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface) 96%, var(--muted) 4%);
+}
+
+.offline-catalog > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 20px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.offline-catalog > summary::-webkit-details-marker {
+  display: none;
+}
+
+.offline-catalog > summary::after {
+  content: "Show";
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.offline-catalog[open] > summary::after {
+  content: "Hide";
+}
+
+.offline-catalog > summary span:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.offline-catalog > summary small,
+.offline-catalog-count {
+  color: var(--muted);
+}
+
+.offline-catalog-count {
+  margin-left: auto;
+  font-size: .85rem;
+}
+
+.offline-catalog-body {
+  padding: 0 20px 20px;
+  border-top: 1px solid var(--border);
+}
+
+.offline-catalog-body .model-family-grid {
+  padding-top: 20px;
+}
+
+.family-model-actions button:disabled {
+  cursor: not-allowed;
+  opacity: .58;
+}
+
+@media (max-width: 720px) {
+  .model-inventory-heading,
+  .offline-catalog > summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .model-inventory-heading > strong,
+  .offline-catalog-count {
+    margin-left: 0;
+  }
+
+  .model-family-grid {
+    grid-template-columns: 1fr;
+  }
+}

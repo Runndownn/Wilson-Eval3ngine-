@@ -55,8 +55,11 @@ def test_ux5_family_and_report_contracts() -> None:
 
     assert "AUTO_OPEN_REPORTS = 4" in source
     assert "model-family-dialog" in source
-    assert "Popular in this family" in source
-    assert "data-open-family" in source
+    assert "Recommended available models" in source
+    assert "Popular in this family" not in source
+    assert "offline-catalog" in source
+    assert "data-open-inventory" in source
+    assert "endpointAvailable !== false" in source
     assert "data-family-select" in source
     assert "data-family-delete" in source
     assert "Hide card viewer" in source
@@ -70,6 +73,9 @@ def test_ux5_visual_contracts() -> None:
 
     assert ".model-family-card" in source
     assert ".model-family-dialog" in source
+    assert ".model-grid.inventory-sections" in source
+    assert ".offline-catalog" in source
+    assert ".model-family-grid" in source
     assert ".run-summary-full-row" in source
     assert "aspect-ratio: 16 / 10" in source
     assert ".report-default-open" in source
