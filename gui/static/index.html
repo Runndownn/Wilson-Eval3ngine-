@@ -6,7 +6,7 @@
   <meta name="description" content="Wilson Eval3ngine model evaluation workspace">
   <title>Wilson Eval3ngine</title>
   <link rel="icon" href="/static/we3-logo.png">
-  <link rel="stylesheet" href="/static/enhanced.css?v=20260801-ux2">
+  <link rel="stylesheet" href="/static/enhanced.css?v=20260801-ux3">
 </head>
 <body>
   <div class="shell">
@@ -24,33 +24,55 @@
         <div class="stat"><strong id="stat-runs">0</strong><span>Runs</span></div>
         <div class="stat"><strong id="stat-reports">0</strong><span>Reports</span></div>
       </div>
-      <div class="health"><span id="health-dot" class="dot"></span><span id="health-text">Connecting</span></div>
+      <div class="health" role="status" aria-live="polite">
+        <span id="health-dot" class="dot"></span>
+        <span id="health-text">Connecting</span>
+      </div>
     </header>
 
-    <nav class="tabs" aria-label="Evaluation workflow">
-      <button class="tab" data-tab="endpoints">1 · Endpoints</button>
-      <button class="tab" data-tab="models">2 · Models</button>
-      <button class="tab" data-tab="generate">3 · Generate Reports</button>
-      <button class="tab" data-tab="charts">4 · Charts</button>
-      <button class="tab" data-tab="reports">5 · Reports</button>
+    <nav class="tabs workflow-tabs" aria-label="Evaluation workflow">
+      <button class="tab" data-tab="endpoints">
+        <span class="tab-number">1</span>
+        <span class="tab-copy"><strong>Endpoints</strong><small>Connect and test providers</small></span>
+      </button>
+      <button class="tab" data-tab="models">
+        <span class="tab-number">2</span>
+        <span class="tab-copy"><strong>Models</strong><small>Discover and review inventory</small></span>
+      </button>
+      <button class="tab" data-tab="generate">
+        <span class="tab-number">3</span>
+        <span class="tab-copy"><strong>Generate</strong><small>Select models and prompts</small></span>
+      </button>
+      <button class="tab" data-tab="charts">
+        <span class="tab-number">4</span>
+        <span class="tab-copy"><strong>Charts</strong><small>Generate and inspect evidence</small></span>
+      </button>
+      <button class="tab" data-tab="reports">
+        <span class="tab-number">5</span>
+        <span class="tab-copy"><strong>Reports</strong><small>Read and export results</small></span>
+      </button>
     </nav>
 
     <main>
       <section id="panel-endpoints" class="panel">
-        <div class="hero">
+        <div class="hero surface-heading">
           <div>
+            <span class="eyebrow">Workflow 1 of 5</span>
             <h2>Provider endpoints</h2>
-            <p>Connect model gateways, validate their health, and maintain the source-of-truth relationship between provider, endpoint ID, and discovered models.</p>
+            <p>Connect model gateways, verify live health, and reconcile each provider's discovered models with the registered model inventory.</p>
           </div>
           <div class="hero-actions">
             <button id="refresh-endpoints">Check all health</button>
             <button id="detect-endpoints" class="primary">Auto-detect gateways</button>
           </div>
         </div>
-        <div class="grid">
+        <div class="grid bounded-grid">
           <article class="card span-5">
-            <h3>Add endpoint</h3>
-            <div class="sub">Credentials remain backend-managed and are never returned to the browser.</div>
+            <div class="card-heading">
+              <span class="step-badge">Configuration</span>
+              <h3>Add endpoint</h3>
+              <p>Credentials remain backend-managed and are never returned to the browser.</p>
+            </div>
             <form id="endpoint-form">
               <div class="form-grid">
                 <div class="field">
@@ -82,8 +104,9 @@
           <article class="card span-7">
             <div class="section-title">
               <div>
-                <h3>Connected inventory</h3>
-                <div class="sub">Availability, provider type, URL, and immutable endpoint identity.</div>
+                <span class="step-badge">Live inventory</span>
+                <h3>Connected providers</h3>
+                <div class="sub">Health, provider type, registered models, most recent test, and immutable endpoint identity.</div>
               </div>
             </div>
             <div id="endpoint-list" class="list"><div class="empty">Loading endpoints…</div></div>
@@ -92,23 +115,28 @@
       </section>
 
       <section id="panel-models" class="panel">
-        <div class="hero">
+        <div class="hero surface-heading">
           <div>
+            <span class="eyebrow">Workflow 2 of 5</span>
             <h2>Model registry</h2>
-            <p>Review what each model is best suited for, verify its provider lineage, then select it during report generation. Descriptions are concise guidance inferred from model names and providers, not benchmark claims.</p>
+            <p>Discover provider inventory, review family and endpoint lineage, then choose evaluation candidates. Family labels are inferred from model identifiers and are not benchmark claims.</p>
           </div>
           <div class="hero-actions"><button id="detect-models" class="primary">Refresh from endpoints</button></div>
         </div>
-        <div class="flow-strip" aria-label="Model registry workflow">
-          <div><strong>1</strong><span>Connect an endpoint</span></div>
-          <div><strong>2</strong><span>Discover or register models</span></div>
-          <div><strong>3</strong><span>Review capabilities and lineage</span></div>
-          <div><strong>4</strong><span>Select models in Generate Reports</span></div>
+        <div class="flow-strip flow-strip-five" aria-label="Model registry workflow">
+          <div><strong>1</strong><span><b>Connect</b><small>Add a provider endpoint</small></span></div>
+          <div><strong>2</strong><span><b>Test</b><small>Verify live health and access</small></span></div>
+          <div><strong>3</strong><span><b>Discover</b><small>Import available model IDs</small></span></div>
+          <div><strong>4</strong><span><b>Review</b><small>Inspect family and lineage</small></span></div>
+          <div><strong>5</strong><span><b>Select</b><small>Choose models for evaluation</small></span></div>
         </div>
-        <div class="grid">
+        <div class="grid bounded-grid">
           <article class="card span-4 sticky-card">
-            <h3>Register a model</h3>
-            <div class="sub">Use the exact provider model ID. The backend preserves it without rewriting.</div>
+            <div class="card-heading">
+              <span class="step-badge">Manual registration</span>
+              <h3>Register a model</h3>
+              <p>Use the exact provider model ID. The backend preserves it without rewriting.</p>
+            </div>
             <form id="model-form">
               <div class="field">
                 <label for="model-id">Model ID</label>
@@ -124,13 +152,14 @@
           <article class="card span-8">
             <div class="section-title model-inventory-heading">
               <div>
+                <span class="step-badge">Registered inventory</span>
                 <h3>Available models</h3>
-                <div class="sub">Each card explains the likely model family, intended use, and connected endpoint.</div>
+                <div class="sub">Search all registered models or filter by provider. Cards explain likely family, role, and connected endpoint.</div>
               </div>
               <span id="model-result-count" class="pill">0 models</span>
             </div>
             <div class="toolbar">
-              <input id="model-search" aria-label="Search models" placeholder="Search model, provider, or endpoint">
+              <input id="model-search" aria-label="Search models" placeholder="Search model, family, provider, or endpoint">
               <select id="model-provider-filter" aria-label="Filter by provider">
                 <option value="">All providers</option>
                 <option value="ollama">Ollama</option>
@@ -146,16 +175,17 @@
       </section>
 
       <section id="panel-generate" class="panel">
-        <div class="hero">
+        <div class="hero surface-heading">
           <div>
-            <h2>Generate an evaluation report</h2>
-            <p>Follow the three-step flow: choose models, review or edit prompts, then confirm the request volume before starting the run.</p>
+            <span class="eyebrow">Workflow 3 of 5</span>
+            <h2>Generate evaluation reports</h2>
+            <p>Start with the six recommended choices or open a model family, configure prompts, and confirm the request volume before execution.</p>
           </div>
         </div>
         <div class="flow-strip flow-strip-compact" aria-label="Report generation workflow">
-          <div><strong>1</strong><span>Select models</span></div>
-          <div><strong>2</strong><span>Configure prompts</span></div>
-          <div><strong>3</strong><span>Review and start</span></div>
+          <div><strong>1</strong><span><b>Select models</b><small>Popular choices or families</small></span></div>
+          <div><strong>2</strong><span><b>Configure prompts</b><small>Package or custom evaluation</small></span></div>
+          <div><strong>3</strong><span><b>Review and start</b><small>Validate request volume</small></span></div>
         </div>
         <form id="generate-form">
           <div class="generate-layout">
@@ -167,12 +197,12 @@
                   <div id="selection-count" class="sub">0 selected</div>
                 </div>
                 <div class="actions compact-actions">
-                  <button id="select-all" type="button">Select all</button>
+                  <button id="select-all" type="button">Select visible</button>
                   <button id="select-none" type="button">Clear</button>
                 </div>
               </div>
               <div class="toolbar model-picker-toolbar">
-                <input id="generation-model-search" type="search" placeholder="Filter selectable models" aria-label="Filter selectable models">
+                <input id="generation-model-search" type="search" placeholder="Filter models or families" aria-label="Filter selectable models">
                 <select id="generation-provider-filter" aria-label="Filter selectable models by provider">
                   <option value="">All providers</option>
                   <option value="ollama">Ollama</option>
@@ -182,7 +212,20 @@
                   <option value="codex_cli">Codex CLI</option>
                 </select>
               </div>
-              <div id="model-chips" class="model-picker"><div class="empty">Loading selectable models…</div></div>
+              <section class="popular-section" aria-labelledby="popular-models-title">
+                <div class="section-kicker">
+                  <div><span class="step-badge">Popular six</span><h4 id="popular-models-title">Recommended starting points</h4></div>
+                  <span class="muted">Chosen from the registered inventory</span>
+                </div>
+                <div id="popular-models" class="popular-model-grid"><div class="empty compact-empty">Loading popular models…</div></div>
+              </section>
+              <section class="family-section" aria-labelledby="model-families-title">
+                <div class="section-kicker">
+                  <div><span class="step-badge">All families</span><h4 id="model-families-title">Expand a family to choose models</h4></div>
+                </div>
+                <div id="model-families" class="model-family-list"><div class="empty compact-empty">Loading model families…</div></div>
+              </section>
+              <div id="model-chips" class="model-picker legacy-model-picker" hidden></div>
             </article>
 
             <article class="card generate-prompt-card">
@@ -218,7 +261,7 @@
               <div class="summary-copy">
                 <span class="step-label">Step 3</span>
                 <h3>Review and start</h3>
-                <p>The engine will execute the selected prompts against each selected model and create evidence-linked PDF and chart artifacts.</p>
+                <p>The engine executes each selected prompt against each selected model and produces evidence-linked PDF and chart artifacts.</p>
               </div>
               <div class="stat-row summary-stats">
                 <div class="stat"><strong id="summary-models">0</strong><span>Models</span></div>
@@ -252,26 +295,29 @@
       </section>
 
       <section id="panel-charts" class="panel">
-        <div class="hero">
+        <div class="hero surface-heading">
           <div>
+            <span class="eyebrow">Workflow 4 of 5</span>
             <h2>Run analytics and chart evidence</h2>
-            <p>Existing charts are grouped by run. Open any chart in a movable, resizable evidence window, inspect full metadata, or remove individual charts and complete run groups.</p>
+            <p>Every completed evidence run remains visible, including runs with deleted or missing charts. Generate only the run you intend to restore; refresh never resurrects deleted artifacts.</p>
           </div>
           <div class="hero-actions">
-            <select id="chart-source-run" aria-label="Run to use for chart generation"><option value="">Choose an evidence run</option></select>
             <button id="refresh-charts">Refresh inventory</button>
-            <button id="generate-charts" class="primary">Generate missing charts</button>
+            <button id="generate-demo-charts" class="primary">Generate demo charts</button>
           </div>
         </div>
-        <div id="chart-guidance" class="notice">Refresh only reads existing chart files. Generate missing charts is available only for a completed run with evaluation sidecar data and no current chart set.</div>
+        <div id="chart-guidance" class="notice">Each run has its own Generate missing charts action. Demo charts are synthetic, clearly labelled, and generated only when you press the demo button.</div>
         <div id="chart-runs" class="chart-run-list"><div class="empty">Loading chart runs…</div></div>
+        <select id="chart-source-run" hidden aria-hidden="true"><option value="">Choose an evidence run</option></select>
+        <button id="generate-charts" hidden type="button">Generate missing charts</button>
       </section>
 
       <section id="panel-reports" class="panel">
-        <div class="hero">
+        <div class="hero surface-heading">
           <div>
+            <span class="eyebrow">Workflow 5 of 5</span>
             <h2>Generated PDF reports</h2>
-            <p>Read each report directly from its card, then open it in a dedicated tab or export the complete evidence bundle.</p>
+            <p>Each card explains what the report contains, which run and models produced it, and provides an explicit in-page viewer plus full-report and export actions.</p>
           </div>
           <div class="hero-actions"><button id="refresh-reports">Refresh reports</button></div>
         </div>
@@ -285,19 +331,23 @@
     <div class="drawer-body"><pre id="drawer-json" class="code"></pre></div>
   </aside>
 
-  <section id="chart-window" class="chart-window hidden" role="dialog" aria-modal="false" aria-labelledby="chart-window-title">
+  <section id="chart-window" class="chart-window hidden" role="dialog" aria-modal="false" aria-labelledby="chart-window-title" tabindex="-1">
     <div id="chart-window-handle" class="chart-window-head">
       <div>
         <span id="chart-window-category" class="pill">Chart</span>
         <h3 id="chart-window-title">Chart evidence</h3>
       </div>
       <div class="window-actions">
+        <button id="chart-window-data" type="button">Data &amp; metadata</button>
         <button id="chart-window-fullscreen" type="button" aria-label="Toggle full screen">Full screen</button>
         <button id="chart-window-close" type="button" class="danger" aria-label="Close chart window">Close</button>
       </div>
     </div>
     <div class="chart-window-body">
-      <div class="chart-stage"><img id="chart-window-image" alt="Expanded chart"></div>
+      <div class="chart-stage">
+        <img id="chart-window-image" alt="Expanded chart">
+        <div id="chart-window-empty" class="chart-image-error hidden">The chart image could not be displayed. Regenerate this run's missing charts or inspect its metadata.</div>
+      </div>
       <aside class="chart-metadata">
         <h4>Evidence metadata</h4>
         <dl id="chart-window-metadata" class="metadata-list"></dl>
@@ -308,6 +358,6 @@
   </section>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="/static/enhanced.js?v=20260801-ux2" defer></script>
+  <script src="/static/enhanced.js?v=20260801-ux3" defer></script>
 </body>
 </html>
