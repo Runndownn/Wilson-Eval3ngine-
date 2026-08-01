@@ -1,0 +1,299 @@
+# Secure production deployment profile.
+#
+# All image variables MUST contain immutable @sha256 references. Real domains,
+# certificate paths, secret files, egress policy, identity settings, and image
+# registries are private deployment inputs and are never committed here.
+
+services:
+  postgres:
+    image: ${WE3_POSTGRES_IMAGE:?digest-pinned WE3_POSTGRES_IMAGE is required}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: we3
+      POSTGRES_USER: we3
+      POSTGRES_PASSWORD_FILE: /run/secrets/POSTGRES_PASSWORD
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+    secrets:
+      - source: postgres_password
+        target: POSTGRES_PASSWORD
+        uid: "${WE3_POSTGRES_SECRET_UID:-70}"
+        gid: "${WE3_POSTGRES_SECRET_GID:-70}"
+        mode: 0400
+      - source: postgres_tls_cert
+        target: POSTGRES_TLS_CERT
+        uid: "${WE3_POSTGRES_SECRET_UID:-70}"
+        gid: "${WE3_POSTGRES_SECRET_GID:-70}"
+        mode: 0400
+      - source: postgres_tls_key
+        target: POSTGRES_TLS_KEY
+        uid: "${WE3_POSTGRES_SECRET_UID:-70}"
+        gid: "${WE3_POSTGRES_SECRET_GID:-70}"
+        mode: 0400
+      - source: postgres_tls_ca
+        target: POSTGRES_TLS_CA
+        uid: "${WE3_POSTGRES_SECRET_UID:-70}"
+        gid: "${WE3_POSTGRES_SECRET_GID:-70}"
+        mode: 0400
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/run/secrets/POSTGRES_TLS_CERT
+      - -c
+      - ssl_key_file=/run/secrets/POSTGRES_TLS_KEY
+      - -c
+      - ssl_ca_file=/run/secrets/POSTGRES_TLS_CA
+      - -c
+      - password_encryption=scram-sha-256
+      - -c
+      - max_connections=200
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U we3 -d we3"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [data]
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    stop_grace_period: 60s
+
+  redis:
+    image: ${WE3_REDIS_IMAGE:?digest-pinned WE3_REDIS_IMAGE is required}
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD_FILE: /run/secrets/REDIS_PASSWORD
+    secrets:
+      - source: redis_password
+        target: REDIS_PASSWORD
+        mode: 0400
+    command:
+      - /bin/sh
+      - -ec
+      - exec redis-server --requirepass "$$(cat "$${REDIS_PASSWORD_FILE}")" --protected-mode yes --maxmemory 256mb --maxmemory-policy allkeys-lru --appendonly yes --appendfsync everysec
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$(cat /run/secrets/REDIS_PASSWORD)\" ping | grep -qx PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks: [data]
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+
+  api:
+    image: ${WE3_API_IMAGE:?digest-pinned WE3_API_IMAGE is required}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      egress-proxy:
+        condition: service_started
+    environment:
+      WE3_ENVIRONMENT: production
+      WE3_AUTH_MODE: oidc
+      WE3_OIDC_ISSUER: ${WE3_OIDC_ISSUER:?WE3_OIDC_ISSUER is required}
+      WE3_OIDC_JWKS_URI: ${WE3_OIDC_JWKS_URI:?WE3_OIDC_JWKS_URI is required}
+      WE3_OIDC_AUDIENCE: ${WE3_OIDC_AUDIENCE:-wilson-eval3ngine-api}
+      WE3_ARTIFACT_ROOT: /var/lib/we3/artifacts
+      WE3_SECRET_BACKEND: mounted
+      WE3_SECRET_MOUNT: /run/secrets
+      HTTP_PROXY: http://egress-proxy:3128
+      HTTPS_PROXY: http://egress-proxy:3128
+      NO_PROXY: localhost,127.0.0.1,postgres,redis
+      WE3_RATE_LIMIT_DEFAULT: ${WE3_RATE_LIMIT_DEFAULT:-1000}
+      WE3_MAX_BODY_SIZE: ${WE3_MAX_BODY_SIZE:-10485760}
+      WE3_LOG_LEVEL: ${WE3_LOG_LEVEL:-INFO}
+    secrets:
+      - source: database_url
+        target: DATABASE_URL
+        uid: "10001"
+        gid: "10001"
+        mode: 0400
+      - source: redis_url
+        target: REDIS_URL
+        uid: "10001"
+        gid: "10001"
+        mode: 0400
+      - source: encryption_key
+        target: ENCRYPTION_KEY
+        uid: "10001"
+        gid: "10001"
+        mode: 0400
+      - source: csrf_secret
+        target: CSRF_SECRET
+        uid: "10001"
+        gid: "10001"
+        mode: 0400
+    volumes:
+      - we3_artifacts:/var/lib/we3/artifacts:rw
+      - we3_logs:/var/log/we3:rw
+      - we3_backups:/var/lib/we3/backups:rw
+    expose: ["8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks: [ingress, data, observability, egress_internal]
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev
+      - /var/tmp:rw,noexec,nosuid,nodev
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    user: "10001:10001"
+    init: true
+    stop_grace_period: 60s
+
+  egress-proxy:
+    image: ${WE3_EGRESS_PROXY_IMAGE:?digest-pinned WE3_EGRESS_PROXY_IMAGE is required}
+    restart: unless-stopped
+    volumes:
+      - ${WE3_EGRESS_POLICY_FILE:?private egress policy file is required}:/etc/we3-egress/policy.conf:ro
+    expose: ["3128"]
+    networks: [egress_internal, egress_uplink]
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev
+      - /var/run:rw,noexec,nosuid,nodev
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+
+  caddy:
+    image: ${WE3_CADDY_IMAGE:?digest-pinned WE3_CADDY_IMAGE is required}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      WE3_DOMAIN: ${WE3_DOMAIN:?WE3_DOMAIN is required}
+      WE3_TLS_EMAIL: ${WE3_TLS_EMAIL:?WE3_TLS_EMAIL is required}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./infrastructure/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [public, ingress, observability]
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    cap_add: ["NET_BIND_SERVICE"]
+    init: true
+
+  prometheus:
+    image: ${WE3_PROMETHEUS_IMAGE:?digest-pinned WE3_PROMETHEUS_IMAGE is required}
+    restart: unless-stopped
+    volumes:
+      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infrastructure/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=90d
+      - --storage.tsdb.retention.size=10GB
+      - --log.level=info
+    expose: ["9090"]
+    networks: [observability]
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+
+  grafana:
+    image: ${WE3_GRAFANA_IMAGE:?digest-pinned WE3_GRAFANA_IMAGE is required}
+    restart: unless-stopped
+    depends_on: [prometheus]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/GRAFANA_PASSWORD
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_DOMAIN: ${WE3_DOMAIN:?WE3_DOMAIN is required}
+      GF_SERVER_ENFORCE_DOMAIN: "true"
+      GF_SERVER_ROOT_URL: https://grafana.${WE3_DOMAIN:?WE3_DOMAIN is required}
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_COOKIE_SAMESITE: strict
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    secrets:
+      - source: grafana_password
+        target: GRAFANA_PASSWORD
+        mode: 0400
+    volumes:
+      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    expose: ["3000"]
+    networks: [observability]
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+
+secrets:
+  postgres_password:
+    file: ${WE3_POSTGRES_PASSWORD_FILE:?private PostgreSQL password file is required}
+  postgres_tls_cert:
+    file: ${WE3_POSTGRES_TLS_CERT_FILE:?private PostgreSQL certificate file is required}
+  postgres_tls_key:
+    file: ${WE3_POSTGRES_TLS_KEY_FILE:?private PostgreSQL key file is required}
+  postgres_tls_ca:
+    file: ${WE3_POSTGRES_TLS_CA_FILE:?private PostgreSQL CA file is required}
+  redis_password:
+    file: ${WE3_REDIS_PASSWORD_FILE:?private Redis password file is required}
+  database_url:
+    file: ${WE3_DATABASE_URL_FILE:?private database URL file is required}
+  redis_url:
+    file: ${WE3_REDIS_URL_FILE:?private Redis URL file is required}
+  encryption_key:
+    file: ${WE3_ENCRYPTION_KEY_FILE:?private encryption key file is required}
+  csrf_secret:
+    file: ${WE3_CSRF_SECRET_FILE:?private CSRF secret file is required}
+  grafana_password:
+    file: ${WE3_GRAFANA_PASSWORD_FILE:?private Grafana password file is required}
+
+volumes:
+  postgres_data:
+  redis_data:
+  we3_artifacts:
+  we3_logs:
+  we3_backups:
+  caddy_data:
+  caddy_config:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  public:
+    driver: bridge
+  ingress:
+    driver: bridge
+    internal: true
+  data:
+    driver: bridge
+    internal: true
+  observability:
+    driver: bridge
+    internal: true
+  egress_internal:
+    driver: bridge
+    internal: true
+  egress_uplink:
+    driver: bridge
