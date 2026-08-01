@@ -1,7 +1,12 @@
-.PHONY: install test coverage validate demo critical verify schemas openapi api clean backup backup-create backup-list backup-verify backup-restore-plan
+.PHONY: install lint test coverage validate demo critical verify schemas openapi api clean backup backup-create backup-list backup-verify backup-restore-plan
 
 install:
 	python -m pip install -e ".[dev]"
+
+lint:
+	python -m compileall -q src tests scripts
+	node --check gui/static/enhanced.js
+	node --check gui/static/ux4.js
 
 test:
 	python -m pytest -q
