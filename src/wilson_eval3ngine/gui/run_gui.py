@@ -17,6 +17,7 @@ logger = logging.getLogger("we3.gui")
 
 
 _LOOPBACK_NAMES = {"localhost", "localhost.localdomain"}
+_LEGACY_WILDCARD_HOSTS = {"0.0.0.0", "::", "[::]"}
 
 
 def validate_bind_host(host: str) -> str:
@@ -50,6 +51,23 @@ def validate_bind_host(host: str) -> str:
     return address.compressed
 
 
+def resolve_launcher_host(host: str) -> tuple[str, bool]:
+    """Resolve CLI input while safely repairing historical wildcard defaults.
+
+    Earlier ``we3 gui`` and ``we3 gui-stay`` commands supplied ``0.0.0.0`` by
+    default. The hardened launcher correctly rejected that value, but the CLI
+    captured stderr and made the rejection look like a silent crash. Preserve
+    the loopback-only security boundary by translating only those historical
+    wildcard defaults to 127.0.0.1. Every other remote or ambiguous host still
+    fails closed through :func:`validate_bind_host`.
+    """
+
+    normalized = host.strip().lower().rstrip(".")
+    if normalized in _LEGACY_WILDCARD_HOSTS:
+        return "127.0.0.1", True
+    return validate_bind_host(host), False
+
+
 def main() -> int:
     import argparse
 
@@ -64,9 +82,16 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        bind_host = validate_bind_host(args.host)
+        bind_host, repaired_legacy_default = resolve_launcher_host(args.host)
     except ValueError as exc:
         parser.error(str(exc))
+
+    if repaired_legacy_default:
+        logger.warning(
+            "Legacy wildcard GUI host %s was requested; binding securely to http://127.0.0.1:%d instead.",
+            args.host,
+            args.port,
+        )
 
     install_ux_overlay(app, GUI_STATIC_DIR)
 
