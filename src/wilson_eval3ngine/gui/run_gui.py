@@ -10,6 +10,7 @@ import uvicorn
 
 from wilson_eval3ngine.gui.runtime import app
 from wilson_eval3ngine.gui.server import GUI_STATIC_DIR
+from wilson_eval3ngine.gui.ux_overlay import install_ux_overlay
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("we3.gui")
@@ -66,6 +67,8 @@ def main() -> int:
         bind_host = validate_bind_host(args.host)
     except ValueError as exc:
         parser.error(str(exc))
+
+    install_ux_overlay(app, GUI_STATIC_DIR)
 
     logger.info("Starting Wilson Eval3ngine GUI at http://%s:%d", bind_host, args.port)
     logger.info("Serving static files from: %s", GUI_STATIC_DIR)
