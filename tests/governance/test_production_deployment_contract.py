@@ -8,6 +8,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = ROOT / "docker-compose.prod.yml"
 DOCKERFILE = ROOT / "Dockerfile.prod"
+CADDYFILE = ROOT / "infrastructure" / "caddy" / "Caddyfile"
 
 
 def _compose() -> dict:
@@ -62,3 +63,23 @@ def test_production_image_builds_wheel_before_runtime_install() -> None:
     assert "python -m gunicorn" not in text
     assert "python\", \"-m\", \"uvicorn" in text
     assert "USER 10001:10001" in text
+
+
+def test_stock_caddy_contract_has_no_optional_plugin_directives() -> None:
+    text = CADDYFILE.read_text(encoding="utf-8")
+
+    assert "rate_limit" not in text
+    assert "admin off" in text
+    assert "protocols tls1.2 tls1.3" in text
+    assert "reverse_proxy api:8000" in text
+    assert "reverse_proxy prometheus:9090" in text
+    assert "reverse_proxy grafana:3000" in text
+
+
+def test_proxy_headers_are_site_scoped_and_metrics_are_restricted() -> None:
+    text = CADDYFILE.read_text(encoding="utf-8")
+
+    assert "(security_headers)" in text
+    assert 'Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"' in text
+    assert "@private_clients remote_ip" in text
+    assert 'respond "Forbidden" 403' in text
