@@ -64,3 +64,42 @@ Repository and backend contracts were inspected against the `dev-mid` branch. St
 - Manual CLI-provider registration should continue to use the provider-specific login or auto-detection path where required by backend URL validation.
 - The current PDF experience opens reports in a browser tab; an embedded reader can be reintroduced as a follow-up without changing report contracts.
 - Add Playwright coverage for tab persistence, model selection, prompt editing, job restoration, monotonic progress, run inspection, and report opening.
+
+## 2026-07-31 — Usability repair and evidence interaction pass
+
+### Operator feedback addressed
+
+The Endpoints page was retained. The Models, Generate Reports, Charts, and Reports pages were revised after direct operator use identified unclear flow, a `405 Method Not Allowed` generation failure, chart-management gaps, and insufficient in-page PDF readability.
+
+### Decisions and rationale
+
+1. **Model descriptions are two concise sentences.** The browser infers a general model family and likely use from the registered model ID and provider. The copy is explicitly framed as guidance rather than a performance or benchmark claim because the registry does not store an authoritative model-card description.
+2. **Model inventory flow is explicit.** A four-step strip explains endpoint connection, discovery or registration, capability review, and report selection. Cards now reserve space for description and lineage rather than presenting IDs as an undifferentiated list.
+3. **Model selection uses selectable cards.** Search, provider filtering, availability state, endpoint lineage, select-all-visible, and clear controls make the selected set easier to understand than compact chips.
+4. **Run summary is symmetrical and action-oriented.** It sits below the model and prompt work areas, shows the model × prompt equation, and disables Start generation until the request is valid.
+5. **Generation is version tolerant.** The browser first posts to the durable `/api/jobs` route. A `405` triggers the existing `generate_reports` WebSocket action so an older running GUI process remains usable while deployment catches up.
+6. **Chart inventory is read-only.** Refresh scans existing files and must never create sample or real charts as a side effect.
+7. **Chart generation is evidence-bound and idempotent.** Existing chart sets are reused. New generation requires a known telemetry run with real evaluation sidecar data; the operator GUI does not invoke the legacy synthetic-sample fallback.
+8. **Runs are visual groups.** Colored run frames expose labels, model and prompt context, metadata, minimize/expand controls, and whole-run chart deletion.
+9. **Charts are individually manageable.** Every chart has an individual delete control and opens in a movable, resizable window with fullscreen and metadata views. Escape closes the window and native controls remain keyboard focusable.
+10. **Reports are readable in place.** Each longer report card embeds its same-origin PDF and retains full-tab opening, run export, hashing metadata, and deletion.
+
+### Security and data integrity
+
+- Dynamic values continue to be escaped before insertion into markup.
+- PDF and chart resources are same-origin.
+- Chart deletion delegates to filename-validated backend routes.
+- Chart creation requires telemetry evidence and refuses intentionally deleted complete runs.
+- The generation compatibility fallback sends the same bounded model and prompt request used by the validated REST route.
+
+### Validation status
+
+- JavaScript syntax was checked with `node --check` during construction of the interaction bundle.
+- HTML parsing completed without parser errors and no duplicate element IDs were present in the constructed page.
+- CSS brace counts were balanced during construction.
+- Backend regression coverage now verifies POST job-route registration, unique chart routes, side-effect-free inventory, chart-set reuse, and refusal to generate without real evidence.
+- The connected repository workflow still does not run for pull requests targeting `dev-mid`; executable pytest and browser validation remain required before merge.
+
+### Remaining validation
+
+Run the GUI from the updated branch rather than an already-running legacy process, then exercise model filtering, both generation submission paths, job reconnect, chart drag/resize/fullscreen/delete/minimize, responsive layouts, keyboard order, embedded PDF rendering, and PDF fallback behavior across the supported browsers.
