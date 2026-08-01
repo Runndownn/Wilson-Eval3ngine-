@@ -1,7 +1,8 @@
 """Runtime composition for the hardened GUI application.
 
-This module keeps compatibility fixes outside the legacy monolith while the
-new application boundary is incrementally extracted and tested.
+This module keeps narrowly-scoped compatibility fixes outside the legacy
+monolith while the new application boundary is incrementally extracted and
+tested.
 """
 
 from __future__ import annotations
@@ -20,8 +21,8 @@ from .application import (
 
 # The current page uses a small number of inline layout declarations and
 # dynamic progress widths. Scripts remain same-origin only; inline JavaScript
-# is never enabled. This scoped style exception is temporary and documented in
-# the interface design log.
+# is never enabled. This scoped style exception can be removed once those
+# declarations are migrated into utility classes.
 _RESPONSE_SECURITY_HEADERS["Content-Security-Policy"] = (
     "default-src 'self'; "
     "script-src 'self'; "
@@ -36,14 +37,26 @@ _RESPONSE_SECURITY_HEADERS["Content-Security-Policy"] = (
     "form-action 'self'"
 )
 
+# Replace the initial chart-generation adapter from application.py. FastAPI
+# resolves routes in registration order, so leaving both handlers registered
+# would silently keep the older run_id/runId mismatch active.
+app.router.routes[:] = [
+    route
+    for route in app.router.routes
+    if not (
+        getattr(route, "path", None) == "/api/charts/generate"
+        and "POST" in (getattr(route, "methods", None) or set())
+    )
+]
 
-@app.post("/api/charts/regenerate", status_code=status.HTTP_202_ACCEPTED)
-async def regenerate_charts(payload: ChartGenerateRequest) -> dict[str, Any]:
+
+@app.post("/api/charts/generate", status_code=status.HTTP_202_ACCEPTED)
+async def generate_charts(payload: ChartGenerateRequest) -> dict[str, Any]:
     """Regenerate charts for one known telemetry run.
 
-    The legacy chart helper expects camelCase ``runId``. Keeping the adapter in
-    this runtime layer prevents the old implementation detail from leaking into
-    the validated public contract.
+    The legacy chart helper expects camelCase ``runId``. This adapter preserves
+    the validated public request model while translating that implementation
+    detail at the compatibility boundary.
     """
 
     run = next(
