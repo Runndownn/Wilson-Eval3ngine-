@@ -713,6 +713,12 @@ function renderCharts() {
   }
   const colors = ["cyan", "yellow", "violet", "green", "orange", ""];
   root.innerHTML = runs
+    .filter((run) => {
+      // Do not render empty frames — a run-window frame remains visible
+      // only while it contains one or more charts.
+      const charts = normalizeCharts(run);
+      return charts.length > 0;
+    })
     .map((run, index) => {
       const runId = run.runId;
       const charts = normalizeCharts(run);
@@ -766,8 +772,21 @@ function renderCharts() {
       try {
         await api(`/api/charts/runs/${encodeURIComponent(runId)}/${encodeURIComponent(name)}`, { method: "DELETE" });
         closeChart();
+
+        // After deletion, refresh the chart runs data. If the run no longer
+        // has any charts, the renderCharts() filter will automatically hide
+        // the empty run-window frame.
         await refreshCharts();
-        showToast(`${name} deleted. Refresh will not restore it.`);
+
+        // Check whether the run frame should be removed
+        const runFrame = root.querySelector(`[data-run-id="${escapeAttr(runId)}"]`);
+        if (runFrame) {
+          const remainingCards = runFrame.querySelectorAll(".chart-card").length;
+          if (remainingCards === 0) {
+            runFrame.remove();
+          }
+        }
+        showToast(`${name} deleted. The chart and its evidence are removed.`);
       } catch (error) {
         showToast(error.message, true);
       } finally {
@@ -1131,6 +1150,19 @@ function init() {
       const result = await api("/api/charts/demo", { method: "POST" });
       showToast(`Generated ${result.generated || 0} demonstration charts`);
       await refreshCharts();
+    } catch (error) {
+      showToast(error.message, true);
+    } finally {
+      setBusy(event.currentTarget, false);
+    }
+  });
+  $("delete-all-charts").addEventListener("click", async (event) => {
+    if (!confirm("Delete ALL chart images and frames? This cannot be undone.")) return;
+    setBusy(event.currentTarget, true, "Deleting all…");
+    try {
+      await api("/api/charts/runs/all", { method: "DELETE" });
+      $("chart-runs").innerHTML = '<div class="empty">All chart images and frames have been removed. Complete a report run or generate the explicit demonstration set.</div>';
+      showToast("All chart images and run-window frames have been deleted.");
     } catch (error) {
       showToast(error.message, true);
     } finally {

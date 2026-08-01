@@ -302,14 +302,15 @@
           <div>
             <span class="eyebrow">Workflow 4 of 5</span>
             <h2>Run analytics and chart evidence</h2>
-            <p>Every completed evidence run remains visible, including runs with deleted or missing charts. Generate only the run you intend to restore; refresh never resurrects deleted artifacts.</p>
+            <p>Each completed evidence run remains visible while it has chart images. Generate only the run you intend to restore; refresh never resurrects deleted artifacts. Empty run-window frames are automatically cleaned up.</p>
           </div>
-          <div class="hero-actions">
+           <div class="hero-actions">
             <button id="refresh-charts">Refresh inventory</button>
             <button id="generate-demo-charts" class="primary">Generate demo charts</button>
+            <button id="delete-all-charts" class="danger">Delete all charts</button>
           </div>
         </div>
-        <div id="chart-guidance" class="notice">Each run has its own Generate missing charts action. Demo charts are synthetic, clearly labelled, and generated only when you press the demo button.</div>
+        <div id="chart-guidance" class="notice">Each run has its own Delete charts action. Demo charts are synthetic, clearly labelled, and generated only when you press the demo button. Empty run-window frames are automatically removed when their last chart is deleted.</div>
         <div id="chart-runs" class="chart-run-list"><div class="empty">Loading chart runs…</div></div>
         <select id="chart-source-run" hidden aria-hidden="true"><option value="">Choose an evidence run</option></select>
         <button id="generate-charts" hidden type="button">Generate missing charts</button>
