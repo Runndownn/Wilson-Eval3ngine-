@@ -7,7 +7,7 @@ import logging
 
 import uvicorn
 
-from wilson_eval3ngine.gui.application import app
+from wilson_eval3ngine.gui.runtime import app
 from wilson_eval3ngine.gui.server import GUI_STATIC_DIR
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
