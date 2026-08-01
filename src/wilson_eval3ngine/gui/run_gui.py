@@ -8,12 +8,13 @@ import logging
 
 import uvicorn
 
-from wilson_eval3ngine.gui.access_control import (
-    GUIAccessSettings,
-    install_gui_access_control,
-)
+from wilson_eval3ngine.gui import server as legacy
+from wilson_eval3ngine.gui.access_control import GUIAccessSettings, install_gui_access_control
 from wilson_eval3ngine.gui.runtime import app
-from wilson_eval3ngine.gui.server import GUI_STATIC_DIR
+from wilson_eval3ngine.gui.secret_transport_factory import (
+    SecretTransportConfigurationError,
+    install_secret_transport,
+)
 from wilson_eval3ngine.gui.ux_overlay import install_ux_overlay
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -24,12 +25,7 @@ _LEGACY_WILDCARD_HOSTS = {"0.0.0.0", "::", "[::]"}
 
 
 def validate_bind_host(host: str) -> str:
-    """Return a canonical loopback bind host or reject remote exposure.
-
-    The listener remains loopback-only in both local and OIDC modes. Remote
-    users reach it through a separately configured TLS reverse proxy, while the
-    application independently validates the signed identity token.
-    """
+    """Return a canonical loopback bind host or reject remote exposure."""
     normalized = host.strip().lower().rstrip(".")
     if normalized in _LOOPBACK_NAMES:
         return normalized
@@ -73,7 +69,8 @@ def main() -> int:
         bind_host, repaired_legacy_default = resolve_launcher_host(args.host)
         access = GUIAccessSettings.from_env()
         access.validate()
-    except ValueError as exc:
+        transport = install_secret_transport(legacy)
+    except (ValueError, SecretTransportConfigurationError) as exc:
         parser.error(str(exc))
 
     if repaired_legacy_default:
@@ -84,17 +81,18 @@ def main() -> int:
             args.port,
         )
 
-    # Install security composition before Uvicorn begins accepting requests.
     install_gui_access_control(app, access)
-    install_ux_overlay(app, GUI_STATIC_DIR)
+    install_ux_overlay(app, legacy.GUI_STATIC_DIR)
 
     logger.info(
-        "Starting Wilson Eval3ngine GUI at http://%s:%d with access mode %s",
+        "Starting Wilson Eval3ngine GUI at http://%s:%d with access mode %s "
+        "and secret transport %s",
         bind_host,
         args.port,
         access.mode,
+        getattr(transport, "__name__", type(transport).__name__),
     )
-    logger.info("Serving static files from: %s", GUI_STATIC_DIR)
+    logger.info("Serving static files from: %s", legacy.GUI_STATIC_DIR)
 
     config = uvicorn.Config(
         app,
