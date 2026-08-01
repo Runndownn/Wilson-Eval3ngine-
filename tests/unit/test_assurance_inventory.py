@@ -32,10 +32,8 @@ def test_inventory_hash_changes_when_bytes_change(tmp_path: Path) -> None:
     target = tmp_path / "value.txt"
     target.write_text("one", encoding="utf-8")
     before = build_inventory(tmp_path)
-
     target.write_text("two", encoding="utf-8")
     after = build_inventory(tmp_path)
-
     assert before.bundle_sha256 != after.bundle_sha256
 
 
@@ -44,12 +42,11 @@ def test_verify_inventory_fails_closed_on_drift(tmp_path: Path) -> None:
     target.write_text("one", encoding="utf-8")
     expected = build_inventory(tmp_path).to_dict()
     target.write_text("changed", encoding="utf-8")
-
     with pytest.raises(RuntimeError, match="inventory drift"):
         verify_inventory(tmp_path, expected)
 
 
-def test_symlink_is_recorded_without_following(tmp_path: Path) -> None:
+def test_absolute_symlink_target_is_hashed_and_never_followed(tmp_path: Path) -> None:
     if not hasattr(os, "symlink"):
         pytest.skip("symlinks unavailable")
     outside = tmp_path.parent / "outside-inventory-test.txt"
@@ -64,5 +61,7 @@ def test_symlink_is_recorded_without_following(tmp_path: Path) -> None:
     entry = next(item for item in result.entries if item.path == "link")
 
     assert entry.kind == "symlink"
-    assert entry.link_target == str(outside)
+    assert entry.link_target is not None
+    assert entry.link_target.startswith("absolute-sha256:")
+    assert str(outside) not in json.dumps(result.to_dict())
     assert result.file_count == 0
