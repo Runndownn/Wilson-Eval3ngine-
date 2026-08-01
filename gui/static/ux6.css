@@ -1,0 +1,70 @@
+/* Deterministic wide-window report and evidence layout. */
+
+main {
+  width: 100%;
+  max-width: none !important;
+  margin: 0 !important;
+  padding-inline: clamp(16px, 2.25vw, 44px) !important;
+}
+
+.report-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  align-items: stretch;
+  gap: clamp(14px, 1.5vw, 24px) !important;
+}
+
+.report-card,
+.report-default-open {
+  grid-column: auto !important;
+  min-width: 0;
+  height: 100%;
+}
+
+.report-card {
+  display: grid !important;
+  grid-template-rows: auto auto minmax(460px, 1fr) auto auto;
+}
+
+.report-viewer,
+.pdf-preview,
+.report-default-open .report-viewer,
+.report-default-open .pdf-preview {
+  width: 100%;
+  min-height: clamp(460px, 58vh, 720px) !important;
+}
+
+.report-card h4,
+.report-meta,
+.report-card .actions {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.chart-window:not(.fullscreen) {
+  max-width: calc(100vw - 16px) !important;
+  max-height: calc(100vh - 16px) !important;
+}
+
+@media (max-width: 1023px) {
+  .report-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .report-card {
+    grid-template-rows: auto auto minmax(420px, 1fr) auto auto;
+  }
+}
+
+@media (max-width: 600px) {
+  main {
+    padding-inline: 12px !important;
+  }
+
+  .report-viewer,
+  .pdf-preview,
+  .report-default-open .report-viewer,
+  .report-default-open .pdf-preview {
+    min-height: 420px !important;
+  }
+}
