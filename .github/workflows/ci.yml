@@ -1,267 +1,222 @@
 name: CI
 
-# Deterministic CI Configuration - All inputs are pinned for reproducibility
-# Workflow version: we3.ci.v1
-# See: docs/operations/ci-immutable-workflows.md
-
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
   schedule:
-    # Weekly backup verification
-    - cron: '0 2 * * 0'
+    - cron: "0 2 * * 0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.13"
+  PIP_VERSION: "25.0.1"
 
 jobs:
-  # =========================================================================
-  # Deterministic Build Verification
-  # =========================================================================
-  build-verification:
+  quality-and-test:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - name: Checkout source
-        uses: actions/checkout@9fa26c6fa94ac1d24e1a3f4e5e6e7e8e9fa0b1c2  # v4.1.0 SHA
+      - name: Checkout exact source revision
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
         with:
-          # Pin to commit for reproducibility
           ref: ${{ github.sha }}
           fetch-depth: 0
-
-      - name: Set up Python (pinned)
-        uses: actions/setup-python@4c5af20f80bf399883343064b06dd86a8210e701  # v5.3.0 SHA
-        with:
-          python-version: "3.13"
-
-      - name: Record build inputs for provenance
-        id: inputs
-        run: |
-          echo "source_commit=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
-          echo "source_tree_hash=$(git rev-parse HEAD:)" >> $GITHUB_OUTPUT
-          echo "python_version=3.13" >> $GITHUB_OUTPUT
-          echo "pip_version=$(pip --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
-
-      - name: Install build tools (pinned versions)
-        run: |
-          pip install --upgrade pip==25.0.1
-          pip install build==1.2.1 twine==6.0.1
-
-      - name: Clean build environment
-        run: |
-          rm -rf build dist *.egg-info src/*.egg-info
-          find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-
-      - name: Build package with isolation
-        run: |
-          python -m build --no-isolation
-
-      - name: Verify artifact determinism
-        run: |
-          # Compute digest of built artifacts
-          ARTIFACT_HASH=$(sha256sum dist/*.whl | cut -d' ' -f1 | sort | sha256sum | cut -d' ' -f1)
-          echo "artifact_hash=$ARTIFACT_HASH" >> $GITHUB_OUTPUT
-          echo "Built artifact digest: $ARTIFACT_HASH"
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@af5b3f78998ca6e0b99a8a0693dd3f579b9e8977  # v4.6.0 SHA
-        with:
-          name: build-${{ github.sha }}
-          path: dist/*.whl
-          retention-days: 30
-
-  # =========================================================================
-  # Test Job (depends on verified build)
-  # =========================================================================
-  test:
-    runs-on: ubuntu-latest
-    needs: build-verification
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@9fa26c6fa94ac1d24e1a3f4e5e6e7e8e9fa0b1c2
-        with:
-          fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@4c5af20f80bf399883343064b06dd86a8210e701
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
-          python-version: "3.13"
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@68ca1dc6c2d04d6e6dcb8f7e23d697c6a5339c57  # v4.2.0 SHA
-        with:
-          name: build-${{ github.sha }}
-          path: dist/
-
-      - name: Install dependencies
+      - name: Install build and test dependencies
         run: |
-          python -m pip install --upgrade pip==25.0.1
-          pip install -e ".[dev]"
+          python -m pip install --upgrade "pip==${PIP_VERSION}"
+          python -m pip install -e ".[dev]"
+          python -m pip install "build==1.2.1" "twine==6.0.1"
 
-      - name: Lint check
-        run: make lint || true
+      - name: Lint
+        run: make lint
 
-      - name: Run tests
+      - name: Test
         run: make test
 
-      - name: Run coverage
+      - name: Coverage
         run: make coverage
 
-  # =========================================================================
-  # Supply Chain Security
-  # =========================================================================
-  supply-chain:
-    runs-on: ubuntu-latest
-    needs: test
-    permissions:
-      id-token: write  # For OIDC token exchange
-      contents: read
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@9fa26c6fa94ac1d24e1a3f4e5e6e7e8e9fa06e1a
+      - name: Build wheel and source distribution
+        run: |
+          rm -rf build dist *.egg-info src/*.egg-info
+          python -m build
+          python -m twine check dist/*
+
+      - name: Record reproducibility inputs
+        run: |
+          mkdir -p var
+          {
+            echo "source_commit=$(git rev-parse HEAD)"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "python_version=$(python --version 2>&1)"
+            echo "pip_version=$(python -m pip --version)"
+            sha256sum dist/*
+          } > var/build-inputs.txt
+
+      - name: Upload tested build artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
+          name: python-distributions-${{ github.sha }}
+          path: |
+            dist/*
+            var/build-inputs.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  supply-chain:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: quality-and-test
+    steps:
+      - name: Checkout exact source revision
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@4c5af20f80bf399883343064b06dd86a8210e701
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
-          python-version: "3.13"
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
 
-      - name: Install dependencies
-        run: pip install -e ".[dev]"
-
-      - name: Install Trivy for container scanning
+      - name: Install project security tooling
         run: |
-          wget -q https://github.com/aquasecurity/trivy/releases/download/v0.53.0/trivy_0.53.0_Linux-64bit.tar.gz -O - | tar zxv trivy
-          sudo mv trivy /usr/local/bin/
+          python -m pip install --upgrade "pip==${PIP_VERSION}"
+          python -m pip install -e ".[dev]"
 
-      - name: Run supply chain security scans
+      - name: Repository-native supply-chain scan
         run: python -m wilson_eval3ngine.supply_chain scan-ci --source . --output var/supply_chain_report.json
 
-      - name: SAST scan
-        run: python -m pytest tests/unit/test_supply_chain_core.py -v -k "sast"
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@c07df6fec6fa692e6fd1200d50aaa1fdd66f03c8
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: var/trivy-results.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
 
-      - name: Secret detection scan
-        run: python -m pytest tests/unit/test_supply_chain_core.py -v -k "secret"
+      - name: Security regression suites
+        run: |
+          python -m pytest tests/unit/test_supply_chain_core.py -v
+          python -m pytest tests/governance/adversarial/test_adversarial_security_matrix.py -v
 
-      - name: Dependency vulnerability scan
-        run: python -m pytest tests/unit/test_supply_chain_core.py -v -k "vulnerability"
-
-      - name: GitHub Actions workflow security scan
-        run: python -m pytest tests/governance/adversarial/test_adversarial_security_matrix.py -v -k "workflow"
-
-      - name: Upload supply chain report
-        uses: actions/upload-artifact@af5b3f78998ca6e0b99a8a0693dd3f579b9e8977
+      - name: Upload security evidence
         if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: supply-chain-report
-          path: var/supply_chain_report.json
+          name: security-evidence-${{ github.sha }}
+          path: |
+            var/supply_chain_report.json
+            var/trivy-results.sarif
+          if-no-files-found: warn
+          retention-days: 30
 
-  # =========================================================================
-  # Validation
-  # =========================================================================
-  validate:
+  validate-foundation:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
-    needs: [test, supply-chain]
+    timeout-minutes: 20
+    needs: [quality-and-test, supply-chain]
     steps:
-      - name: Checkout source
-        uses: actions/checkout@9fa26c6fa94ac1d24e1a3f4e5e6e7e8e9fa0b1c2
+      - name: Checkout exact source revision
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@4c5af20f80bf399883343064b06dd86a8210e701
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
-          python-version: "3.13"
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
 
-      - name: Install dependencies
-        run: pip install -e ".[dev]"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade "pip==${PIP_VERSION}"
+          python -m pip install -e ".[dev]"
 
-      - name: Validate foundation manifest
+      - name: Validate deterministic foundation lane
         run: |
           we3 validate examples/experiments/foundation.yaml
           we3 run examples/experiments/foundation.yaml --output var/foundation --database-url sqlite:///./var/we3.db --artifact-root var/artifacts
           we3 verify-dossier var/foundation/release_dossier.json
 
-  # =========================================================================
-  # Build and Sign
-  # =========================================================================
-  build-and-sign:
+  attest-build:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    needs: validate
-    if: github.ref == 'refs/heads/main'
+    timeout-minutes: 15
+    needs: validate-foundation
     permissions:
-      id-token: write  # For OIDC token exchange
       contents: read
-      packages: write
+      id-token: write
+      attestations: write
     steps:
-      - name: Checkout source
-        uses: actions/checkout@9fa26c6fa94ac1d24e1a3f4e5e6e7e8e9fa0b1c2
+      - name: Download tested distributions
+        uses: actions/download-artifact@484a0b528fb4d7bd804637ccb632e47a0e638317
         with:
-          fetch-depth: 0
+          name: python-distributions-${{ github.sha }}
+          path: release
 
-      - name: Set up Python
-        uses: actions/setup-python@4c5af20f80bf399883343064b06dd86a8210e701
+      - name: Generate signed build-provenance attestation
+        uses: actions/attest-build-provenance@e3fe62ef559997059fe8380e7d2b4c909e2d65f4
         with:
-          python-version: "3.13"
+          subject-path: release/dist/*
 
-      - name: Install build tools
-        run: pip install build==1.2.1 twine==6.0.1
-
-      - name: Build package
-        run: python -m build
-
-      - name: Generate SBOM
-        run: |
-          python -c "
-          from pathlib import Path
-          from wilson_eval3ngine.supply_chain import SupplyChainManager, get_supply_chain_manager
-          manager = get_supply_chain_manager()
-          lockfile = Path('pyproject.toml')
-          sbom = manager.generate_sbom_from_lockfile(lockfile, 'wilson-eval3ngine')
-          Path('var').mkdir(exist_ok=True)
-          Path('var/sbom.json').write_text(str(sbom.to_spdx_json()))
-          print(f'SBOM generated with {len(sbom.components)} components')
-          "
-
-      - name: Sign artifacts with OIDC identity
-        run: |
-          # Sign with GitHub OIDC token
-          echo "Artifacts signed with OIDC identity: ${{ github.actor }}"
-          echo "${{ github.sha }}" > var/artifact_digest.txt
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@af5b3f78998ca6e0b99a8a0693dd3f579b9e8977
+      - name: Upload attested release bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: build-artifacts
-          path: |
-            dist/
-            var/sbom.json
-            var/artifact_digest.txt
+          name: attested-python-distributions-${{ github.sha }}
+          path: release
+          if-no-files-found: error
+          retention-days: 90
 
-  # =========================================================================
-  # Backup Verification (Weekly)
-  # =========================================================================
   backup-verification:
-    runs-on: ubuntu-latest
-    needs: build-and-sign
     if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - name: Checkout source
-        uses: actions/checkout@9fa26c6fa94ac1d24e1a3f4e5e6e7e8e9fa0b1c2
+      - name: Checkout exact source revision
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@4c5af20f80bf399883343064b06dd86a8210e701
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
-          python-version: "3.13"
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
 
-      - name: Install dependencies
-        run: pip install -e ".[dev,postgres]"
-
-      - name: Run backup verification tests
+      - name: Install backup test dependencies
         run: |
-          # Test backup integrity and reconciliation
+          python -m pip install --upgrade "pip==${PIP_VERSION}"
+          python -m pip install -e ".[dev,postgres]"
+
+      - name: Verify backup integrity and restore behavior
+        run: |
           python -m pytest tests/unit/test_backup.py -v -k "integrity or reconciliation"
-
-      - name: Verify PITR capability
-        run: |
-          # Test PITR restore to isolated environment
           python -m pytest tests/integration/test_backup_restore.py -v

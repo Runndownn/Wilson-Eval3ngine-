@@ -8,9 +8,14 @@ tested.
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
+import os
+import socket
 from typing import Any
+from urllib.parse import urlparse
 
+import httpx
 from fastapi import HTTPException, status
 from fastapi.responses import JSONResponse
 
@@ -22,6 +27,140 @@ from .application import (
     _save_telemetry,
     app,
 )
+
+# ---------------------------------------------------------------------------
+# Provider egress boundary
+# ---------------------------------------------------------------------------
+
+_ALWAYS_BLOCKED_HOSTS = {
+    "metadata.google.internal",
+    "metadata.azure.internal",
+    "metadata.azure.net",
+    "metadata.amazonaws.com",
+    "metadata.cloud.yandex.net",
+    "metadata.internal",
+}
+_LOCAL_PROVIDER_ENV = "WE3_GUI_ALLOW_LOCAL_PROVIDERS"
+
+
+def _local_providers_enabled() -> bool:
+    return os.environ.get(_LOCAL_PROVIDER_ENV, "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
+def _is_forbidden_address(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Return whether an address is never a valid provider destination."""
+
+    return (
+        address.is_link_local
+        or address.is_multicast
+        or address.is_unspecified
+        or address.is_reserved
+    )
+
+
+def _resolve_destination(hostname: str, port: int) -> tuple[ipaddress.IPv4Address | ipaddress.IPv6Address, ...]:
+    """Resolve all connection candidates and fail closed on ambiguity."""
+
+    try:
+        records = socket.getaddrinfo(
+            hostname,
+            port,
+            family=socket.AF_UNSPEC,
+            type=socket.SOCK_STREAM,
+        )
+    except OSError as exc:
+        raise httpx.ConnectError("Provider hostname could not be resolved") from exc
+
+    addresses: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
+    for record in records:
+        try:
+            address = ipaddress.ip_address(record[4][0])
+        except ValueError as exc:
+            raise httpx.ConnectError("Provider hostname returned an invalid address") from exc
+        if address not in addresses:
+            addresses.append(address)
+
+    if not addresses:
+        raise httpx.ConnectError("Provider hostname resolved to no addresses")
+    return tuple(addresses)
+
+
+def _validate_outbound_url(value: str | httpx.URL) -> None:
+    """Revalidate a provider URL immediately before each HTTP dispatch.
+
+    Local/private destinations are denied by default and require the explicit
+    WE3_GUI_ALLOW_LOCAL_PROVIDERS=1 deployment decision. Link-local, metadata,
+    multicast, unspecified, and reserved ranges remain blocked even in local
+    mode. Every resolved address must satisfy the same policy.
+    """
+
+    parsed = urlparse(str(value))
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise httpx.UnsupportedProtocol("Provider URL must use HTTP or HTTPS")
+    if parsed.username or parsed.password:
+        raise httpx.InvalidURL("Embedded provider credentials are prohibited")
+
+    hostname = parsed.hostname.rstrip(".").lower()
+    if hostname in _ALWAYS_BLOCKED_HOSTS:
+        raise httpx.ConnectError("Cloud metadata destinations are prohibited")
+
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    addresses = _resolve_destination(hostname, port)
+    local_enabled = _local_providers_enabled()
+
+    for address in addresses:
+        if _is_forbidden_address(address):
+            raise httpx.ConnectError("Provider destination is in a prohibited address range")
+        if (address.is_private or address.is_loopback) and not local_enabled:
+            raise httpx.ConnectError(
+                f"Private provider destinations require {_LOCAL_PROVIDER_ENV}=1"
+            )
+
+
+class _PolicyAsyncClient(httpx.AsyncClient):
+    """HTTP client enforcing connection-time destination policy.
+
+    Redirect following is disabled so credentials are never automatically
+    replayed to a Location target. Callers must explicitly validate and issue a
+    subsequent request if redirect support is ever introduced.
+    """
+
+    async def request(self, method: str, url: str | httpx.URL, *args: Any, **kwargs: Any) -> httpx.Response:
+        await asyncio.to_thread(_validate_outbound_url, url)
+        kwargs["follow_redirects"] = False
+        return await super().request(method, url, *args, **kwargs)
+
+
+def _create_policy_http_client(
+    timeout: float | httpx.Timeout = legacy._DEFAULT_HTTP_TIMEOUT,
+) -> httpx.AsyncClient:
+    return _PolicyAsyncClient(
+        timeout=timeout,
+        verify=True,
+        http2=True,
+        limits=legacy._HTTP_LIMITS,
+        trust_env=False,
+        headers=legacy._SECURITY_HEADERS,
+        follow_redirects=False,
+    )
+
+
+# All legacy endpoint-discovery and test paths resolve this symbol at call time.
+legacy._create_secure_http_client = _create_policy_http_client
+
+
+# Secret values are never suitable log identifiers. Preserve the helper API
+# while ensuring every current and future caller receives a constant marker.
+def _fully_redact_api_key(_api_key: str, visible_chars: int = 0) -> str:
+    del visible_chars
+    return "[redacted]"
+
+
+legacy.mask_api_key = _fully_redact_api_key
 
 # The page uses dynamic progress widths and a movable/resizable chart window.
 # Scripts remain same-origin only; inline JavaScript execution is never enabled.
