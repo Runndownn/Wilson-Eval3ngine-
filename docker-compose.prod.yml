@@ -1,19 +1,22 @@
-version: "3.9"
-
-# Wilson Eval3ngine Production Deployment
-# Usage: docker compose -f docker-compose.prod.yml up -d
-# Requires: WE3_OIDC_ISSUER, WE3_OIDC_JWKS_URI, WE3_SIGNING_KEY_PATH
+# Wilson Eval3ngine production deployment
+#
+# Required environment:
+#   WE3_POSTGRES_PASSWORD, WE3_DATABASE_URL
+#   WE3_REDIS_PASSWORD, WE3_REDIS_URL
+#   WE3_GRAFANA_PASSWORD, WE3_OIDC_ISSUER, WE3_OIDC_JWKS_URI
+#   WE3_DOMAIN, WE3_TLS_EMAIL
+#
+# Only Caddy publishes host ports. API, database, cache, metrics, and dashboard
+# services remain reachable solely on purpose-specific internal networks.
 
 services:
-  # PostgreSQL database with WAL-G backup support
   postgres:
     image: postgres:16-alpine
-    container_name: we3-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: we3
       POSTGRES_USER: we3
-      POSTGRES_PASSWORD: ${WE3_POSTGRES_PASSWORD:-we3-dev-password}
+      POSTGRES_PASSWORD: ${WE3_POSTGRES_PASSWORD:?WE3_POSTGRES_PASSWORD is required}
       POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -24,66 +27,68 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - we3-net
+      - data
     security_opt:
       - no-new-privileges:true
     read_only: true
     tmpfs:
-      - /tmp
-    command: >
-      postgres
-      -c max_connections=200
-      -c shared_buffers=256MB
-      -c effective_cache_size=1GB
-      -c maintenance_work_mem=64MB
-      -c checkpoint_completion_target=0.9
-      -c wal_buffers=16MB
-      -c default_statistics_target=100
-      -c random_page_cost=1.1
-      -c effective_io_concurrency=200
-      -c work_mem=4MB
-      -c min_wal_size=2GB
-      -c max_wal_size=4GB
-      -c ssl=on
-      -c ssl_cert_file=/etc/ssl/certs/postgres.crt
-      -c ssl_key_file=/etc/ssl/private/postgres.key
+      - /tmp:rw,noexec,nosuid,nodev
+    command:
+      - postgres
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=1GB
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - checkpoint_completion_target=0.9
+      - -c
+      - wal_buffers=16MB
+      - -c
+      - default_statistics_target=100
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
+      - -c
+      - work_mem=4MB
+      - -c
+      - min_wal_size=2GB
+      - -c
+      - max_wal_size=4GB
+    stop_grace_period: 60s
 
-  # Redis for rate limiting and caching
   redis:
     image: redis:7-alpine
-    container_name: we3-redis
     restart: unless-stopped
-    command: >
-      redis-server
-      --maxmemory 256mb
-      --maxmemory-policy allkeys-lru
-      --save 900 1
-      --save 300 10
-      --save 60 10000
-      --appendonly yes
-      --appendfsync every-sec
-      --no-auth-warning
+    environment:
+      REDIS_PASSWORD: ${WE3_REDIS_PASSWORD:?WE3_REDIS_PASSWORD is required}
+    command:
+      - /bin/sh
+      - -ec
+      - exec redis-server --requirepass "$${REDIS_PASSWORD}" --maxmemory 256mb --maxmemory-policy allkeys-lru --save 900 1 --save 300 10 --save 60 10000 --appendonly yes --appendfsync everysec
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$${REDIS_PASSWORD}\" ping | grep -qx PONG"]
       interval: 10s
       timeout: 3s
       retries: 5
     networks:
-      - we3-net
+      - data
     security_opt:
       - no-new-privileges:true
     read_only: true
     tmpfs:
-      - /tmp
+      - /tmp:rw,noexec,nosuid,nodev
 
-  # Wilson Eval3ngine API
   api:
     build:
       context: .
       dockerfile: Dockerfile.prod
-    container_name: we3-api
     restart: unless-stopped
     depends_on:
       postgres:
@@ -91,12 +96,13 @@ services:
       redis:
         condition: service_healthy
     environment:
-      WE3_DATABASE_URL: postgresql+psycopg://we3:${WE3_POSTGRES_PASSWORD:-we3-dev-password}@postgres:5432/we3
+      WE3_DATABASE_URL: ${WE3_DATABASE_URL:?WE3_DATABASE_URL is required}
+      WE3_REDIS_URL: ${WE3_REDIS_URL:?WE3_REDIS_URL is required}
       WE3_ARTIFACT_ROOT: /var/lib/we3/artifacts
-      WE3_AUTH_MODE: ${WE3_AUTH_MODE:-oidc}
-      WE3_ENVIRONMENT: ${WE3_ENVIRONMENT:-production}
-      WE3_OIDC_ISSUER: ${WE3_OIDC_ISSUER}
-      WE3_OIDC_JWKS_URI: ${WE3_OIDC_JWKS_URI}
+      WE3_AUTH_MODE: oidc
+      WE3_ENVIRONMENT: production
+      WE3_OIDC_ISSUER: ${WE3_OIDC_ISSUER:?WE3_OIDC_ISSUER is required}
+      WE3_OIDC_JWKS_URI: ${WE3_OIDC_JWKS_URI:?WE3_OIDC_JWKS_URI is required}
       WE3_OIDC_AUDIENCE: ${WE3_OIDC_AUDIENCE:-wilson-eval3ngine-api}
       WE3_RATE_LIMIT_DEFAULT: ${WE3_RATE_LIMIT_DEFAULT:-1000}
       WE3_MAX_BODY_SIZE: ${WE3_MAX_BODY_SIZE:-10485760}
@@ -108,37 +114,42 @@ services:
       - we3_artifacts:/var/lib/we3/artifacts:rw
       - we3_logs:/var/log/we3:rw
       - we3_backups:/var/lib/we3/backups:rw
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready', timeout=5)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
     networks:
-      - we3-net
+      - data
+      - ingress
+      - observability
     security_opt:
       - no-new-privileges:true
     read_only: true
     tmpfs:
-      - /tmp
-      - /var/tmp
+      - /tmp:rw,noexec,nosuid,nodev
+      - /var/tmp:rw,noexec,nosuid,nodev
     user: "10001:10001"
+    init: true
+    stop_grace_period: 60s
     logging:
-      driver: "json-file"
+      driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
 
-  # Caddy reverse proxy with TLS
   caddy:
     image: caddy:2-alpine
-    container_name: we3-caddy
     restart: unless-stopped
     depends_on:
       api:
         condition: service_healthy
+    environment:
+      WE3_DOMAIN: ${WE3_DOMAIN:?WE3_DOMAIN is required}
+      WE3_TLS_EMAIL: ${WE3_TLS_EMAIL:?WE3_TLS_EMAIL is required}
     ports:
       - "80:80"
       - "443:443"
@@ -147,17 +158,17 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     networks:
-      - we3-net
+      - ingress
+      - observability
     security_opt:
       - no-new-privileges:true
     read_only: true
     tmpfs:
-      - /tmp
+      - /tmp:rw,noexec,nosuid,nodev
+    init: true
 
-  # Prometheus for metrics collection
   prometheus:
     image: prom/prometheus:v2.53.0
-    container_name: we3-prometheus
     restart: unless-stopped
     depends_on:
       - api
@@ -166,29 +177,23 @@ services:
       - ./infrastructure/prometheus/rules:/etc/prometheus/rules:ro
       - prometheus_data:/prometheus
     command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
-      - "--web.console.libraries=/etc/prometheus/console_libraries"
-      - "--web.console.templates=/etc/prometheus/consoles"
-      - "--web.enable-lifecycle"
-      - "--web.enable-admin-api"
-      - "--storage.tsdb.retention.time=90d"
-      - "--storage.tsdb.retention.size=10GB"
-      - "--log.level=info"
-    ports:
-      - "9090:9090"
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=90d
+      - --storage.tsdb.retention.size=10GB
+      - --log.level=info
+    expose:
+      - "9090"
     networks:
-      - we3-net
+      - observability
     security_opt:
       - no-new-privileges:true
     read_only: true
     tmpfs:
-      - /tmp
+      - /tmp:rw,noexec,nosuid,nodev
 
-  # Grafana for dashboards
   grafana:
     image: grafana/grafana-enterprise:11.1.0
-    container_name: we3-grafana
     restart: unless-stopped
     depends_on:
       - prometheus
@@ -196,20 +201,25 @@ services:
       - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana_data:/var/lib/grafana
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${WE3_GRAFANA_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${WE3_GRAFANA_PASSWORD:?WE3_GRAFANA_PASSWORD is required}
       GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_SERVER_DOMAIN: ${WE3_DOMAIN:-localhost}
+      GF_SERVER_DOMAIN: ${WE3_DOMAIN:?WE3_DOMAIN is required}
       GF_SERVER_ENFORCE_DOMAIN: "true"
-      GF_SERVER_ROOT_URL: "https://${WE3_DOMAIN:-localhost}"
-    ports:
-      - "3000:3000"
+      GF_SERVER_ROOT_URL: https://grafana.${WE3_DOMAIN:?WE3_DOMAIN is required}
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_COOKIE_SAMESITE: strict
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    expose:
+      - "3000"
     networks:
-      - we3-net
+      - observability
     security_opt:
       - no-new-privileges:true
     read_only: true
     tmpfs:
-      - /tmp
+      - /tmp:rw,noexec,nosuid,nodev
 
 volumes:
   postgres_data:
@@ -223,8 +233,11 @@ volumes:
   grafana_data:
 
 networks:
-  we3-net:
+  ingress:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/24
+  data:
+    driver: bridge
+    internal: true
+  observability:
+    driver: bridge
+    internal: true

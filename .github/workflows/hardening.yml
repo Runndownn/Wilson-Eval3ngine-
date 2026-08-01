@@ -1,0 +1,265 @@
+name: Hardening validation
+
+on:
+  push:
+    branches:
+      - "security/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hardening-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.13"
+  PIP_VERSION: "25.0.1"
+
+jobs:
+  focused-security-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact source revision
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install project and test dependencies
+        run: |
+          python -m pip install --upgrade "pip==${PIP_VERSION}"
+          python -m pip install -e ".[dev]"
+
+      - name: Compile changed Python modules
+        run: |
+          python -m py_compile \
+            src/wilson_eval3ngine/api/body_limit.py \
+            src/wilson_eval3ngine/api/secure_entrypoint.py \
+            src/wilson_eval3ngine/assurance/inventory.py \
+            src/wilson_eval3ngine/assurance/image_references.py \
+            src/wilson_eval3ngine/assurance/runtime_evidence.py \
+            src/wilson_eval3ngine/security/log_redaction.py \
+            src/wilson_eval3ngine/security/secrets_backend.py \
+            src/wilson_eval3ngine/gui/access_control.py \
+            src/wilson_eval3ngine/gui/run_gui.py \
+            src/wilson_eval3ngine/gui/secret_transport.py \
+            src/wilson_eval3ngine/gui/secret_transport_factory.py \
+            src/wilson_eval3ngine/gui/ux_overlay.py
+
+      - name: Run focused security contracts
+        run: |
+          python -m pytest -q \
+            tests/governance/test_production_deployment_contract.py \
+            tests/unit/test_assurance_inventory.py \
+            tests/unit/test_image_references.py \
+            tests/unit/test_runtime_evidence.py \
+            tests/unit/test_log_redaction.py \
+            tests/unit/test_secrets_backend.py \
+            tests/unit/test_gui_access_control.py \
+            tests/unit/test_secret_transport_factory.py \
+            tests/unit/test_gui_secret_transport.py \
+            tests/unit/test_gui_ux6.py \
+            tests/unit/test_streaming_body_limit.py \
+            tests/unit/test_gui_bind_security.py \
+            tests/unit/test_gui_egress_policy.py \
+            tests/governance/test_ci_security_contract.py
+
+      - name: Generate privacy-safe byte inventory
+        run: |
+          mkdir -p artifacts/assurance
+          python scripts/assurance/inventory_repository.py . \
+            --output artifacts/assurance/repository-inventory.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("artifacts/assurance/repository-inventory.json").read_text())
+          assert payload["errors"] == []
+          assert payload["file_count"] > 0
+          assert len(payload["bundle_sha256"]) == 64
+          serialized = json.dumps(payload)
+          assert "/home/runner/" not in serialized
+          assert "C:\\" not in serialized
+          PY
+
+      - name: Upload sanitized assurance evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: hardening-assurance-${{ github.sha }}
+          path: artifacts/assurance/repository-inventory.json
+          if-no-files-found: error
+          retention-days: 30
+
+  full-quality-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout exact source revision
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install complete quality toolchain
+        run: |
+          python -m pip install --upgrade "pip==${PIP_VERSION}"
+          python -m pip install -e ".[dev,security,postgres,redis,backup]"
+          python -m pip install "build==1.2.1" "twine==6.0.1"
+
+      - name: Lint
+        run: make lint
+
+      - name: Full test suite
+        run: python -m pytest -q -m "not browser and not runtime"
+
+      - name: Branch coverage gate
+        run: |
+          python -m coverage erase
+          python -m coverage run -m pytest -q -m "not browser and not runtime"
+          python -m coverage xml -o artifacts/coverage.xml
+          python -m coverage report
+
+      - name: Build and inspect distributions
+        run: |
+          rm -rf build dist *.egg-info src/*.egg-info
+          python -m build
+          python -m twine check dist/*
+          python -m zipfile -l dist/*.whl > artifacts/wheel-contents.txt
+          sha256sum dist/* > artifacts/distribution-sha256.txt
+
+      - name: Upload build evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: hardening-build-${{ github.sha }}
+          path: |
+            artifacts/coverage.xml
+            artifacts/wheel-contents.txt
+            artifacts/distribution-sha256.txt
+            dist/*
+          if-no-files-found: warn
+          retention-days: 30
+
+  hermetic-browser-assurance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact source revision
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install browser assurance toolchain
+        run: |
+          python -m pip install --upgrade "pip==${PIP_VERSION}"
+          python -m pip install -e ".[dev,browser]"
+          python -m playwright install --with-deps chromium
+
+      - name: Run viewport, zoom, keyboard, and containment contracts
+        run: python -m pytest -q -m browser tests/browser
+
+  secure-compose-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact source revision
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade "pip==${PIP_VERSION}"
+          python -m pip install -e ".[dev]"
+
+      - name: Create synthetic private inputs
+        run: |
+          mkdir -p "$RUNNER_TEMP/we3-private"
+          for name in postgres-password postgres-cert postgres-key postgres-ca redis-password database-url redis-url encryption-key csrf-secret grafana-password egress-policy; do
+            printf 'synthetic-test-material\n' > "$RUNNER_TEMP/we3-private/$name"
+            chmod 600 "$RUNNER_TEMP/we3-private/$name"
+          done
+
+      - name: Validate immutable images and secure topology
+        run: |
+          export WE3_POSTGRES_IMAGE="example.invalid/postgres@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          export WE3_REDIS_IMAGE="example.invalid/redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          export WE3_API_IMAGE="example.invalid/we3@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          export WE3_EGRESS_PROXY_IMAGE="example.invalid/egress@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          export WE3_CADDY_IMAGE="example.invalid/caddy@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          export WE3_PROMETHEUS_IMAGE="example.invalid/prometheus@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+          export WE3_GRAFANA_IMAGE="example.invalid/grafana@sha256:abababababababababababababababababababababababababababababababab"
+          export WE3_POSTGRES_PASSWORD_FILE="$RUNNER_TEMP/we3-private/postgres-password"
+          export WE3_POSTGRES_TLS_CERT_FILE="$RUNNER_TEMP/we3-private/postgres-cert"
+          export WE3_POSTGRES_TLS_KEY_FILE="$RUNNER_TEMP/we3-private/postgres-key"
+          export WE3_POSTGRES_TLS_CA_FILE="$RUNNER_TEMP/we3-private/postgres-ca"
+          export WE3_REDIS_PASSWORD_FILE="$RUNNER_TEMP/we3-private/redis-password"
+          export WE3_DATABASE_URL_FILE="$RUNNER_TEMP/we3-private/database-url"
+          export WE3_REDIS_URL_FILE="$RUNNER_TEMP/we3-private/redis-url"
+          export WE3_ENCRYPTION_KEY_FILE="$RUNNER_TEMP/we3-private/encryption-key"
+          export WE3_CSRF_SECRET_FILE="$RUNNER_TEMP/we3-private/csrf-secret"
+          export WE3_GRAFANA_PASSWORD_FILE="$RUNNER_TEMP/we3-private/grafana-password"
+          export WE3_EGRESS_POLICY_FILE="$RUNNER_TEMP/we3-private/egress-policy"
+          export WE3_OIDC_ISSUER="https://issuer.invalid"
+          export WE3_OIDC_JWKS_URI="https://issuer.invalid/jwks"
+          export WE3_DOMAIN="example.invalid"
+          export WE3_TLS_EMAIL="security@example.invalid"
+
+          mkdir -p artifacts/assurance
+          docker compose -f docker-compose.secure.yml config \
+            > artifacts/assurance/secure-compose.resolved.yml
+          docker compose -f docker-compose.secure.yml config --images \
+            | python scripts/assurance/validate_image_references.py \
+            > artifacts/assurance/secure-images.txt
+
+          python - <<'PY'
+          import yaml
+          from pathlib import Path
+          config = yaml.safe_load(Path("artifacts/assurance/secure-compose.resolved.yml").read_text())
+          services = config["services"]
+          assert set(services["caddy"]["ports"]) == {"80:80", "443:443"}
+          for name in {"api", "postgres", "redis", "prometheus", "grafana", "egress-proxy"}:
+              assert "ports" not in services[name]
+          networks = config["networks"]
+          for name in {"ingress", "data", "observability", "egress_internal"}:
+              assert networks[name]["internal"] is True
+          assert "public" not in services["api"]["networks"]
+          assert "egress_uplink" not in services["api"]["networks"]
+          PY
+
+      - name: Delete synthetic private inputs
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/we3-private"

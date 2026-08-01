@@ -26,6 +26,7 @@ def _route_count(path: str, method: str) -> int:
 
 def test_runtime_registers_one_chart_generation_route() -> None:
     assert _route_count("/api/charts/generate", "POST") == 1
+    assert _route_count("/api/charts/demo", "POST") == 1
 
 
 def test_job_creation_route_accepts_post() -> None:
@@ -187,9 +188,18 @@ def test_existing_chart_inventory_has_no_generation_side_effect(
     assert runtime._existing_chart_runs() == []
 
 
-def test_chart_generation_reuses_existing_artifacts(
+def test_chart_generation_reuses_complete_existing_artifacts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    run = {
+        "runId": "run-1",
+        "models": ["model-a"],
+        "prompts": ["prompt"],
+        "deletedCharts": [],
+    }
+    monkeypatch.setattr(runtime, "_load_telemetry", lambda: [run])
+    monkeypatch.setattr(runtime, "_run_has_evaluation_data", lambda _run: True)
+    monkeypatch.setattr(runtime, "_expected_chart_names", lambda: {"radar"})
     monkeypatch.setattr(
         runtime,
         "_existing_chart_runs",
@@ -208,7 +218,7 @@ def test_chart_generation_reuses_existing_artifacts(
     monkeypatch.setattr(
         runtime.legacy,
         "_generate_charts_for_run_sync",
-        lambda *_args, **_kwargs: pytest.fail("existing charts must be reused"),
+        lambda *_args, **_kwargs: pytest.fail("complete chart sets must be reused"),
     )
 
     result = asyncio.run(
@@ -220,6 +230,121 @@ def test_chart_generation_reuses_existing_artifacts(
     assert result["reused"] is True
     assert result["generated"] == 0
     assert result["charts"]["radar"].endswith("/radar.png")
+
+
+def test_explicit_generation_restores_deleted_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    telemetry = [
+        {
+            "runId": "run-deleted",
+            "models": ["model-a"],
+            "prompts": ["prompt"],
+            "deletedCharts": ["__all__"],
+        }
+    ]
+    writes: list[list[dict[str, object]]] = []
+    monkeypatch.setattr(runtime, "_load_telemetry", lambda: telemetry)
+    monkeypatch.setattr(runtime, "_save_telemetry", lambda value: writes.append(value))
+    monkeypatch.setattr(runtime, "_run_has_evaluation_data", lambda _run: True)
+    monkeypatch.setattr(runtime, "_existing_chart_runs", lambda: [])
+    monkeypatch.setattr(
+        runtime.legacy,
+        "_generate_charts_for_run_sync",
+        lambda run_id, _models, _prompts: {
+            "radar": f"/static/charts/{run_id}/radar.png"
+        },
+    )
+
+    result = asyncio.run(
+        runtime.generate_charts(
+            ChartGenerateRequest.model_validate({"runId": "run-deleted"})
+        )
+    )
+
+    assert result["reused"] is False
+    assert result["generated"] == 1
+    assert telemetry[0]["deletedCharts"] == []
+    assert telemetry[0]["chartUrls"]["radar"].endswith("/radar.png")
+    assert writes
+
+
+def test_partial_chart_set_is_regenerated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    telemetry = [
+        {
+            "runId": "run-partial",
+            "models": ["model-a"],
+            "prompts": ["prompt"],
+            "deletedCharts": ["heatmap"],
+        }
+    ]
+    monkeypatch.setattr(runtime, "_load_telemetry", lambda: telemetry)
+    monkeypatch.setattr(runtime, "_save_telemetry", lambda _value: None)
+    monkeypatch.setattr(runtime, "_run_has_evaluation_data", lambda _run: True)
+    monkeypatch.setattr(runtime, "_expected_chart_names", lambda: {"radar", "heatmap"})
+    monkeypatch.setattr(
+        runtime,
+        "_existing_chart_runs",
+        lambda: [
+            {
+                "runId": "run-partial",
+                "charts": [
+                    {
+                        "name": "radar",
+                        "url": "/static/charts/run-partial/radar.png",
+                    }
+                ],
+            }
+        ],
+    )
+    called: list[str] = []
+    monkeypatch.setattr(
+        runtime.legacy,
+        "_generate_charts_for_run_sync",
+        lambda run_id, _models, _prompts: called.append(run_id)
+        or {
+            "radar": f"/static/charts/{run_id}/radar.png",
+            "heatmap": f"/static/charts/{run_id}/heatmap.png",
+        },
+    )
+
+    result = asyncio.run(
+        runtime.generate_charts(
+            ChartGenerateRequest.model_validate({"runId": "run-partial"})
+        )
+    )
+
+    assert called == ["run-partial"]
+    assert result["generated"] == 2
+    assert telemetry[0]["deletedCharts"] == []
+
+
+def test_demo_generation_is_explicit_and_labelled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, str]] = []
+    monkeypatch.setattr(
+        runtime.legacy,
+        "_generate_charts_impl",
+        lambda payload: calls.append(payload)
+        or {
+            "runId": "sample-charts",
+            "charts": {
+                "radar": "/static/charts/sample-charts/radar.png",
+                "heatmap": "/static/charts/sample-charts/heatmap.png",
+            },
+            "isSample": True,
+        },
+    )
+
+    result = asyncio.run(runtime.generate_demo_charts())
+
+    assert calls == [{"runId": "sample-charts"}]
+    assert result["runId"] == "sample-charts"
+    assert result["isSample"] is True
+    assert result["generated"] == 2
 
 
 def test_chart_generation_rejects_runs_without_real_evidence(
