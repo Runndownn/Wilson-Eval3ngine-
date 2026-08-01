@@ -1,114 +1,78 @@
-# Wilson Eval3ngine - Production Dockerfile
-# Multi-stage build with security hardening
+# Wilson Eval3ngine production image
+#
+# The builder produces a wheel from the complete source tree. The runtime stage
+# installs only that wheel and the explicitly selected production extras, so
+# the image never relies on an editable checkout or an undeclared process
+# manager.
 
-# ============================================================================
-# Build Stage
-# ============================================================================
 FROM python:3.13-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_ONLY_BINARY=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /build
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    g++ \
-    make \
-    && rm -rf /var/lib/apt/lists/*
+COPY pyproject.toml README.md LICENSE ./
+COPY src ./src
 
-# Copy project files for dependency resolution
-COPY pyproject.toml ./
+RUN python -m pip install \
+        "build==1.2.1" \
+        "setuptools>=75,<76" \
+        "wheel==0.47.0" \
+    && python -m build --wheel --no-isolation \
+    && python -m pip wheel \
+        --wheel-dir /build/runtime-wheels \
+        /build/dist/*.whl \
+        "psycopg[binary]>=3.2,<4" \
+        "boto3>=1.35,<2"
 
-# Install dependencies to a separate layer
-RUN python -m pip install --user ".[postgres,backup]"
 
-# ============================================================================
-# Runtime Stage
-# ============================================================================
 FROM python:3.13-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONHASHSEED=random \
-    PYTHONPATH=/app/src \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
     HOME=/home/we3 \
     WE3_ENVIRONMENT=production \
-    WE3_AUTH_MODE=oidc
+    WE3_AUTH_MODE=oidc \
+    WE3_ARTIFACT_ROOT=/var/lib/we3/artifacts
 
-# Create non-root user
-RUN groupadd --system we3 && \
-    useradd --system \
-    --gid we3 \
-    --uid 10001 \
-    --home-dir /home/we3 \
-    --shell /usr/sbin/nologin \
-    we3
-
-# Install only runtime dependencies (no build tools)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 \
-    ca-certificates \
+RUN groupadd --system --gid 10001 we3 \
+    && useradd --system \
+        --gid we3 \
+        --uid 10001 \
+        --home-dir /home/we3 \
+        --create-home \
+        --shell /usr/sbin/nologin \
+        we3 \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates libpq5 \
     && rm -rf /var/lib/apt/lists/* \
     && update-ca-certificates
 
-# Copy Python packages from builder
-COPY --from=builder /root/.local /home/we3/.local
-
-# Make sure root and we3 can use the packages
-ENV PATH=/home/we3/.local/bin:$PATH
+COPY --from=builder /build/runtime-wheels /tmp/wheels
+RUN python -m pip install --no-index --find-links=/tmp/wheels /tmp/wheels/wilson_eval3ngine-*.whl \
+    && rm -rf /tmp/wheels
 
 WORKDIR /app
-
-# Copy application source
-COPY --chown=we3:we3 src /app/src
-COPY --chown=we3:we3 pyproject.toml README.md LICENSE /app/
-
-# Copy contracts and examples (read-only)
 COPY --chown=we3:we3 contracts /app/contracts
 COPY --chown=we3:we3 examples /app/examples
 
-# Create directories for runtime data
-RUN mkdir -p /var/lib/we3/artifacts \
-    /var/lib/we3/backups \
-    /var/log/we3 \
-    /app/var \
-    && chown -R we3:we3 /var/lib/we3 /var/log/we3 /app/var
+RUN install -d -o we3 -g we3 -m 0750 \
+        /var/lib/we3/artifacts \
+        /var/lib/we3/backups \
+        /var/log/we3 \
+        /app/var
 
-# Switch to non-root user
-USER 10001
-
-# Health check - checks readiness endpoint
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD python -c "import urllib.request,sys; \
-    try: \
-        r=urllib.request.urlopen('http://127.0.0.1:8000/ready',timeout=5); \
-        sys.exit(0 if r.status==200 else 1); \
-    except: sys.exit(1)"
+USER 10001:10001
 
 EXPOSE 8000
 
-# Run with security hardening flags
-# --workers: number of worker processes (adjust based on CPU cores)
-# --timeout: graceful shutdown timeout
-# --graceful-timeout: force kill after this time during shutdown
-# --limit-request-line: prevent overly long request lines
-# --limit-request-fields: prevent header injection attacks
-CMD ["sh", "-c", "python -m gunicorn \
-    --bind 0.0.0.0:8000 \
-    --workers 4 \
-    --worker-class uvicorn.workers.UvicornWorker \
-    --timeout 120 \
-    --graceful-timeout 60 \
-    --limit-request-line 8190 \
-    --limit-request-fields 100 \
-    --limit-request-field-size 16384 \
-    --access-logfile - \
-    --error-logfile - \
-    --log-level info \
-    --preload \
-    wilson_eval3ngine.api.main:app"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD ["python", "-c", "import sys,urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=5); sys.exit(0 if r.status == 200 else 1)"]
+
+CMD ["python", "-m", "uvicorn", "wilson_eval3ngine.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--no-server-header", "--timeout-keep-alive", "10", "--limit-max-requests", "10000"]
