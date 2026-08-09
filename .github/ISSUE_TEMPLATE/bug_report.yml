@@ -1,0 +1,99 @@
+---
+name: "🐛 Bug report"
+description: "Report a defect or unexpected behavior"
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report. Before submitting,
+        please check the [existing issues](https://github.com/Runndownn/Wilson-Eval3ngine-/issues)
+        and the [Known constraints](README.md#known-constraints) section of the
+        README — your problem may already be documented.
+  - type: textarea
+    id: description
+    attributes:
+      label: "Description"
+      description: "A clear and concise description of what the bug is."
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: "Affected component"
+      description: "The area of the codebase the bug is in."
+      options:
+        - "Grading pipeline"
+        - "Metrics and statistics"
+        - "Release gates"
+        - "Provider adapters"
+        - "API / auth"
+        - "GUI"
+        - "Evidence store"
+        - "Persistence / migrations"
+        - "Supply chain / security"
+        - "Documentation"
+        - "Other (specify in description)"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: "Steps to reproduce"
+      description: |
+        Provide the exact commands, experiment manifest, or test case that
+        triggers the bug. Use a minimal reproducible example.
+        ```bash
+        # e.g.:
+        we3 validate examples/experiments/foundation.yaml
+        ```
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: "Expected behavior"
+      description: "What you expected to happen."
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: "Actual behavior"
+      description: "What actually happened, including any error output."
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: "Evidence (hashes, outputs, screenshots)"
+      description: |
+        Include relevant output, dossier hashes, or sanitized evidence.
+        Do NOT paste credentials, API keys, or raw prompt content.
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: "Version / commit"
+      description: "WE3 version or git commit SHA where the bug was observed."
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: "Checks"
+      options:
+        - label: "I have searched the existing issues and this is not a duplicate."
+          required: true
+        - label: "I have read CONTRIBUTING.md and know this is not a support request."
+          required: true
+  - type: textarea
+    id: additional
+    attributes:
+      label: "Additional context"
+      description: "Add any other context, environment details, or screenshots here."
+      render: "text"
+    validations:
+      required: false
+---

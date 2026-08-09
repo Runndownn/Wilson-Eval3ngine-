@@ -31,6 +31,9 @@ WE3 is designed around one central rule: a release decision is only as trustwort
 13. [Agentic Engineering Origin](#agentic-engineering-origin)
 14. [Known constraints](#known-constraints)
 15. [Further reading](#further-reading)
+16. [Contributing](#contributing)
+17. [Responsible operation](#responsible-operation)
+18. [License](#license)
 
 ---
 
@@ -693,6 +696,12 @@ A documented command is not a passed command. Record the environment, tool versi
 | `infrastructure/` | PostgreSQL, Caddy, Prometheus, Grafana, and deployment configuration |
 | `scripts/assurance/` | Inventory, image, and runtime-evidence tools |
 | `.github/workflows/` | CI, hardening, supply-chain, and evidence workflows |
+| `.github/dependabot.yml` | Automated dependency updates for Actions, Python, Docker, and Terraform |
+| `.github/PULL_REQUEST_TEMPLATE.md` | PR checklist covering security, testing, and documentation |
+| `.github/ISSUE_TEMPLATE/` | Structured bug report and feature request templates |
+| `CONTRIBUTING.md` | Contributor guide: setup, branching, testing, PR process |
+| `CODE_OF_CONDUCT.md` | Contributor Covenant v2.1 community norms |
+| `CHANGELOG.md` | Tracked changes following Keep a Changelog format |
 
 ---
 
@@ -750,6 +759,29 @@ This lineage is preserved because it explains both the origin and the governing 
 - [Secure Dockerfile](Dockerfile.secure)
 - [Production Compose](docker-compose.prod.yml)
 - [Secure Compose](docker-compose.secure.yml)
+- [Contributing Guide](CONTRIBUTING.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Changelog](CHANGELOG.md)
+
+---
+
+## Contributing
+
+Contributions are welcome. Please read the [Contributing Guide](CONTRIBUTING.md)
+and review the [Code of Conduct](CODE_OF_CONDUCT.md) before opening a pull
+request. A summary of key steps:
+
+1. Fork the repository and create a branch from `main`.
+2. Install the project with dev dependencies: `pip install -e ".[dev,postgres,redis]"`.
+3. Write tests — all new features and security-relevant changes require test
+   coverage (see [CONTRIBUTING.md](CONTRIBUTING.md#testing) for details).
+4. Run `make test` and `make coverage` locally.
+5. Run the supply-chain scan: `we3 scan-ci --source .`.
+6. Open a pull request using the [PR template](.github/PULL_REQUEST_TEMPLATE.md).
+7. CI must pass, including the full quality and security suites.
+
+The project maintains a [CHANGELOG.md](CHANGELOG.md) — please update it under
+the appropriate section if your change is user-facing.
 
 ---
 

@@ -87,7 +87,8 @@ gui/data/prompt_packages.json
 gui/data/progress-job-*.jsonl
 gui/static/charts/
 
-# Master encryption key for API key vault (should never be committed)
+# Archived secrets and credentials (never commit)
+.archive/unused_files/secrets/
 .we3/secret_key
 /var/lib/we3/secret_key
 .we3/audit.log

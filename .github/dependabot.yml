@@ -1,0 +1,54 @@
+version: 2
+updates:
+  # GitHub Actions dependencies
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    pr-branch-name:
+      prefix: "deps"
+
+  # Python dependencies (via pip)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "Runndownn"
+    commit-message:
+      prefix: "chore(deps)"
+    ignore:
+      # Python major versions require careful review; handle manually
+      - dependency-name: "python"
+        versions: ["4.x"]
+
+  # Docker base image updates
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    # Only notify; don't auto-merge base image bumps — security review required
+    labels:
+      - "dependencies"
+      - "security-review"
+
+  # Terraform module updates
+  - package-ecosystem: "terraform"
+    directory: "/infrastructure/terraform"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
+      - "infrastructure"
