@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+import os
 
 import uvicorn
 
@@ -22,32 +23,52 @@ logger = logging.getLogger("we3.gui")
 
 _LOOPBACK_NAMES = {"localhost", "localhost.localdomain"}
 _LEGACY_WILDCARD_HOSTS = {"0.0.0.0", "::", "[::]"}
+_REMOTE_BIND_ENV = "WE3_GUI_ALLOW_REMOTE_BIND"
+
+
+def _remote_bind_allowed() -> bool:
+    """Check whether the operator has explicitly permitted non-loopback binding."""
+    return os.environ.get(_REMOTE_BIND_ENV, "").strip().lower() in {"1", "true", "yes"}
 
 
 def validate_bind_host(host: str) -> str:
-    """Return a canonical loopback bind host or reject remote exposure."""
+    """Return a canonical bind host or reject remote exposure when not permitted.
+
+    By default only loopback addresses are accepted. When the operator sets
+    ``WE3_GUI_ALLOW_REMOTE_BIND=1`` the check is relaxed so a specific LAN IP
+    or a valid hostname may be used.
+    """
     normalized = host.strip().lower().rstrip(".")
     if normalized in _LOOPBACK_NAMES:
         return normalized
     try:
         address = ipaddress.ip_address(normalized)
-    except ValueError as exc:
+    except ValueError:
+        # Not an IP — could be a hostname. Allow if remote bind is enabled.
+        if _remote_bind_allowed():
+            return normalized
         raise ValueError(
-            "The operator GUI may bind only to loopback. Use 127.0.0.1, ::1, "
-            "or localhost and place an authenticated TLS reverse proxy in front."
-        ) from exc
-    if not address.is_loopback:
+            "The operator GUI bind host must be a valid IP address or hostname."
+        )
+    if not address.is_loopback and not _remote_bind_allowed():
         raise ValueError(
-            "The operator GUI may bind only to loopback. Remote bind addresses "
-            "bypass the intended proxy and host boundary."
+            "The operator GUI may bind only to loopback. Set "
+            f"{_REMOTE_BIND_ENV}=1 to permit a non-loopback bind address, or "
+            "use 127.0.0.1 / localhost with an authenticated TLS reverse proxy."
         )
     return address.compressed
 
 
 def resolve_launcher_host(host: str) -> tuple[str, bool]:
-    """Translate only historical wildcard defaults to the secure loopback bind."""
+    """Translate only historical wildcard defaults to the secure loopback bind.
+
+    When ``WE3_GUI_ALLOW_REMOTE_BIND=1`` is set, ``0.0.0.0`` is preserved so the
+    server binds all interfaces as the operator explicitly requested.
+    """
     normalized = host.strip().lower().rstrip(".")
     if normalized in _LEGACY_WILDCARD_HOSTS:
+        if _remote_bind_allowed():
+            return normalized, True
         return "127.0.0.1", True
     return validate_bind_host(host), False
 
@@ -74,12 +95,20 @@ def main() -> int:
         parser.error(str(exc))
 
     if repaired_legacy_default:
-        logger.warning(
-            "Legacy wildcard GUI host %s was requested; binding securely to "
-            "http://127.0.0.1:%d instead.",
-            args.host,
-            args.port,
-        )
+        if bind_host == "0.0.0.0":
+            logger.warning(
+                "Legacy wildcard GUI host %s was requested; binding to all "
+                "interfaces http://0.0.0.0:%d because %s=1 is set. "
+                "Ensure this listener is behind a trusted firewall or "
+                "authenticated TLS reverse proxy.",
+                args.host, args.port, _REMOTE_BIND_ENV,
+            )
+        else:
+            logger.warning(
+                "Legacy wildcard GUI host %s was requested; binding securely "
+                "to http://127.0.0.1:%d instead.",
+                args.host, args.port,
+            )
 
     install_gui_access_control(app, access)
     install_ux_overlay(app, legacy.GUI_STATIC_DIR)

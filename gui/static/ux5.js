@@ -1,11 +1,10 @@
 (() => {
   "use strict";
 
-  const AUTO_OPEN_REPORTS = 4;
+  const byId = (id) => document.getElementById(id);
+
   let familyDialog = null;
   let familyDialogRestoreFocus = null;
-
-  const byId = (id) => document.getElementById(id);
 
   function familySummary(models) {
     const providers = [...new Set(models.map((model) => modelProvider(model)))].sort();
@@ -321,20 +320,14 @@
   }
 
   function openInitialReportViewers() {
+    // Half-card previews are auto-loaded by enhanced.js::autoLoadPdfPreviews.
+    // This hook is retained for any external re-renders that bypass renderReports.
     const root = byId("report-grid");
     if (!root || root.dataset.autoViewersApplied === "true") return;
-    const cards = [...root.querySelectorAll(".report-card")];
-    if (!cards.length) return;
-    cards.forEach((card, index) => {
-      const viewer = card.querySelector(".report-viewer");
-      const iframe = viewer?.querySelector("iframe");
-      const toggle = card.querySelector("[data-toggle-report]");
-      if (!viewer || !iframe || !toggle) return;
-      const opening = index < AUTO_OPEN_REPORTS;
-      viewer.hidden = !opening;
-      if (opening && !iframe.src) iframe.src = iframe.dataset.src;
-      toggle.textContent = opening ? "Hide card viewer" : "View report in card";
-      card.classList.toggle("report-default-open", opening);
+    const frames = [...root.querySelectorAll(".pdf-preview-half[data-src]")];
+    if (!frames.length) return;
+    frames.forEach((iframe) => {
+      if (!iframe.src) iframe.src = iframe.dataset.src;
     });
     root.dataset.autoViewersApplied = "true";
   }

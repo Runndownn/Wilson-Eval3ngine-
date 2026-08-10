@@ -884,34 +884,65 @@ function reportSummary(report) {
   return "Legacy evaluation artifact. Open the PDF to inspect its methodology, findings, and evidence.";
 }
 
+function renderReportHalfCard(report, half) {
+  const statusClass = report.status === "completed" ? "ok" : report.status ? "warn" : "ok";
+  const label = half === "top" ? "Top" : "Bottom";
+  return `<article class="report-half-card report-half-${half}" data-report-name="${escapeAttr(report.name)}">
+    <div class="report-half-header"><span class="pill ${statusClass}">PDF report</span><div><h4>${escapeHtml(report.name)}</h4><span class="muted">${escapeHtml(formatBytes(report.sizeBytes || report.size_bytes))}</span></div></div>
+    <div class="pdf-half-frame" data-pdf-half="${half}" data-report-name="${escapeAttr(report.name)}"><iframe class="pdf-preview-half" loading="lazy" data-src="${escapeAttr(report.url)}#toolbar=0&navpanes=0&view=FitH" title="${label} half preview of ${escapeAttr(report.name)}"></iframe></div>
+    <div class="report-half-meta muted"><dl><dt>Run</dt><dd>${escapeHtml(report.runId || "Legacy artifact")}</dd><dt>Models</dt><dd>${escapeHtml((report.models || []).join(", ") || "Not recorded")}</dd><dt>Modified</dt><dd>${escapeHtml(formatDate(report.modified))}</dd></dl></div>
+    <div class="actions"><a class="btn" target="_blank" rel="noopener" href="${escapeAttr(report.url)}">Open full report</a>${report.runId ? `<a class="btn" href="/api/telemetry/runs/${encodeURIComponent(report.runId)}/zip">Export evidence bundle</a>` : ""}<button class="danger" data-delete-report="${escapeAttr(report.name)}">Delete</button></div>
+  </article>`;
+}
+
+function autoLoadPdfPreviews(root) {
+  const frames = root.querySelectorAll(".pdf-preview-half[data-src]");
+  if (!frames.length) return;
+  if ("IntersectionObserver" in window) {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && !entry.target.src) {
+            entry.target.src = entry.target.dataset.src;
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { rootMargin: "200px" },
+    );
+    frames.forEach((iframe) => observer.observe(iframe));
+  } else {
+    frames.forEach((iframe) => {
+      if (!iframe.src) iframe.src = iframe.dataset.src;
+    });
+  }
+}
+
 function renderReports() {
   const root = $("report-grid");
   if (!state.reports.length) {
     root.innerHTML = '<div class="empty">No PDF reports generated.</div>';
     return;
   }
-  root.innerHTML = state.reports
-    .map(
-      (report) => `<article class="report-card">
-        <div class="section-title"><div><span class="pill ${report.status === "completed" ? "ok" : report.status ? "warn" : "ok"}">PDF report</span><h3>${escapeHtml(report.name)}</h3></div><span class="muted">${escapeHtml(formatBytes(report.sizeBytes || report.size_bytes))}</span></div>
-        <div class="report-understanding"><strong>What this report contains</strong><p>${escapeHtml(reportSummary(report))}</p><dl><dt>Run</dt><dd>${escapeHtml(report.runId || "Legacy artifact")}</dd><dt>Models</dt><dd>${escapeHtml((report.models || []).join(", ") || "Not recorded")}</dd><dt>Modified</dt><dd>${escapeHtml(formatDate(report.modified))}</dd></dl></div>
-        <button type="button" class="report-view-toggle primary" data-toggle-report="${escapeAttr(report.name)}">View report in card</button>
-        <div class="report-viewer" data-report-viewer="${escapeAttr(report.name)}" hidden><iframe class="pdf-preview" loading="lazy" data-src="${escapeAttr(report.url)}#toolbar=1&navpanes=0&view=FitH" title="Preview of ${escapeAttr(report.name)}"></iframe></div>
-        <div class="report-integrity"><span>SHA-256</span><code>${escapeHtml(report.sha256 || "Not recorded")}</code></div>
-        <div class="actions"><a class="btn" target="_blank" rel="noopener" href="${escapeAttr(report.url)}">Open full report</a>${report.runId ? `<a class="btn" href="/api/telemetry/runs/${encodeURIComponent(report.runId)}/zip">Export evidence bundle</a>` : ""}<button class="danger" data-delete-report="${escapeAttr(report.name)}">Delete</button></div>
-      </article>`,
-    )
+
+  // Group reports into pairs for side-by-side split-half layout.
+  // Each row shows two reports side by side, each displaying a half of its PDF.
+  // The top halves appear first, then the bottom halves in the next row.
+  const pairs = [];
+  for (let i = 0; i < state.reports.length; i += 2) {
+    const pair = [state.reports[i]];
+    if (state.reports[i + 1]) pair.push(state.reports[i + 1]);
+    pairs.push(pair);
+  }
+
+  root.innerHTML = pairs
+    .map((pair) => {
+      const topRow = pair.map((report) => renderReportHalfCard(report, "top")).join("");
+      const bottomRow = pair.map((report) => renderReportHalfCard(report, "bottom")).join("");
+      return `<div class="report-pair"><div class="report-half-row report-half-top">${topRow}</div><div class="report-half-row report-half-bottom">${bottomRow}</div></div>`;
+    })
     .join("");
-  root.querySelectorAll("[data-toggle-report]").forEach((button) =>
-    button.addEventListener("click", () => {
-      const viewer = root.querySelector(`[data-report-viewer="${CSS.escape(button.dataset.toggleReport)}"]`);
-      const iframe = viewer.querySelector("iframe");
-      const opening = viewer.hidden;
-      viewer.hidden = !opening;
-      if (opening && !iframe.src) iframe.src = iframe.dataset.src;
-      button.textContent = opening ? "Hide in-card viewer" : "View report in card";
-    }),
-  );
+
   root.querySelectorAll("[data-delete-report]").forEach((button) =>
     button.addEventListener("click", async () => {
       setBusy(button, true, "Deleting…");
@@ -926,6 +957,8 @@ function renderReports() {
       }
     }),
   );
+
+  autoLoadPdfPreviews(root);
 }
 
 async function openRun(runId) {

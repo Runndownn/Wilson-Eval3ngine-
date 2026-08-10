@@ -383,37 +383,42 @@
   text-align: center;
 }
 
-.report-card {
+.report-card,
+.report-half-card {
   min-height: 0;
   border-color: var(--line-strong);
 }
 
-.report-card .section-title h3 {
+.pdf-half-frame {
+  margin-bottom: 10px;
+}
+
+.report-half-header h4 {
   margin-top: 7px;
   overflow-wrap: anywhere;
 }
 
-.report-understanding {
-  padding: 13px;
+.report-half-meta {
+  padding: 8px 0;
   border: 1px solid var(--line);
   border-radius: 11px;
   background: #081020;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
-.report-understanding > strong {
+.report-half-meta strong {
   color: var(--cyan);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 
-.report-understanding p {
+.report-half-meta p {
   color: #d5def2;
   margin: 7px 0 12px;
 }
 
-.report-understanding dl {
+.report-half-meta dl {
   display: grid;
   grid-template-columns: 75px minmax(0, 1fr);
   gap: 5px 10px;
@@ -421,16 +426,16 @@
   font-size: 11px;
 }
 
-.report-understanding dt { color: var(--muted); }
-.report-understanding dd { margin: 0; overflow-wrap: anywhere; }
+.report-half-meta dt { color: var(--muted); }
+.report-half-meta dd { margin: 0; overflow-wrap: anywhere; }
 
-.report-view-toggle {
-  width: 100%;
-  margin-bottom: 10px;
+.report-half-frame[data-pdf-half="top"] iframe {
+  /* Top half: default position shows the beginning of the PDF */
 }
 
-.report-viewer[hidden] { display: none; }
-.report-viewer { margin-bottom: 12px; }
+.report-half-frame {
+  margin-bottom: 10px;
+}
 
 .report-integrity {
   display: grid;
@@ -477,8 +482,8 @@
   .chart-run-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .chart-run-summary span:nth-child(2) { border-right: 0; }
   .section-kicker { align-items: flex-start; flex-direction: column; }
-  .report-understanding dl { grid-template-columns: 1fr; }
-  .report-understanding dd { margin-bottom: 5px; }
+  .report-half-meta dl { grid-template-columns: 1fr; }
+  .report-half-meta dd { margin-bottom: 5px; }
 }
 
 /* ---- Model picker modal dialog ---- */
