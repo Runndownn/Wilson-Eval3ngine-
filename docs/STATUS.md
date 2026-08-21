@@ -1,58 +1,105 @@
-# Current Implementation Status
+# Wilson Eval3ngine Current Status
 
-**Status date:** 2026-08-21  
 **Package version:** `0.1.0`  
-**Release position:** foundation / internal evaluation; **not approved for production certification**
+**Project stage:** **active evaluation platform / pre-production assurance**  
+**Production certification status:** **not automatically established by repository source**
 
-This page is the public documentation source of truth for distinguishing code that exists from behavior that is integrated and runtime-assured.
+This page is the current status authority for public documentation. It exists to prevent historical planning language, old point-in-time test reports, or the original deterministic vertical slice from being mistaken for the state of the entire repository.
+
+## The important correction: “foundation” is a lane, not the whole project
+
+The repository still contains names such as `examples/experiments/foundation.yaml`, `we3.foundation_result.v1`, and comments/docstrings referring to the original foundation runner. Those names describe the deterministic local/CI vertical slice that established the first complete evaluation path; they do not accurately describe the maturity of the whole current codebase.
+
+Since that slice was created, the repository has accumulated production-oriented provider adapters, durable PostgreSQL scheduling, human review/adjudication, encrypted evidence storage, OIDC/project security controls, telemetry, backup/recovery, hardened deployment material, browser/operator controls, and a certification orchestration subsystem. The correct project-level description is therefore **an active evaluation platform in pre-production assurance**, with a retained deterministic local foundation lane.
+
+The version remains `0.1.0` because that is the package's declared semantic version in `pyproject.toml`. A low semantic version is not, by itself, evidence that only foundation code exists; conversely, a large amount of implemented code is not, by itself, evidence that a particular production deployment is certified.
 
 ## Status vocabulary
 
-- **Integrated foundation** — exercised by the current synchronous/local evaluation path.
-- **Implemented module** — substantial code exists, but it is not necessarily wired into the foundation path or production-validated.
-- **Partial / provisional** — implementation exists with known placeholders, approximations, or missing validation.
-- **External assurance required** — repository code cannot prove the deployment property.
+| Status | Meaning |
+|---|---|
+| **Implemented** | A concrete source implementation exists in the repository. |
+| **Integrated** | The capability is composed into at least one supported execution/deployment path. |
+| **Local-lane exercised** | The deterministic local path uses the capability directly. |
+| **Provisional** | Implementation exists, but calibration, statistical reference work, policy approval, or other evidence is incomplete. |
+| **Runtime assurance required** | Source exists, but the production claim depends on the target environment and executed evidence. |
+| **Historical** | Useful provenance or planning material that is not current product truth. |
 
 ## Capability matrix
 
-| Capability | Current state | Important boundary |
+| Capability | Current repository status | What that does and does not mean |
 |---|---|---|
-| Contract validation | **Integrated foundation** | Versioned Pydantic experiment/dataset/case contracts are validated before execution. |
-| Deterministic mock provider | **Integrated foundation** | Default provider in `ProviderRegistry`. |
-| Azure OpenAI / Anthropic / Ollama adapters | **Implemented module** | Registration paths exist; the synchronous foundation service does not register all of them automatically. |
-| Claude / Kilo / Codex CLI adapters | **Implemented module** | Depend on locally installed/authenticated CLIs and explicit/auto registration. |
-| Expectation compilation | **Integrated foundation** | Occurs before provider execution. |
-| Five-outcome grading | **Integrated foundation** | Foundation grading is not a certification-approved calibrated grader. |
-| Reliability separation | **Integrated foundation** | Provider/malformed/retry failures are not converted into refusals. |
-| Wilson intervals | **Integrated foundation** | Used for proportion uncertainty. |
-| Metric registry/versioning | **Implemented + foundation use** | Some identifiers/paths retain legacy and newer metric naming. |
-| Cross-run comparison/bootstrap | **Partial / provisional** | `compute_metric_comparison()` currently uses a placeholder p-value; bootstrap completion is still required. |
-| Prompt-family independence | **Partial / provisional** | One snapshot path currently approximates prompt-family count with `len(run_ids)` and explicitly marks this for production correction. |
-| Deterministic gates | **Integrated foundation** | Confirmed unsafe compliance blocks; insufficient support is indeterminate. Default thresholds still require calibration/approval. |
-| Content-addressed local evidence | **Integrated foundation** | Local filesystem is not a production immutability boundary. |
-| AES-256-GCM encrypted object store | **Implemented module** | Local KMS is development-only; production key/storage authority remains deployment-specific. |
-| Ed25519 signed dossier | **Integrated foundation** | Local development signing key is not a managed production signing identity. |
-| Human review/adjudication | **Implemented module** | Workflow supports dual review/recusal/adjudication but is not fully integrated into the synchronous foundation run. |
-| PostgreSQL durable scheduler | **Implemented module** | Leasing/heartbeats/retries/reconciliation exist; foundation demo is synchronous. |
-| OIDC/project controls | **Implemented / deployment-dependent** | Production identity and policy require configured IdP and runtime tests. |
-| Operator GUI | **Implemented** | Official launcher is loopback-only; it is an administrative control plane. |
-| Provider credential handling | **Implemented** | Local encrypted state protects against accidental disclosure, not same-account/process compromise. |
-| Production Compose topology | **Implemented template** | Runtime, image, TLS, network, database, Redis, and identity evidence remain external assurance work. |
-| Observability / backup / recovery | **Implemented modules/templates** | Production SLO, DR, and restore claims require actual operational evidence. |
-| Production certification | **Not approved** | Requires the certification/assurance evidence described by security and private-runtime documents. |
+| Versioned experiment/dataset contracts | **Implemented / local-lane exercised** | Schema, identity, split, and dataset-hash checks are part of the synchronous path. Production datasets still require governance and approval. |
+| Expectation compilation before execution | **Implemented / local-lane exercised** | The expected treatment is established before provider output is seen. |
+| Deterministic mock provider | **Implemented / local-lane exercised** | Supports credential-free local/CI runs and failure simulation. |
+| Azure OpenAI adapter | **Implemented** | Real use still requires authorized endpoint, credentials, capability validation, and runtime evidence. |
+| Anthropic adapter | **Implemented** | Real use still requires authorized endpoint/credentials and provider-specific validation. |
+| Ollama adapter | **Implemented** | Local/private destination access is policy constrained and opt-in where required. |
+| CLI-backed provider adapters | **Implemented** | Availability depends on locally installed/authenticated CLIs and operating-system identity. |
+| Provider retry/attempt evidence | **Implemented / local-lane exercised** | Attempts and reliability outcomes remain distinct from behavioral labels. |
+| Five-outcome grading | **Implemented / local-lane exercised** | Foundation deterministic grading is useful for the local lane; certification-grade calibration must be supported by evidence for the target program. |
+| Human review/adjudication workflow | **Implemented** | Includes dual review, recusal, abstention, disagreement, and adjudication primitives; a live review operation still needs identities, staffing, policy, SLA, and integration evidence. |
+| Metric snapshots | **Implemented / local-lane exercised** | Results retain numerator, denominator, exclusions, method/version, and run population. |
+| Wilson score intervals | **Implemented / local-lane exercised** | Core proportion uncertainty is present. |
+| Cross-run comparisons and drift | **Implemented with provisional portions** | Comparison eligibility/drift primitives exist; one comparison p-value path remains a placeholder pending bootstrap/reference completion. |
+| Prompt-family independence accounting | **Provisional in one snapshot path** | `create_metric_snapshot` currently notes that prompt-family count may use run count as an approximation; certification statistics must not overclaim independence from this path. |
+| Release gate engine | **Implemented / local-lane exercised** | Includes minimum support, pass/warn/indeterminate/block precedence, and critical unsafe-compliance blocking. Threshold authority still depends on approved benchmark/use-case policy. |
+| Content-addressed local evidence | **Implemented / local-lane exercised** | Strong traceability for development/CI; local filesystem storage alone is not a managed production immutability control. |
+| Encrypted evidence store | **Implemented** | AES-256-GCM envelope-encryption/retention interfaces exist; the development `LocalKMSClient` is explicitly not a production KMS authority. |
+| Audit chain | **Implemented** | External checkpoint/trust operation depends on deployment configuration and evidence. |
+| Ed25519 dossier signing | **Implemented / local-lane exercised** | Development key generation is not equivalent to managed production signing identity/key custody. |
+| Durable PostgreSQL scheduler | **Implemented** | Fenced leases, heartbeats, retry/dead-letter behavior, and reconciliation code exist; target workload/runtime behavior still needs execution evidence. |
+| OIDC/project authorization | **Implemented** | Real issuer/JWKS, claims, role mapping, RLS/object policy, revocation, and negative authorization results are environment-specific. |
+| GUI loopback boundary | **Implemented / integrated in official launcher** | Direct non-loopback binding is rejected; authenticated remote proxying is a separate deployment responsibility. |
+| Provider destination policy | **Implemented / GUI integrated** | Application controls reduce risk; network-level egress assurance and deployment allowlists remain environment responsibilities. |
+| GUI secret transport | **Implemented in supported POSIX official path** | One-shot FIFO avoids the historical regular plaintext temp file; non-POSIX secure transport remains a platform-specific concern. |
+| Streaming request-body limit | **Implemented** | Actual ASGI bytes are counted rather than trusting `Content-Length`; runtime deployment tests remain relevant. |
+| Telemetry/tracing | **Implemented** | Production SLOs, alerts, tracing backends, and evidence must be validated in the running environment. |
+| Backup/recovery | **Implemented modules and workflows** | A real recovery claim requires executed restore/PITR/object-reconciliation evidence. |
+| Production Compose/Caddy topology | **Implemented templates** | Only intended ingress is published in the template; source configuration does not prove deployed firewall/network behavior. |
+| Certification requirements/orchestration | **Implemented** | Certification categories and blocking requirements exist; a release can only pass when the required evidence is actually satisfied. |
+| Production certification of a specific deployment | **Runtime assurance required** | The public repository cannot establish private identities, secrets, provider destinations, certificates, network policy, restores, scans, or real runtime results by itself. |
 
-## Known documentation-sensitive limitations
+## What the deterministic local lane proves
 
-1. The broad codebase has advanced beyond the original July foundation blueprint. Historical statements such as “real providers not implemented” are no longer accurate as general repository claims.
-2. The synchronous `EvaluationService` still describes itself as a foundation vertical slice and emits several foundation limitations. Those limitations remain accurate **for that execution path**, even when broader modules now exist.
-3. Statistical comparison code is not complete enough to claim production-grade bootstrap inference.
-4. Independent prompt-family support is not fully represented by the current snapshot approximation.
-5. Human-review machinery exists but is not yet the authority path inside every foundation evaluation.
-6. Encrypted-storage and production-deployment implementations require real KMS/secret/network/identity/runtime evidence before making production assurance claims.
-7. The Master Security Assessment intentionally records several checks as pending/blocked; documentation must not convert implementation into a passed runtime test.
+The local example proves that the core measurement contract can be exercised without external credentials: load/validate the manifest and dataset, establish expectations, execute deterministic provider behavior, preserve evidence, grade responses, compute metrics and Wilson intervals, evaluate gates, build reports/dossiers, and verify signatures. This path is intentionally small enough to be repeatable in development and CI.
 
-## Release decision guidance
+It does **not** exercise every provider, production scheduler, external KMS/secret manager, organizational IdP, private egress boundary, multi-user review operation, real backup service, production certificates, or target deployment. That distinction is why the lane remains useful even though the platform around it has grown substantially.
 
-Use WE3 today for development, deterministic testing, internal evaluation, architecture/security review, and evidence workflow development. Do not describe a foundation run as a certified production safety decision.
+## Known implementation limitations that must stay visible
 
-For the current security validation state and residual risk, read [Master Security Assessment](security/MASTER_SECURITY_ASSESSMENT.md). For the boundary between public code and private deployment proof, read [Private Runtime Assurance](security/PRIVATE_RUNTIME_ASSURANCE.md).
+### Statistical comparison completion
+
+`src/wilson_eval3ngine/metrics/engine.py` contains comparison primitives, but its current comparison function uses a placeholder p-value rather than a completed bootstrap/reference significance calculation. The same module notes that one `create_metric_snapshot` path currently approximates prompt-family count using run count, so certification claims about independent prompt-family support must use a validated path and reference evidence rather than relying on that approximation.
+
+### Calibration and threshold authority
+
+The existence of deterministic grading and gate code does not make every grader or threshold certification-approved. Grader calibration, benchmark composition, severity/category policy, minimum support, and release thresholds must be validated and approved for the specific evaluation program using them.
+
+### Local versus managed evidence controls
+
+Content-addressed local artifacts, local audit data, development signing keys, and the development KMS implementation are appropriate for deterministic development workflows but are not substitutes for managed production storage, key custody, retention/legal hold, secret management, and external audit/checkpoint controls. The broader codebase provides interfaces and implementations for stronger controls, while the actual production authority remains deployment-specific.
+
+### GUI identity boundary
+
+The official GUI is protected primarily by its loopback binding and optional access-control composition, not by pretending every local desktop session is a production multi-user security boundary. A remotely exposed GUI requires an authenticated, authorized TLS proxy and must be validated as part of the target deployment.
+
+## Security assessment status
+
+`docs/security/MASTER_SECURITY_ASSESSMENT.md` is a valuable **point-in-time security assessment dated 2026-08-01**. It records implementation and residual risks for the branch/head reviewed at that time, so later code and documentation should not present its “runtime pending” statements as if they were freshly re-executed on every current commit.
+
+`docs/security/PRIVATE_RUNTIME_ASSURANCE.md` remains the stronger enduring contract for what the public repository can prove versus what must be verified privately. Production validation should preserve raw private evidence outside the public repository and publish only bounded outcomes/fingerprints where appropriate.
+
+## Historical documents
+
+The original `docs/Plans_/` and `docs/08-planning/Plans_/` material remains in place by design. Those files record the plan/TODO process used to build the platform and should not be rewritten to mimic current documentation; current readers should use this file, the README, Features, Architecture, and operations/security guides for present-tense claims.
+
+Superseded public-facing documents are stored under `.archive/documentation/`. Historical Phase-1 “all tests passing” reports are evidence about that earlier snapshot, not proof that the latest branch or a production deployment has passed the same matrix.
+
+## Current release statement
+
+A concise, accurate public statement is:
+
+> **Wilson Eval3ngine `0.1.0` is an active evidence-first LLM evaluation platform in pre-production assurance. The deterministic local foundation lane is functional for development/CI, while the repository also contains substantial production-oriented provider, scheduling, review, security, evidence, operations, and certification capabilities. Production certification is evidence-dependent and must be established by executing the required repository and private-runtime assurance checks for the exact release/deployment being approved.**
+
+See [Architecture](ARCHITECTURE.md) for how these components fit together and [Getting Started](GETTING_STARTED.md) for the fastest way to exercise the local path.

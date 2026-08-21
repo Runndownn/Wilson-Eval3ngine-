@@ -1,4 +1,4 @@
-"""Wilson Eval3ngine foundation package."""
+"""Wilson Eval3ngine package."""
 
 from .constants import (
     TimingProfile,
