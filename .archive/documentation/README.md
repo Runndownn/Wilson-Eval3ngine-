@@ -17,4 +17,5 @@ The initial documentation reconciliation preserves the pre-overhaul:
 - root `README.md`;
 - `docs/framework_status.md`;
 - `docs/GUI_AND_EVIDENCE_GUIDE.md`;
-- `docs/implementation_blueprint.md`.
+- `docs/implementation_blueprint.md`;
+- `docs/Wilson-Eval3ngine_Test_Report.md`.

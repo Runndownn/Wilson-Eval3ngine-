@@ -20,6 +20,7 @@ This is a documentation reconciliation, not a claim that every runtime assurance
 | Encrypted evidence | Broad wording could imply a production KMS/storage deployment. | Encrypted store is identified as an implemented module; local KMS is development-only and deployment assurance remains external. |
 | Statistical comparison | High-level text risked implying completed bootstrap inference. | Status now calls out placeholder p-value/bootstrap work and prompt-family-count approximation. |
 | Historical blueprint | July blueprint described a greenfield/implementation-empty state. | Preserved as historical material; current docs defer to code + STATUS + assurance evidence. |
+| Phase 1 test report | A July 16 report presented “ALL TESTS PASSING (100%)” without a current/historical boundary and contained a stale logo reference. | Original report is archived unchanged; active path now labels it historical and directs readers to current tests/status/assurance. |
 | Public README | Large README mixed product explanation, deep security detail, implementation history, and visual references. | Replaced with a concise value-first entry point and layered documentation. |
 
 ## Active document responsibilities
