@@ -17,7 +17,13 @@ from urllib.parse import urlsplit
 
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from ..security.oidc import OIDCAuthenticator, OIDCSettings, TokenValidationError
+from ..security.oidc import (
+    OIDCAuthenticator,
+    OIDCConfigurationError,
+    OIDCSettings,
+    TokenRevocationError,
+    TokenValidationError,
+)
 
 _DEFAULT_ROLES = frozenset({"project_admin", "evaluation_engineer", "reviewer"})
 _ROLE = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
@@ -131,31 +137,40 @@ class GUIIdentityMiddleware:
         return token
 
     @staticmethod
-    async def _http_error(send: Send, status: int, code: str) -> None:
+    async def _http_error(
+        send: Send,
+        status: int,
+        code: str,
+        *,
+        retryable: bool = False,
+        detail: str = "GUI access denied",
+    ) -> None:
         body = json.dumps(
             {
                 "schema_version": "we3.error.v1",
                 "code": code,
-                "retryable": False,
-                "safe_detail": "GUI access denied",
+                "retryable": retryable,
+                "safe_detail": detail,
             },
             separators=(",", ":"),
         ).encode("utf-8")
+        headers = [
+            (b"content-type", b"application/json"),
+            (b"content-length", str(len(body)).encode("ascii")),
+            (b"cache-control", b"no-store"),
+        ]
+        if status == 401:
+            headers.append((b"www-authenticate", b"Bearer"))
         await send({
             "type": "http.response.start",
             "status": status,
-            "headers": [
-                (b"content-type", b"application/json"),
-                (b"content-length", str(len(body)).encode("ascii")),
-                (b"cache-control", b"no-store"),
-                (b"www-authenticate", b"Bearer"),
-            ],
+            "headers": headers,
         })
         await send({"type": "http.response.body", "body": body})
 
     @staticmethod
-    async def _websocket_error(send: Send, code: int) -> None:
-        await send({"type": "websocket.close", "code": code, "reason": "access denied"})
+    async def _websocket_error(send: Send, code: int, reason: str = "access denied") -> None:
+        await send({"type": "websocket.close", "code": code, "reason": reason})
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] not in {"http", "websocket"}:
@@ -183,13 +198,27 @@ class GUIIdentityMiddleware:
 
         assert self.authenticator is not None
         try:
-            project_id, role = self.authenticator.authenticate(token)
-            subject = self.authenticator.get_token_subject(token)
-        except TokenValidationError:
+            # Verify the signed token exactly once. Re-verifying for the subject
+            # creates an unnecessary second JWKS/revocation decision and can
+            # produce inconsistent results during key rotation or backend faults.
+            project_id, role, subject = self.authenticator.authenticate_context(token)
+        except (TokenValidationError, TokenRevocationError):
             if scope["type"] == "websocket":
                 await self._websocket_error(send, 4401)
             else:
                 await self._http_error(send, 401, "invalid_token")
+            return
+        except OIDCConfigurationError:
+            if scope["type"] == "websocket":
+                await self._websocket_error(send, 1013, "identity service unavailable")
+            else:
+                await self._http_error(
+                    send,
+                    503,
+                    "oidc_unavailable",
+                    retryable=True,
+                    detail="GUI identity service is unavailable",
+                )
             return
 
         if role not in self.settings.allowed_roles:
