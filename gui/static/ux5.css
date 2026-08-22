@@ -126,22 +126,9 @@
 }
 .chart-window.fullscreen .chart-stage img { object-fit: contain; image-rendering: auto; }
 
-.report-default-open {
-  grid-column: span 2;
-}
-.report-default-open .report-viewer {
-  min-height: 660px;
-}
-.report-default-open .pdf-preview {
-  min-height: 600px;
-}
-
 @media (max-width: 900px) {
-  .report-default-open { grid-column: auto; }
   .family-model-row { grid-template-columns: 1fr; }
   .family-model-actions { justify-content: flex-start; }
-  .report-default-open .report-viewer,
-  .report-default-open .pdf-preview { min-height: 520px; }
 }
 
 @media (max-width: 600px) {

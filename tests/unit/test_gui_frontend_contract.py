@@ -71,14 +71,16 @@ def test_socket_updates_do_not_force_navigation() -> None:
     assert "updateJob(job)" in handler
 
 
-def test_reports_explain_contents_and_lazy_load_in_card_viewer() -> None:
+def test_reports_explain_contents_and_lazy_load_in_half_card_viewer() -> None:
     html = _read(INDEX)
     script = _read(SCRIPT)
 
     assert "what the report contains" in html.lower()
     assert "function reportSummary" in script
-    assert "View report in card" in script
-    assert "data-report-viewer" in script
+    assert "Open full report" in script
+    assert "data-pdf-half" in script
+    assert "report-half-card" in script
+    assert "report-half-row" in script
     assert "iframe.dataset.src" in script
 
 
@@ -93,6 +95,8 @@ def test_visual_boundary_layer_has_required_components() -> None:
         ".popular-model-grid",
         ".model-family",
         ".chart-run-summary",
-        ".report-understanding",
+        ".report-half-meta",
+        ".report-half-card",
+        ".pdf-half-frame",
     ):
         assert selector in css

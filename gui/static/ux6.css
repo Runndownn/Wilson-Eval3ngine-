@@ -7,36 +7,141 @@ main {
   padding-inline: clamp(16px, 2.25vw, 44px) !important;
 }
 
+/* The report grid now contains report-pair blocks, each with two rows */
 .report-grid {
-  display: grid !important;
-  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  align-items: stretch;
-  gap: clamp(14px, 1.5vw, 24px) !important;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(20px, 2vw, 28px);
 }
 
-.report-card,
-.report-default-open {
-  grid-column: auto !important;
+/* Each pair of reports renders as two staggered rows */
+.report-pair {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(12px, 1.5vw, 18px);
+}
+
+/* Each row shows two half-cards side by side */
+.report-half-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(12px, 1.5vw, 20px);
+  align-items: stretch;
+}
+
+/* Half-card styling */
+.report-half-card {
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(12, 23, 48, 0.97), rgba(8, 16, 34, 0.97));
+  border-radius: 14px;
+  padding: clamp(10px, 1.2vw, 14px);
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   height: 100%;
 }
 
-.report-card {
-  display: grid !important;
-  grid-template-rows: auto auto minmax(460px, 1fr) auto auto;
+.report-half-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: clamp(8px, 1vw, 12px);
+  margin-bottom: clamp(6px, 0.8vw, 10px);
 }
 
-.report-viewer,
-.pdf-preview,
-.report-default-open .report-viewer,
-.report-default-open .pdf-preview {
+.report-half-header h4 {
+  margin: 0;
+  font-size: clamp(0.9rem, 1.1vw, 1.1rem);
+  overflow-wrap: anywhere;
+}
+
+.report-half-meta {
+  font-size: clamp(9px, 0.8vw, 11px);
+  margin: clamp(6px, 0.8vw, 10px) 0;
+}
+
+.report-half-meta dl {
+  display: grid;
+  grid-template-columns: 55px minmax(0, 1fr);
+  gap: 4px 8px;
+  margin: 0;
+}
+
+/* PDF half-frame: clips the iframe to show only the top or bottom half.
+   Height is ~half the viewport so a pair of rows fills the available screen,
+   requiring only vertical scroll to reach the next pair. */
+.pdf-half-frame {
+  height: clamp(450px, calc(60vh - 80px), 580px);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  margin: clamp(6px, 0.8vw, 10px) 0;
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* The iframe renders the full PDF at 2x the frame height; the frame clips it */
+.pdf-preview-half {
   width: 100%;
-  min-height: clamp(460px, 58vh, 720px) !important;
+  height: 200%;
+  border: none;
+  display: block;
 }
 
-.report-card h4,
-.report-meta,
-.report-card .actions {
+/* Bottom half: shift the iframe up by 50% to show the bottom portion */
+.report-half-bottom .pdf-preview-half,
+.pdf-half-frame[data-pdf-half="bottom"] .pdf-preview-half {
+  transform: translateY(-50%);
+}
+
+/* Toolbar injected by ux4.js::strengthenReportViewers */
+.pdf-reader-toolbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  background: rgba(8, 16, 34, 0.95);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  z-index: 2;
+}
+
+.pdf-reader-toolbar .pdf-icon {
+  font-size: 10px;
+  font-weight: 900;
+  color: var(--cyan);
+}
+
+.pdf-reader-toolbar strong {
+  font-size: 10px;
+  color: #cbd5ee;
+}
+
+.pdf-reader-toolbar span:last-child {
+  font-size: 9px;
+  color: var(--muted);
+  margin-left: auto;
+}
+
+/* Actions within half-card */
+.report-half-card .actions {
+  margin-top: auto;
+  gap: 6px;
+}
+
+.report-half-card .actions .btn,
+.report-half-card .actions button {
+  font-size: clamp(10px, 0.85vw, 12px);
+}
+
+.report-half-card h4,
+.report-half-meta,
+.report-half-card .actions {
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -47,12 +152,8 @@ main {
 }
 
 @media (max-width: 1023px) {
-  .report-grid {
-    grid-template-columns: minmax(0, 1fr) !important;
-  }
-
-  .report-card {
-    grid-template-rows: auto auto minmax(420px, 1fr) auto auto;
+  .report-half-row {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -61,10 +162,7 @@ main {
     padding-inline: 12px !important;
   }
 
-  .report-viewer,
-  .pdf-preview,
-  .report-default-open .report-viewer,
-  .report-default-open .pdf-preview {
-    min-height: 420px !important;
+  .pdf-half-frame {
+    height: clamp(320px, 52vh, 420px);
   }
 }

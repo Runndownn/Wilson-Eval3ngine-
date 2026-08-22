@@ -162,10 +162,10 @@
   letter-spacing: 0.08em;
 }
 
-.pdf-document-frame .pdf-preview {
+.pdf-document-frame .pdf-preview-half {
   display: block;
   width: calc(100% - 28px);
-  height: 560px;
+  height: calc(200% - 28px);
   margin: 14px;
   border: 1px solid #8a8f99;
   border-radius: 3px;
@@ -213,5 +213,5 @@
   .model-pager span { grid-column: 1 / -1; grid-row: 1; }
   .pdf-reader-toolbar { grid-template-columns: auto 1fr; }
   .pdf-reader-toolbar > span:last-child { grid-column: 1 / -1; }
-  .pdf-document-frame .pdf-preview { height: 70vh; }
+  .pdf-document-frame .pdf-preview-half { height: 70vh; }
 }

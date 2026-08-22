@@ -366,13 +366,13 @@
     const root = byId("report-grid");
     if (!root) return;
     const decorate = () => {
-      root.querySelectorAll(".report-viewer").forEach((viewer) => {
-        if (viewer.querySelector(".pdf-reader-toolbar")) return;
+      root.querySelectorAll(".pdf-half-frame").forEach((frame) => {
+        if (frame.querySelector(".pdf-reader-toolbar")) return;
         const toolbar = document.createElement("div");
         toolbar.className = "pdf-reader-toolbar";
         toolbar.innerHTML = '<span class="pdf-icon" aria-hidden="true">PDF</span><strong>Document preview</strong><span>Use Open full report for browser-native zoom, search, print, and download.</span>';
-        viewer.prepend(toolbar);
-        viewer.classList.add("pdf-document-frame");
+        frame.prepend(toolbar);
+        frame.classList.add("pdf-document-frame");
       });
     };
     new MutationObserver(decorate).observe(root, { childList: true, subtree: true });

@@ -1011,17 +1011,17 @@ textarea:focus {
 }
 
 .report-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
-  gap: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(20px, 2vw, 28px);
 }
 
 .report-card {
   border: 1px solid var(--line);
   background: linear-gradient(180deg, rgba(12, 23, 48, 0.97), rgba(8, 16, 34, 0.97));
   border-radius: 14px;
-  padding: 14px;
-  min-height: 650px;
+  padding: clamp(10px, 1.2vw, 14px);
+  min-height: 600px;
   display: flex;
   flex-direction: column;
 }
@@ -1044,6 +1044,7 @@ textarea:focus {
 
 .report-card .actions {
   margin-top: auto;
+  gap: 6px;
 }
 
 .drawer {
@@ -1222,11 +1223,11 @@ textarea:focus {
   }
 
   .report-grid {
-    grid-template-columns: 1fr;
+    gap: clamp(16px, 2vw, 20px);
   }
 
   .report-card {
-    min-height: 580px;
+    min-height: 520px;
   }
 
   .pdf-preview {
