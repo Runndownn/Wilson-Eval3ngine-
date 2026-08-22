@@ -259,9 +259,20 @@ jobs:
           python - <<'PY'
           import yaml
           from pathlib import Path
+
           config = yaml.safe_load(Path("artifacts/assurance/secure-compose.resolved.yml").read_text())
           services = config["services"]
-          assert set(services["caddy"]["ports"]) == {"80:80", "443:443"}
+
+          def published_port(value):
+              if isinstance(value, str):
+                  return value
+              if isinstance(value, dict):
+                  published = str(value.get("published", ""))
+                  target = str(value.get("target", ""))
+                  return f"{published}:{target}"
+              raise AssertionError(f"unexpected Compose port representation: {type(value).__name__}")
+
+          assert {published_port(item) for item in services["caddy"]["ports"]} == {"80:80", "443:443"}
           for name in {"api", "postgres", "redis", "prometheus", "grafana", "egress-proxy"}:
               assert "ports" not in services[name]
           networks = config["networks"]
