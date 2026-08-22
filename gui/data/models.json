@@ -1,0 +1,68 @@
+[
+  {
+    "createdAt": "2026-07-18T01:56:08.620549+00:00",
+    "endpointId": "ep_20b54e1d",
+    "id": "mistral:7b",
+    "provider": "ollama"
+  },
+  {
+    "createdAt": "2026-07-18T01:56:08.620575+00:00",
+    "endpointId": "ep_20b54e1d",
+    "id": "gemma2:9b",
+    "provider": "ollama"
+  },
+  {
+    "createdAt": "2026-07-18T01:56:08.620581+00:00",
+    "endpointId": "ep_20b54e1d",
+    "id": "phi3:mini",
+    "provider": "ollama"
+  },
+  {
+    "createdAt": "2026-07-18T01:56:08.620585+00:00",
+    "endpointId": "ep_20b54e1d",
+    "id": "qwen2.5:7b",
+    "provider": "ollama"
+  },
+  {
+    "createdAt": "2026-07-18T01:56:08.620590+00:00",
+    "endpointId": "ep_20b54e1d",
+    "id": "llama3.1:8b",
+    "provider": "ollama"
+  },
+  {
+    "createdAt": "2026-07-18T01:56:08.620597+00:00",
+    "endpointId": "ep_20b54e1d",
+    "id": "mxbai-embed-large:latest",
+    "provider": "ollama"
+  },
+  {
+    "createdAt": "2026-07-18T01:56:08.620602+00:00",
+    "endpointId": "ep_20b54e1d",
+    "id": "nomic-embed-text:latest",
+    "provider": "ollama"
+  },
+  {
+    "createdAt": "2026-07-18T01:56:08.620607+00:00",
+    "endpointId": "ep_20b54e1d",
+    "id": "bge-m3:latest",
+    "provider": "ollama"
+  },
+  {
+    "createdAt": "2026-07-18T01:56:08.620612+00:00",
+    "endpointId": "ep_20b54e1d",
+    "id": "gptoss20b:latest",
+    "provider": "ollama"
+  },
+  {
+    "createdAt": "2026-07-18T01:56:08.620616+00:00",
+    "endpointId": "ep_20b54e1d",
+    "id": "gpt-oss:latest",
+    "provider": "ollama"
+  },
+  {
+    "createdAt": "2026-07-18T01:56:08.620620+00:00",
+    "endpointId": "ep_20b54e1d",
+    "id": "gpt-oss:20b",
+    "provider": "ollama"
+  }
+]
