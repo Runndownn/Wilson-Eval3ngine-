@@ -2,142 +2,56 @@
 
 All notable changes to Wilson Eval3ngine are documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Pre-1.0 version numbers describe repository milestones; they do not constitute production certification.
 
 ## [Unreleased]
 
+No unreleased changes are recorded after the `0.2.0` repository-narrative and version reconciliation.
+
+## [0.2.0] — 2026-08-22
+
+`0.2.0` is the first version number that describes the repository after the foundation slice grew into the current multi-surface evaluation platform. It does not invent intermediate releases: the work between `0.1.0` and `0.2.0` remains traceable through Git history, plans, assessments, and preserved documentation.
+
 ### Added
 
-- **Current security reassessment (`2026-08-22`)** that revalidates the twelve
-  July 30 findings against current source, records newly discovered second-order
-  defects, distinguishes revocation from bearer sender-binding, and defines the
-  manual/runtime assurance contract while GitHub Actions are disabled.
-- **Request-scoped authorization-decision auditing** at the common authorization
-  boundary, with required hash-linked audit persistence before an allow decision
-  returns and a bounded fail-closed response when that persistence is unavailable.
-- **Bounded Redis security-authority adapter** so Redis failures used by shared
-  rate-limit/revocation state are normalized without leaking backend details.
-- **Current five-workspace GUI capture set** under `docs/assets/gui/current/` for
-  Endpoints, Models, Generate, Charts, and Reports, with explicit point-in-time
-  evidence/provenance guidance.
-- **CONTRIBUTING.md** — comprehensive contributor guide covering environment
-  setup, branch naming, commit conventions, testing, and PR process.
-- **CODE_OF_CONDUCT.md** — Contributor Covenant v2.1 adopted for all
-  community interaction spaces.
-- **CHANGELOG.md** — this file, tracking notable changes per release.
-- **`.github/dependabot.yml`** — dependency update configuration for GitHub
-  Actions, Python dependencies, Docker images, and Terraform. Configuration is
-  not represented as an executed scan while repository Actions are disabled.
-- **`.github/PULL_REQUEST_TEMPLATE.md`** — PR template with security, testing,
-  and documentation checklists.
-- **`.github/ISSUE_TEMPLATE/bug_report.yml`** — structured bug report workflow.
-- **`.github/ISSUE_TEMPLATE/feature_request.yml`** — structured feature request
-  workflow.
-- **"Contributing" section in README.md** — links to CONTRIBUTING.md and
-  CODE_OF_CONDUCT.md for first-time visitors.
+- Real-provider support and governed provider/model scope, including Azure OpenAI, Anthropic, Ollama, and approved local CLI adapters alongside the deterministic mock lane.
+- Expectation compilation, hardened grading and calibration primitives, versioned metric snapshots, explicit compatible-population comparison logic, human review/adjudication workflows, and certification orchestration.
+- Durable PostgreSQL-oriented scheduling, outbox/lifecycle support, row-level project isolation, content-addressed and encrypted evidence storage, audit/signing controls, and telemetry/observability surfaces.
+- The five-workspace operator interface — **Endpoints → Models → Generate → Charts → Reports** — with endpoint/model inventory, bounded workload generation, chart evidence, and PDF/report review.
+- Production-oriented identity and request-security controls: OIDC/MFA validation, exact role authorization, audited decisions, exact CORS, streaming body limits, shared Redis-backed rate-limit/revocation/idempotency authority, explicit trusted-proxy handling, and bounded client errors.
+- Private-assurance and deployment boundaries including external secret authority, secure child credential transport, immutable image references, Caddy ingress policy, repository inventory, sanitized runtime-evidence envelopes, and security validation contracts.
+- Native encrypted PostgreSQL backup, WAL, and point-in-time recovery implementation with cluster identity, KMS-backed envelope encryption, signed manifests, continuity checks, isolated restore execution, reconciliation, and recovery evidence.
+- Governance/community infrastructure including contribution guidance, code of conduct, pull-request/issue templates, dependency update configuration, and maintained current-status/security documentation.
+- Canonical GUI captures, architecture diagrams, the generation-workflow diagram, and the evidence-based July 14–August 22 development Gantt used by the root README.
 
 ### Changed
 
-- **Production API request security** now composes shared Redis-backed security
-  state, exact-origin CORS, actual-byte body enforcement, bounded metadata/media
-  validation, exact role authorization, durable authentication/authorization
-  audit, and application-lifetime OIDC authority as one supported path.
-- **Rate-limit identity** now derives enforcement keys from the complete
-  normalized client address without storing the address itself. Forwarded client
-  identity is accepted only from configured trusted proxy CIDRs; an unverified
-  `X-WE3-Project-ID` cannot select a fresh pre-authentication bucket.
-- **Redis failure behavior** is fail-closed in staging/production for distributed
-  request admission, revocation, and shared idempotency decisions. Development
-  can retain an explicit process-local fallback.
-- **OIDC semantics** now require bounded signed identity/lifetime claims and
-  shared revocation state in assurance environments. Documentation no longer
-  describes `jti` as cryptographic replay prevention for an unrevoked bearer
-  token.
-- **Authorization identity** preserves exact workload namespaces such as
-  `workload:api`; suffix-stripping is removed. Recognized `system_admin` identity
-  receives no implicit API superuser bypass without an explicit matrix grant.
-- **Core project API routes** now enter the same authorization matrix as extended
-  operation routes, so the decision and its audit record cannot be bypassed by a
-  separate hard-coded role check.
-- **Caddy public ingress** overwrites `X-Forwarded-For`, blocks public API
-  readiness/metrics/schema UI paths, and no longer exposes Prometheus through a
-  public virtual host. Prometheus stays on the internal observability network.
-- **Production images/configuration** align Redis runtime dependencies, external
-  mounted secret authority, immutable image references, explicit CORS/trusted
-  proxy inputs, PostgreSQL TLS, and internal service networks.
-- **Operator documentation** follows the implemented five-step workflow
-  (`Endpoints → Models → Generate → Charts → Reports`) instead of presenting
-  six older point-in-time screenshots as current navigation.
-- **GUI evidence guidance** distinguishes workspace inventory from model quality,
-  provider health from behavioral outcomes, synthetic demo charts from run
-  evidence, and PDF narratives from authoritative structured evidence.
-- **GUI runtime documentation and lint coverage** account for the supported
-  runtime-injected `ux4`, `ux5`, and `ux6` browser overlays in addition to
-  `enhanced.js`.
-- **Documentation asset validation** validates WebP `RIFF/WEBP` signatures as
-  well as PNG/SVG assets.
+- Project status language now distinguishes **implemented source**, **integrated composition**, **observed automated assurance**, and **runtime assurance required** rather than treating source presence as production proof.
+- Metric comparison uses an explicit two-sided pooled two-proportion test only for compatible independent-binomial populations; unsupported designs fail closed instead of receiving fabricated significance.
+- Generic metric snapshots no longer infer prompt-family independence from run count. Family support must be supplied by actual lineage or remains zero for support checks.
+- Executive support/uncertainty fields remain unknown when canonical evidence does not define them, and unknown gate vocabulary resolves to `indeterminate` rather than pass.
+- API security controls were consolidated so each request-security concern has one supported implementation path rather than competing middleware authorities.
+- Provider approval became explicit governance policy loaded from reviewed configuration for real destinations/models; source-controlled deterministic mock approval remains the local default.
+- CLI provider execution now bounds output and disclosure, uses argv-only subprocess execution, and avoids returning sensitive stderr, exception text, prompts, credentials, or absolute executable paths as canonical metadata.
+- Public documentation was reconciled against live source and historical material was moved or retained as provenance rather than silently rewritten as current truth.
 
 ### Fixed
 
-- **Distributed rate-limit bypass/fail-open paths** involving arbitrary
-  `X-Forwarded-For`, caller-selected project buckets, privacy-reduced enforcement
-  identity, and Redis outage fallback in assurance environments.
-- **OIDC revocation composition** so supported API requests share the same
-  application-lifetime revocation authority rather than recreating isolated
-  per-request in-memory state.
-- **Workload-role authorization bug** where `check_authorization()` stripped the
-  `workload:` namespace before looking up matrix permissions.
-- **API audit semantics** — compatibility `AuditService.log_event()` is now
-  explicitly best effort; security-sensitive callers use required persistence
-  and fail closed rather than describing swallowed audit failures as fail-closed.
-- **Client error disclosure** — unexpected errors use bounded public messages;
-  internal diagnostic sanitization remains on the server-side logging plane.
-- **Browser conditional-request CORS** includes `If-Match` in the explicit
-  preflight allowlist used by state-changing ETag flows.
-- **Makefile cleanup scope** — recursive `__pycache__` removal belongs to
-  `make clean` rather than running as an unrelated side effect of
-  `backup-restore-plan`.
-- **GUI JavaScript lint gap** — `make lint` syntax-checks `ux5.js` and `ux6.js`,
-  which are injected by the supported GUI runtime overlay.
-- **Test collection in `tests/hostile/`** — added the missing `__init__.py`
-  package marker and corrected the hostile scenario import.
-- **Dependency vulnerability: `cryptography`** — upgraded the dependency floor
-  from the earlier 46.x range to `>=50.0.0,<51.0.0` in the current dependency
-  policy.
+- Operational-failure aggregation no longer double-counts diagnostic timeout/malformed subtypes.
+- Cross-project analyst views reject missing or mismatched project scope before exposing metric/artifact lineage.
+- Authorization decisions are persisted at the decision boundary and required audit failures block protected work.
+- Shared Redis security-authority failures fail closed in assurance environments instead of silently degrading distributed controls.
+- Proxy/browser trust, CORS, OIDC revocation, CSRF authority, idempotency intent binding, production secret handling, and public ingress behavior were hardened and aligned with the supported deployment contract.
+- The historical changelog entry for `0.1.0` now reflects the actual July 14 foundation commit rather than later July/August capabilities.
 
-### Removed
+### Assurance boundary
 
-- **Public Prometheus Caddy route** — metrics remain internal; operators needing
-  remote Prometheus access must add a separately authenticated private gateway.
-- **`.archive/unused_files/secrets/fernet.key`** — committed Fernet key removed
-  from the repository. The relevant secret paths are ignored to prevent
-  recurrence. Any value ever committed remains treated as compromised even
-  after active-tree deletion.
+The repository contains substantial automated-test, security, browser, deployment, and recovery validation machinery, but workflow definitions and source code do not by themselves prove that an arbitrary deployment is production-ready. Provider credentials and behavior, IdP/JWKS state, proxy/TLS/firewall rules, Redis/PostgreSQL failure behavior, managed key custody, grader calibration, benchmark design, reviewer operations, backup cadence, WAL retention, destructive restore exercises, RPO/RTO, and release approval remain runtime/program evidence requirements.
 
-## [0.1.0] — 2026-07-15
+## [0.1.0] — 2026-07-14
 
-### Foundation release
+### Foundation framework
 
-- Metrics-first LLM evaluation framework with five-outcome classification
-  (appropriate refusal, false refusal, safe useful compliance, unsafe
-  compliance, ambiguous/partial)
-- Deterministic mock provider for reproducible local/CI runs
-- Wilson score confidence intervals and versioned metric snapshots
-- Release-gate engine with critical-event precedence
-- Ed25519-signed release dossiers
-- Content-addressed, SHA-256 evidence store
-- Versioned Pydantic contracts and JSON Schema export
-- FastAPI REST API with early OIDC/security middleware implementation
-- PostgreSQL RLS project-isolation policy definitions
-- SQLite for local testing; PostgreSQL-oriented production paths
-- Operator GUI with endpoint, model, generation, chart, and report workflows
-- Observability definitions for SLIs, alerting, dashboards, and error budget
-- Backup/recovery data models, runbook, and early reconciliation scaffolding
-- Browser assurance definitions for geometry, accessibility, zoom, and containment
-- Supply-chain scanning/build-provenance definitions
-- Threat model, ADRs, operational runbooks, and security assessments
+The initial `0.1.0` commit established the first complete deterministic vertical slice: versioned experiment/data contracts, a deterministic mock provider, five-outcome grading, Wilson score confidence intervals, threshold gates, content-addressed SHA-256 artifacts, Ed25519-signed release dossiers, SQLAlchemy-backed state/audit foundations, a development REST API and CLI, example experiments, tests, and architecture/runbook documentation.
 
-Historical release bullets describe the repository at that release point and are
-not substitutes for the current implementation/status or executed production
-evidence.
+Capabilities added after July 14 — including expectation compilation, hosted/private provider adapters, PostgreSQL RLS, encrypted evidence storage, the five-workspace GUI, private-assurance/deployment hardening, and native backup/WAL/PITR recovery — belong to the development path leading to `0.2.0`, not to the original foundation release.
