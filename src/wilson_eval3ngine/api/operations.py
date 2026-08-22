@@ -1,9 +1,14 @@
-"""Versioned REST operations with durable idempotency, ETags, and pagination.
+"""Versioned REST operations with durable idempotency and exact authorization.
 
 The operation API treats an idempotency key as a security-relevant binding
 between an authenticated project, one request intent, and one operation ID.
-Staging/production therefore use Redis as the shared authority; development can
-use a bounded process-local store for hermetic tests.
+Staging/production use Redis as the shared authority; development can use a
+bounded process-local store for hermetic tests.
+
+The synchronous operation registry itself remains process-local. A durable
+idempotency binding that outlives that registry is therefore never replayed as
+new work: the API fails safely and leaves restart-resilient execution to the
+PostgreSQL scheduler.
 """
 
 from __future__ import annotations
@@ -19,6 +24,7 @@ from typing import Any
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict
 
+from ..observability import get_trace_id
 from ..persistence.database import Repository
 from ..security.authorization import AuthorizationError, check_authorization
 from ..security.input_validation import (
@@ -27,15 +33,9 @@ from ..security.input_validation import (
     ValidationError,
 )
 from ..util import new_id, sha256_hex, utc_now
-from ..observability import get_trace_id
 from .auth import RequestContext
 
 logger = logging.getLogger("wilson.api.operations")
-
-
-# ============================================================================
-# Idempotency Support
-# ============================================================================
 
 
 class IdempotencyConflict(RuntimeError):
@@ -62,10 +62,9 @@ class IdempotencyRecord(BaseModel):
 class IdempotencyStore:
     """Redis-backed idempotency authority with a development fallback.
 
-    The Redis path uses ``SET NX EX`` so concurrent workers cannot create two
-    successful bindings for the same project/key. When a key already exists,
-    the stored request hash must match the new request hash; otherwise the
-    request fails with an explicit conflict rather than replaying unrelated work.
+    Redis uses ``SET NX EX`` so concurrent workers cannot establish two
+    successful bindings for the same project/key. Reuse is accepted only when
+    the request-intent hash is identical.
     """
 
     def __init__(
@@ -271,11 +270,6 @@ def get_idempotency_store() -> IdempotencyStore:
         return _idempotency_store
 
 
-# ============================================================================
-# Cursor Pagination
-# ============================================================================
-
-
 class CursorPage(BaseModel):
     """Cursor-based pagination response."""
 
@@ -296,19 +290,55 @@ def decode_cursor(cursor: str) -> list[str]:
     return [cursor]
 
 
-# ============================================================================
-# ETag Support
-# ============================================================================
-
-
 def compute_etag(*items: Any) -> str:
     combined = sha256_hex(str([str(i) for i in items]))
     return f'W/"{combined[:16]}"'
 
 
-# ============================================================================
-# API Extension
-# ============================================================================
+def _authorization_denied(detail: str, exc: AuthorizationError) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "code": "unauthorized",
+            "retryable": False,
+            "safe_detail": detail,
+            "trace_id": get_trace_id(),
+            "schema_version": "we3.error.v1",
+        },
+    )
+
+
+def _idempotency_unavailable(exc: Exception) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={
+            "code": "idempotency_unavailable",
+            "retryable": True,
+            "safe_detail": "idempotency authority is unavailable",
+            "trace_id": get_trace_id(),
+            "schema_version": "we3.error.v1",
+        },
+    )
+
+
+def _require_experiment(
+    repository: Repository,
+    project_id: str,
+    experiment_id: str,
+) -> Any:
+    experiment = repository.get_experiment(project_id, experiment_id)
+    if experiment is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "code": "experiment_not_found",
+                "retryable": False,
+                "safe_detail": "experiment does not exist in this project",
+                "trace_id": get_trace_id(),
+                "schema_version": "we3.error.v1",
+            },
+        )
+    return experiment
 
 
 def add_operation_endpoints(
@@ -318,7 +348,7 @@ def add_operation_endpoints(
     repository: Repository,
     idempotency_store: IdempotencyStore,
 ) -> None:
-    """Add project-authorized versioned operation endpoints to the API."""
+    """Add project-authorized operation endpoints to the API."""
 
     @app.post("/v1/experiments/{experiment_id}:start", status_code=status.HTTP_202_ACCEPTED)
     def start_experiment(
@@ -328,21 +358,6 @@ def add_operation_endpoints(
         context: RequestContext = Depends(context_dependency),
     ) -> dict[str, Any]:
         del background_tasks
-        experiment = repository.get_experiment(context.project_id, experiment_id)
-        if experiment is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={
-                    "code": "experiment_not_found",
-                    "retryable": False,
-                    "safe_detail": "experiment does not exist in this project",
-                    "trace_id": get_trace_id(),
-                    "schema_version": "we3.error.v1",
-                },
-            )
-
-        # Authorization must precede idempotency replay. Otherwise knowledge of a
-        # valid key could bypass the route's action authorization check.
         try:
             check_authorization(
                 context.role,
@@ -351,38 +366,32 @@ def add_operation_endpoints(
                 project_id=context.project_id,
             )
         except AuthorizationError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={
-                    "code": "insufficient_role",
-                    "retryable": False,
-                    "safe_detail": "cannot start experiment",
-                    "trace_id": get_trace_id(),
-                    "schema_version": "we3.error.v1",
-                },
-            ) from exc
+            raise _authorization_denied("cannot start experiment", exc) from exc
 
+        _require_experiment(repository, context.project_id, experiment_id)
         idempotency_key = request.headers.get("Idempotency-Key")
         request_intent = f"start:{context.project_id}:{experiment_id}".encode("utf-8")
+        request_hash = sha256_hex(request_intent)
+
         if idempotency_key:
             try:
-                existing = idempotency_store.get(
-                    idempotency_key,
-                    context.project_id,
-                )
-            except IdempotencyBackendUnavailable as exc:
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail={
-                        "code": "idempotency_unavailable",
-                        "retryable": True,
-                        "safe_detail": "idempotency authority is unavailable",
-                        "trace_id": get_trace_id(),
-                        "schema_version": "we3.error.v1",
-                    },
-                ) from exc
+                existing = idempotency_store.get(idempotency_key, context.project_id)
+            except (IdempotencyBackendUnavailable, ValueError) as exc:
+                if isinstance(exc, ValueError):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail={
+                            "code": "invalid_idempotency_key",
+                            "retryable": False,
+                            "safe_detail": "idempotency key is invalid",
+                            "trace_id": get_trace_id(),
+                            "schema_version": "we3.error.v1",
+                        },
+                    ) from exc
+                raise _idempotency_unavailable(exc) from exc
+
             if existing is not None:
-                if existing.request_hash != sha256_hex(request_intent):
+                if existing.request_hash != request_hash:
                     raise HTTPException(
                         status_code=status.HTTP_409_CONFLICT,
                         detail={
@@ -397,47 +406,33 @@ def add_operation_endpoints(
                     existing.operation_id,
                     project_id=context.project_id,
                 )
-                if operation is not None:
-                    return {
-                        "schema_version": "we3.operation_ack.v1",
-                        "trace_id": get_trace_id(),
-                        "project_id": context.project_id,
-                        "operation": operation.model_dump(mode="json"),
-                        "idempotent": True,
-                    }
-                # The durable binding outlived this process-local operation
-                # registry. Replaying it as new work could duplicate execution,
-                # so fail closed until operation state itself is durable.
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail={
-                        "code": "idempotency_operation_state_unavailable",
-                        "retryable": True,
-                        "safe_detail": "existing operation state is not available in this process",
-                        "trace_id": get_trace_id(),
-                        "schema_version": "we3.error.v1",
-                    },
-                )
+                if operation is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail={
+                            "code": "idempotency_operation_state_unavailable",
+                            "retryable": True,
+                            "safe_detail": "existing operation state is not available in this process",
+                            "trace_id": get_trace_id(),
+                            "schema_version": "we3.error.v1",
+                        },
+                    )
+                return {
+                    "schema_version": "we3.operation_ack.v1",
+                    "trace_id": get_trace_id(),
+                    "project_id": context.project_id,
+                    "operation": operation.model_dump(mode="json"),
+                    "idempotent": True,
+                }
 
-        operation = operations.create(
-            SimpleNamespace(
-                manifest_path=f"/experiments/{experiment_id}",
-                output_dir=f"./var/output/{experiment_id}",
-            ),
-            project_id=context.project_id,
-        )
-        operation = operations.update(
-            operation.operation_id,
-            state="queued",
-        )
-
+        proposed_operation_id = new_id("op")
         if idempotency_key:
             try:
-                bound_operation = idempotency_store.create(
+                bound_operation_id = idempotency_store.create(
                     idempotency_key,
                     context.project_id,
                     request_intent,
-                    operation_id=operation.operation_id,
+                    operation_id=proposed_operation_id,
                 )
             except IdempotencyConflict as exc:
                 raise HTTPException(
@@ -451,20 +446,21 @@ def add_operation_endpoints(
                     },
                 ) from exc
             except IdempotencyBackendUnavailable as exc:
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail={
-                        "code": "idempotency_unavailable",
-                        "retryable": True,
-                        "safe_detail": "idempotency authority is unavailable",
+                raise _idempotency_unavailable(exc) from exc
+
+            if bound_operation_id != proposed_operation_id:
+                winner = operations.get(
+                    bound_operation_id,
+                    project_id=context.project_id,
+                )
+                if winner is not None:
+                    return {
+                        "schema_version": "we3.operation_ack.v1",
                         "trace_id": get_trace_id(),
-                        "schema_version": "we3.error.v1",
-                    },
-                ) from exc
-            if bound_operation != operation.operation_id:
-                # A concurrent worker won the key. Do not pretend this process's
-                # fresh operation is authoritative. The durable scheduler should
-                # eventually replace this process-local registry entirely.
+                        "project_id": context.project_id,
+                        "operation": winner.model_dump(mode="json"),
+                        "idempotent": True,
+                    }
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail={
@@ -476,6 +472,14 @@ def add_operation_endpoints(
                     },
                 )
 
+        operation = operations.create(
+            SimpleNamespace(
+                manifest_path=f"/experiments/{experiment_id}",
+                output_dir=f"./var/output/{experiment_id}",
+            ),
+            project_id=context.project_id,
+            operation_id=proposed_operation_id,
+        )
         return {
             "schema_version": "we3.operation_ack.v1",
             "trace_id": get_trace_id(),
@@ -486,24 +490,19 @@ def add_operation_endpoints(
     @app.post("/v1/experiments/{experiment_id}:pause", status_code=status.HTTP_202_ACCEPTED)
     def pause_experiment(
         experiment_id: str,
-        request: Request,
         context: RequestContext = Depends(context_dependency),
         if_match: str | None = Header(None, alias="If-Match"),
     ) -> dict[str, Any]:
-        del request
-        experiment = repository.get_experiment(context.project_id, experiment_id)
-        if experiment is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={
-                    "code": "experiment_not_found",
-                    "retryable": False,
-                    "safe_detail": "experiment does not exist",
-                    "trace_id": get_trace_id(),
-                    "schema_version": "we3.error.v1",
-                },
+        try:
+            check_authorization(
+                context.role,
+                "experiments",
+                "update:own",
+                project_id=context.project_id,
             )
-
+        except AuthorizationError as exc:
+            raise _authorization_denied("cannot pause experiment", exc) from exc
+        _require_experiment(repository, context.project_id, experiment_id)
         if if_match and if_match != compute_etag(experiment_id, "state"):
             raise HTTPException(
                 status_code=status.HTTP_412_PRECONDITION_FAILED,
@@ -515,26 +514,6 @@ def add_operation_endpoints(
                     "schema_version": "we3.error.v1",
                 },
             )
-
-        try:
-            check_authorization(
-                context.role,
-                "experiments",
-                "update:own",
-                project_id=context.project_id,
-            )
-        except AuthorizationError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={
-                    "code": "unauthorized",
-                    "retryable": False,
-                    "safe_detail": "cannot pause experiment",
-                    "trace_id": get_trace_id(),
-                    "schema_version": "we3.error.v1",
-                },
-            ) from exc
-
         return {
             "schema_version": "we3.operation.v1",
             "trace_id": get_trace_id(),
@@ -547,19 +526,6 @@ def add_operation_endpoints(
         experiment_id: str,
         context: RequestContext = Depends(context_dependency),
     ) -> dict[str, Any]:
-        experiment = repository.get_experiment(context.project_id, experiment_id)
-        if experiment is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={
-                    "code": "experiment_not_found",
-                    "retryable": False,
-                    "safe_detail": "experiment does not exist",
-                    "trace_id": get_trace_id(),
-                    "schema_version": "we3.error.v1",
-                },
-            )
-
         try:
             check_authorization(
                 context.role,
@@ -568,17 +534,8 @@ def add_operation_endpoints(
                 project_id=context.project_id,
             )
         except AuthorizationError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={
-                    "code": "unauthorized",
-                    "retryable": False,
-                    "safe_detail": "cannot resume experiment",
-                    "trace_id": get_trace_id(),
-                    "schema_version": "we3.error.v1",
-                },
-            ) from exc
-
+            raise _authorization_denied("cannot resume experiment", exc) from exc
+        _require_experiment(repository, context.project_id, experiment_id)
         return {
             "schema_version": "we3.operation.v1",
             "trace_id": get_trace_id(),
@@ -591,19 +548,6 @@ def add_operation_endpoints(
         experiment_id: str,
         context: RequestContext = Depends(context_dependency),
     ) -> dict[str, Any]:
-        experiment = repository.get_experiment(context.project_id, experiment_id)
-        if experiment is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={
-                    "code": "experiment_not_found",
-                    "retryable": False,
-                    "safe_detail": "experiment does not exist",
-                    "trace_id": get_trace_id(),
-                    "schema_version": "we3.error.v1",
-                },
-            )
-
         try:
             check_authorization(
                 context.role,
@@ -612,17 +556,8 @@ def add_operation_endpoints(
                 project_id=context.project_id,
             )
         except AuthorizationError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={
-                    "code": "unauthorized",
-                    "retryable": False,
-                    "safe_detail": "cannot cancel experiment",
-                    "trace_id": get_trace_id(),
-                    "schema_version": "we3.error.v1",
-                },
-            ) from exc
-
+            raise _authorization_denied("cannot cancel experiment", exc) from exc
+        _require_experiment(repository, context.project_id, experiment_id)
         return {
             "schema_version": "we3.operation.v1",
             "trace_id": get_trace_id(),
@@ -635,19 +570,6 @@ def add_operation_endpoints(
         experiment_id: str,
         context: RequestContext = Depends(context_dependency),
     ) -> dict[str, Any]:
-        experiment = repository.get_experiment(context.project_id, experiment_id)
-        if experiment is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={
-                    "code": "experiment_not_found",
-                    "retryable": False,
-                    "safe_detail": "experiment does not exist",
-                    "trace_id": get_trace_id(),
-                    "schema_version": "we3.error.v1",
-                },
-            )
-
         try:
             check_authorization(
                 context.role,
@@ -656,17 +578,8 @@ def add_operation_endpoints(
                 project_id=context.project_id,
             )
         except AuthorizationError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={
-                    "code": "unauthorized",
-                    "retryable": False,
-                    "safe_detail": "cannot regrade experiment",
-                    "trace_id": get_trace_id(),
-                    "schema_version": "we3.error.v1",
-                },
-            ) from exc
-
+            raise _authorization_denied("cannot regrade experiment", exc) from exc
+        _require_experiment(repository, context.project_id, experiment_id)
         return {
             "schema_version": "we3.operation.v1",
             "trace_id": get_trace_id(),
@@ -689,28 +602,17 @@ def add_operation_endpoints(
                 project_id=context.project_id,
             )
         except AuthorizationError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={
-                    "code": "unauthorized",
-                    "retryable": False,
-                    "safe_detail": "cannot list runs",
-                    "trace_id": get_trace_id(),
-                    "schema_version": "we3.error.v1",
-                },
-            ) from exc
-
-        runs: list[Any] = []
-        etag = compute_etag(experiment_id, limit, cursor)
+            raise _authorization_denied("cannot list runs", exc) from exc
+        _require_experiment(repository, context.project_id, experiment_id)
         return {
             "schema_version": "we3.run_list.v1",
             "trace_id": get_trace_id(),
             "project_id": context.project_id,
             "experiment_id": experiment_id,
-            "runs": runs,
+            "runs": [],
             "next_cursor": None,
             "has_more": False,
-            "etag": etag,
+            "etag": compute_etag(experiment_id, limit, cursor),
         }
 
     @app.get("/v1/metrics")
@@ -728,17 +630,7 @@ def add_operation_endpoints(
                 project_id=context.project_id,
             )
         except AuthorizationError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={
-                    "code": "unauthorized",
-                    "retryable": False,
-                    "safe_detail": "cannot read metrics",
-                    "trace_id": get_trace_id(),
-                    "schema_version": "we3.error.v1",
-                },
-            ) from exc
-
+            raise _authorization_denied("cannot read metrics", exc) from exc
         return {
             "schema_version": "we3.metric_list.v1",
             "trace_id": get_trace_id(),
@@ -750,10 +642,10 @@ def add_operation_endpoints(
 
     @app.post("/v1/dossiers:generate", status_code=status.HTTP_202_ACCEPTED)
     def generate_dossier(
-        request: Request,
         context: RequestContext = Depends(context_dependency),
     ) -> dict[str, Any]:
-        del request
+        # Dossier generation is a release-evidence capability. Generic report
+        # export permission is intentionally not accepted as a fallback.
         try:
             check_authorization(
                 context.role,
@@ -761,26 +653,8 @@ def add_operation_endpoints(
                 "create:dossier",
                 project_id=context.project_id,
             )
-        except AuthorizationError:
-            try:
-                check_authorization(
-                    context.role,
-                    "exports",
-                    "create",
-                    project_id=context.project_id,
-                )
-            except AuthorizationError as exc:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail={
-                        "code": "unauthorized",
-                        "retryable": False,
-                        "safe_detail": "cannot generate dossier",
-                        "trace_id": get_trace_id(),
-                        "schema_version": "we3.error.v1",
-                    },
-                ) from exc
-
+        except AuthorizationError as exc:
+            raise _authorization_denied("cannot generate dossier", exc) from exc
         return {
             "schema_version": "we3.operation.v1",
             "trace_id": get_trace_id(),
