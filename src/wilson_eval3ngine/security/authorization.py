@@ -1,13 +1,18 @@
 """Project and export isolation authorization matrix.
 
-T6.1.2 - Enforce end-to-end project and export isolation.
-Provides role-based access control and scope validation for all boundaries.
+The authorization matrix is usable as a pure library primitive, while supported
+API composition may install a request-scoped audit callback. That callback runs
+synchronously at the allow/deny decision boundary, before a caller can continue
+a protected side effect. Audit failure is surfaced separately from ordinary
+authorization denial so the HTTP boundary can fail closed with a safe 503.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import TYPE_CHECKING, Callable, Generator
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -17,6 +22,52 @@ logger = logging.getLogger("wilson.security.authorization")
 
 class AuthorizationError(Exception):
     """Raised when authorization is denied."""
+
+
+class AuthorizationAuditUnavailable(RuntimeError):
+    """Raised when a required authorization decision cannot be audited."""
+
+
+AuthorizationAuditCallback = Callable[
+    [str, str, str, bool, str | None],
+    None,
+]
+_authorization_audit_callback: ContextVar[AuthorizationAuditCallback | None] = ContextVar(
+    "we3_authorization_audit_callback",
+    default=None,
+)
+
+
+@contextmanager
+def authorization_audit_scope(
+    callback: AuthorizationAuditCallback,
+) -> Generator[None, None, None]:
+    """Install an authorization-audit callback for the current request context."""
+    token = _authorization_audit_callback.set(callback)
+    try:
+        yield
+    finally:
+        _authorization_audit_callback.reset(token)
+
+
+def _audit_decision(
+    role: str,
+    resource: str,
+    action: str,
+    allowed: bool,
+    project_id: str | None,
+) -> None:
+    callback = _authorization_audit_callback.get()
+    if callback is None:
+        return
+    try:
+        callback(role, resource, action, allowed, project_id)
+    except AuthorizationAuditUnavailable:
+        raise
+    except Exception as exc:
+        raise AuthorizationAuditUnavailable(
+            "authorization decision audit is unavailable"
+        ) from exc
 
 
 # Role × Resource × Action matrix. Role names are canonical identities; in
@@ -86,8 +137,6 @@ AUTHORIZATION_MATRIX: dict[str, dict[str, set[str]]] = {
         "metrics": {"read"},
         "exports": {"create:dossier", "sign"},
     },
-    # Workload roles are intentionally narrower and retain their workload:
-    # namespace to prevent accidental equivalence with a human role.
     "workload:api": {
         "jobs": {"create", "read:own", "update:own"},
         "projects": {"read"},
@@ -130,19 +179,16 @@ def check_authorization(
     project_id: str | None = None,
     resource_id: str | None = None,
 ) -> bool:
-    """Check whether the exact canonical role grants a resource action.
-
-    Workload role prefixes are part of the authorization identity. Unknown roles,
-    including identities that merely share a suffix with a known workload role,
-    fail closed.
-    """
+    """Check whether the exact canonical role grants a resource action."""
     del resource_id
     role_perms = AUTHORIZATION_MATRIX.get(role, {})
     resource_actions = role_perms.get(resource, set())
 
     if action in resource_actions:
+        _audit_decision(role, resource, action, True, project_id)
         return True
 
+    _audit_decision(role, resource, action, False, project_id)
     logger.warning(
         "authorization_denied",
         extra={
@@ -161,11 +207,7 @@ def validate_project_scope(
     resource_id: str,
     resource_type: str,
 ) -> bool:
-    """Validate that a resource belongs to the specified project.
-
-    The table identifier is selected exclusively from a closed mapping before it
-    is interpolated into SQL; all data values remain bound parameters.
-    """
+    """Validate that a resource belongs to the specified project."""
     from sqlalchemy import text as sql_text
 
     table_map = {
@@ -176,17 +218,16 @@ def validate_project_scope(
         "gate_decisions": "gate_decisions",
         "review_tasks": "review_tasks",
     }
-
     table = table_map.get(resource_type)
     if not table:
         raise AuthorizationError("unknown resource type")
 
-    query = sql_text(f"SELECT project_id FROM {table} WHERE id = :id")
-    result = session.execute(query, {"id": resource_id}).scalar()
-
+    result = session.execute(
+        sql_text(f"SELECT project_id FROM {table} WHERE id = :id"),
+        {"id": resource_id},
+    ).scalar()
     if result is None:
         raise AuthorizationError("resource not found")
-
     if result != project_id:
         logger.warning(
             "project_scope_violation",
@@ -197,7 +238,6 @@ def validate_project_scope(
             },
         )
         raise AuthorizationError("resource is outside the authorized project")
-
     return True
 
 
@@ -222,11 +262,9 @@ def check_export_authorization(
         "report": "create",
         "raw_evidence": "read:all",
     }
-
     action = export_actions.get(export_type)
     if not action:
         raise AuthorizationError("unknown export type")
-
     return check_authorization(role, "exports", action, project_id=project_id)
 
 
@@ -239,8 +277,11 @@ def check_raw_evidence_authorization(
 
 
 __all__ = [
+    "AuthorizationAuditCallback",
+    "AuthorizationAuditUnavailable",
     "AuthorizationError",
     "AUTHORIZATION_MATRIX",
+    "authorization_audit_scope",
     "check_authorization",
     "validate_project_scope",
     "build_scope_aware_cache_key",
