@@ -4,6 +4,12 @@ Backup payloads can be much larger than ordinary evidence artifacts, so this
 module deliberately avoids loading an entire physical backup into memory. AES-
 256-GCM protects confidentiality and authenticity while the KMS protocol wraps
 the one-time data-encryption key (DEK).
+
+The envelope retains both the operator-supplied key reference and the bounded
+resolved KMS identity. KMS operations prefer an immutable resolved ARN/key ID
+when the adapter supplies one. This prevents a later alias retarget from making
+an otherwise valid historical backup undecryptable or accidentally resolving it
+to a different key.
 """
 
 from __future__ import annotations
@@ -69,6 +75,18 @@ def _iter_chunks(source: BinaryIO):
         yield chunk
 
 
+def _operation_key_id(
+    requested_key_id: str,
+    identity: dict[str, object],
+) -> str:
+    """Prefer immutable KMS identity while retaining requested key provenance."""
+    for field in ("arn", "resolved_key_id"):
+        value = identity.get(field)
+        if value:
+            return str(value)
+    return requested_key_id
+
+
 def encrypt_stream(
     source: BinaryIO,
     destination: Path,
@@ -78,7 +96,8 @@ def encrypt_stream(
     kms_identity: dict[str, object],
 ) -> EncryptionEnvelope:
     """Encrypt a binary stream to ``destination`` using AES-256-GCM."""
-    dek, encrypted_dek = kms_client.generate_data_key(key_id)
+    operation_key_id = _operation_key_id(key_id, kms_identity)
+    dek, encrypted_dek = kms_client.generate_data_key(operation_key_id)
     if len(dek) != 32:
         raise BackupEncryptionError("KMS returned a DEK that is not 256 bits")
 
@@ -111,8 +130,9 @@ def encrypt_stream(
         destination.unlink(missing_ok=True)
         raise
     finally:
-        # bytes are immutable, but dropping the reference promptly still limits
-        # the plaintext DEK lifetime in application code.
+        # Python bytes cannot be reliably zeroized in place. Drop the explicit
+        # reference promptly and rely on the KMS-scoped DEK lifetime rather
+        # than claiming memory zeroization that Python cannot guarantee.
         dek = b""
 
     return EncryptionEnvelope(
@@ -186,7 +206,8 @@ def decrypt_file(
     except Exception as exc:
         raise BackupEncryptionError("Backup encryption metadata is malformed") from exc
 
-    dek = kms_client.decrypt(envelope.key_id, encrypted_dek)
+    operation_key_id = _operation_key_id(envelope.key_id, envelope.kms_identity)
+    dek = kms_client.decrypt(operation_key_id, encrypted_dek)
     if len(dek) != 32:
         raise BackupEncryptionError("KMS unwrapped a DEK that is not 256 bits")
 
