@@ -2,9 +2,9 @@
 
 ## Current security position
 
-Wilson Eval3ngine `0.1.0` is an **active evaluation platform in pre-production assurance**. The repository contains substantial security, identity, evidence-protection, deployment, and certification implementations, but source code alone does not certify a production environment. Production use must satisfy the applicable repository checks plus the private runtime-assurance contract for the exact deployment.
+Wilson Eval3ngine `0.2.0` is an **active evaluation platform in pre-production assurance**. The repository contains substantial security, identity, evidence-protection, deployment, recovery, and certification implementations, but source code alone does not certify a production environment. Production use must satisfy the applicable repository checks plus the private runtime-assurance contract for the exact deployment.
 
-The current source-level security reassessment is [`docs/security/SECURITY_REASSESSMENT_2026-08-22.md`](docs/security/SECURITY_REASSESSMENT_2026-08-22.md). It revalidates the July 30 findings against the hardened API/deployment composition and explicitly separates implemented controls from runtime evidence. GitHub Actions are disabled at the time of that reassessment; workflow definitions therefore are **not** current execution evidence.
+The current source-level security reassessment is [`docs/security/SECURITY_REASSESSMENT_2026-08-22.md`](docs/security/SECURITY_REASSESSMENT_2026-08-22.md). It revalidates the July 30 findings against the hardened API/deployment composition and explicitly separates implemented controls from runtime evidence. GitHub Actions were disabled at the time of that reassessment; workflow definitions therefore were **not** execution evidence for the reassessed revision.
 
 The deterministic local `foundation` lane remains intentionally constrained and should not be connected to real production credentials, sensitive corpora, personal data, or release authority merely because it is easy to run. See [`docs/STATUS.md`](docs/STATUS.md) for the current implementation/assurance matrix and [`docs/security/PRIVATE_RUNTIME_ASSURANCE.md`](docs/security/PRIVATE_RUNTIME_ASSURANCE.md) for the public/private evidence boundary.
 
@@ -53,6 +53,8 @@ The GUI can administer provider endpoints, credentials, models, jobs, charts, re
 
 Public hosted providers should use canonical HTTPS endpoints. Intentional loopback/private gateways require explicit enablement, automatic redirects are constrained to reduce credential-forwarding risk, and unsafe destination classes remain blocked by application policy.
 
+Real provider/model approvals are governance data rather than permanent source truth. Production operators must load and review the explicit provider-scope policy for the destinations and model IDs they authorize; source-controlled deterministic mock approval remains the local default.
+
 Application destination checks are only one layer. Production deployments must also enforce approved network egress and validate allowed/denied destinations without exposing real allowlists or private topology in the public repository.
 
 ## Secrets and child-process transport
@@ -81,7 +83,7 @@ The evaluation path uses content-addressed artifacts, hash-linked database audit
 
 The broader evaluation-evidence storage layer includes AES-256-GCM envelope-encryption behavior and retention/legal-hold interfaces. Development key generation and `LocalKMSClient` are not production key custody.
 
-The security branch is based on the current `main` recovery state. Separate backup/PITR completion work must be reviewed and merged on its own evidence rather than copied into this branch to manufacture a broader security claim. Until that work is integrated, apply the backup/recovery status documented by the branch actually being deployed.
+`src/wilson_eval3ngine/backup/` now contains the native encrypted PostgreSQL physical-backup, WAL, and PITR implementation. It captures cluster/system identity, invokes physical backup without placing credentials in argv, encrypts backup/WAL payloads through the KMS interface, signs canonical manifests and recovery baselines, validates ciphertext/plaintext integrity and trusted keys, checks WAL identity/continuity, executes isolated restore workflows, reconciles restored state, verifies audit-chain continuity, and emits recovery evidence. These are implementation claims only: real backup cadence, retention, destructive restore success, target-time reachability, and measured RPO/RTO require executed target-environment evidence.
 
 ## Production-oriented deployment
 
@@ -103,7 +105,7 @@ make test
 make coverage
 ```
 
-These commands are requirements, not claims about this branch. GitHub Actions are disabled at the time of the 2026-08-22 reassessment, so no current automated workflow or vulnerability-scan result is asserted as passing. Raw scanner findings and private deployment evidence should follow the private-assurance boundary.
+These commands are requirements, not claims about this branch. Historical documents may record periods when GitHub Actions were disabled; current automated assurance must always be established from the actual workflow run for the exact revision. Raw scanner findings and private deployment evidence should follow the private-assurance boundary.
 
 ## Certification and assurance
 
