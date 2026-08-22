@@ -1,12 +1,12 @@
 """Distributed request-rate enforcement for Wilson Eval3ngine.
 
 The security boundary in this module is deliberately stricter than the logging
-boundary.  Enforcement uses the complete normalized client address (represented
+boundary. Enforcement uses the complete normalized client address (represented
 by a one-way token in Redis keys), while logs receive only an anonymized address.
 Forwarded client headers are trusted only when the direct peer belongs to an
 explicitly configured proxy network.
 
-Production and staging deployments are expected to use Redis.  A Redis outage
+Production and staging deployments are expected to use Redis. A Redis outage
 must not silently turn a multi-instance deployment into independent per-process
 rate limiters, so callers can select fail-closed behavior for those environments.
 """
@@ -53,13 +53,13 @@ class RateLimitConfig:
     """Rate-limit policy for one endpoint family.
 
     ``burst`` is an explicit number of additional requests permitted inside the
-    same sliding window.  It is intentionally finite and is not a second,
+    same sliding window. It is intentionally finite and is not a second,
     unbounded bucket.
     """
 
     requests_per_minute: int
     burst: int = 0
-    per_project: bool = False  # retained for schema compatibility; pre-auth keys never use it
+    per_project: bool = False
 
     def effective_limit(self) -> int:
         if self.requests_per_minute <= 0:
@@ -82,16 +82,13 @@ class RateLimitResult:
 
 @dataclass(frozen=True, slots=True)
 class ClientIdentity:
-    """Two representations of a client address for two different purposes."""
+    """Separate enforcement and privacy representations of one client."""
 
     address: str
     enforcement_token: str
     log_label: str
 
 
-# Redis executes this script atomically.  Each allowed event receives a random
-# member ID supplied by the caller, avoiding collisions between workers that
-# happen to execute at the same timestamp.
 _RATE_LIMIT_LUA = """
 local key = KEYS[1]
 local limit = tonumber(ARGV[1])
@@ -125,7 +122,7 @@ class RedisBackend:
         self._redis = redis_client
         try:
             self._script = self._redis.register_script(_RATE_LIMIT_LUA)
-        except Exception as exc:  # fail at composition, not after accepting traffic
+        except Exception as exc:
             raise RateLimitBackendUnavailable(
                 "unable to initialize Redis rate-limit script"
             ) from exc
@@ -187,10 +184,9 @@ class InMemoryBackend:
 
             if current_count < limit:
                 timestamps.append(now)
-                remaining = max(0, limit - current_count - 1)
                 return RateLimitResult(
                     allowed=True,
-                    remaining=remaining,
+                    remaining=max(0, limit - current_count - 1),
                     reset_at=now + window_seconds,
                     retry_after=0,
                     limit=limit,
@@ -234,17 +230,14 @@ def _canonical_ip(value: str) -> str | None:
 
 
 def anonymize_ip(value: str) -> str:
-    """Return a bounded privacy label; never use it as the enforcement identity."""
+    """Return a privacy-reduced address label; never use it for enforcement."""
     try:
         address = ipaddress.ip_address(value)
     except ValueError:
         return "unknown"
-
     if isinstance(address, ipaddress.IPv4Address):
-        network = ipaddress.ip_network(f"{address}/24", strict=False)
-        return f"{network.network_address}/24"
-    network = ipaddress.ip_network(f"{address}/48", strict=False)
-    return f"{network.network_address}/48"
+        return str(ipaddress.ip_network(f"{address}/24", strict=False).network_address)
+    return str(ipaddress.ip_network(f"{address}/48", strict=False).network_address)
 
 
 class ClientIdentityResolver:
@@ -263,9 +256,6 @@ class ClientIdentityResolver:
     def resolve_address(self, request: Any) -> str:
         direct_raw = request.client.host if getattr(request, "client", None) else "unknown"
         direct = _canonical_ip(direct_raw)
-
-        # Test clients and local non-IP transports still need a stable bucket,
-        # but can never cause X-Forwarded-For to become trusted.
         if direct is None:
             return str(direct_raw)[:128] or "unknown"
 
@@ -281,8 +271,6 @@ class ClientIdentityResolver:
                 return direct
             chain.append(parsed)
 
-        # Work from the nearest hop backwards. Trusted proxy hops are removed;
-        # the first untrusted address is the client address we enforce against.
         for address in reversed(chain):
             if not self._is_trusted_proxy(address):
                 return address
@@ -290,21 +278,15 @@ class ClientIdentityResolver:
 
     def resolve(self, request: Any) -> ClientIdentity:
         address = self.resolve_address(request)
-        token = hashlib.sha256(address.encode("utf-8")).hexdigest()
         return ClientIdentity(
             address=address,
-            enforcement_token=token,
+            enforcement_token=hashlib.sha256(address.encode("utf-8")).hexdigest(),
             log_label=anonymize_ip(address),
         )
 
 
 class RateLimiter:
-    """Rate limiter with explicit distributed-authority semantics.
-
-    ``fail_closed=True`` is appropriate for staging/production. In that mode a
-    missing or failed Redis backend raises ``RateLimitBackendUnavailable``;
-    there is no silent conversion to per-process counters.
-    """
+    """Rate limiter with explicit distributed-authority semantics."""
 
     def __init__(
         self,
@@ -365,14 +347,13 @@ class RateLimiter:
         return self._resolver.resolve(request)
 
     def get_client_ip(self, request: Any) -> str:
-        """Compatibility helper returning the exact resolved enforcement address."""
+        """Compatibility helper returning the exact enforcement address."""
         return self._resolver.resolve_address(request)
 
     @staticmethod
     def _sanitize_key(key: str) -> str:
         sanitized = "".join(
-            c if c.isalnum() or c in ":._-" else "_"
-            for c in key
+            c if c.isalnum() or c in ":._-" else "_" for c in key
         )[:256]
         return f"we3:rl:{sanitized}"
 
@@ -386,16 +367,26 @@ def build_rate_limit_key(
     path: str,
     project_id: str | None = None,
 ) -> str:
-    """Build a pre-authentication rate key.
+    """Build a bounded rate-limit key.
 
-    ``project_id`` is accepted only for backward API compatibility and is
-    intentionally ignored. A caller-controlled project header must never create
-    a fresh rate bucket before authentication establishes tenant identity.
+    The supported pre-authentication middleware intentionally does not supply a
+    project ID, because a caller-controlled project header must not create a new
+    bucket. Authenticated/internal callers may supply a verified project ID for
+    a second, tenant-scoped limiter if required.
     """
-    del project_id
     identity_digest = hashlib.sha256(client_identity.encode("utf-8")).hexdigest()[:32]
     path_digest = hashlib.sha256(path.encode("utf-8")).hexdigest()[:16]
-    return f"client:{identity_digest}:path:{path_digest}"
+    parts = [f"client:{identity_digest}", f"path:{path_digest}"]
+    if project_id:
+        project_digest = hashlib.sha256(project_id.encode("utf-8")).hexdigest()[:16]
+        # Include the human-readable bounded value only for compatibility and
+        # diagnostics; the digest is what prevents oversized/unusual key input.
+        safe_project = "".join(
+            char if char.isalnum() or char in "_-" else "_"
+            for char in project_id
+        )[:64]
+        parts.extend([f"project:{safe_project}", f"project_sha:{project_digest}"])
+    return ":".join(parts)
 
 
 __all__ = [
