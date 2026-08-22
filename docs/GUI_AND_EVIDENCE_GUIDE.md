@@ -106,7 +106,7 @@ The sample PNGs under `docs/assets/charts/` demonstrate visualization capability
 | `boxplot_response_times.png` | How do latency distributions/spread/outliers differ? | Tail behavior disappears in one average. |
 | `confidence_intervals.png` | How precise is an observed proportion? | Wide intervals mean limited evidence. |
 | `correlation_heatmap.png` | Which recorded dimensions move together? | Correlation is descriptive, not causal proof. |
-| `cross_run_comparison.png` | How did a candidate change from a baseline? | Comparison significance has provisional portions; see `STATUS.md`. |
+| `cross_run_comparison.png` | How did a candidate change from a baseline? | Statistical comparison is valid only for compatible independent-binomial populations; dependent designs require their corresponding method. |
 | `heatmap.png` | Where are stronger/weaker dimensions concentrated? | Visual scale does not replace the metric/rubric definition. |
 | `histogram_distribution.png` | Is latency skewed, multimodal, or long-tailed? | Distribution shape may be hidden by averages. |
 | `line_response_trend.png` | When did latency change through prompt order? | Sequence effects may be provider/load related. |
