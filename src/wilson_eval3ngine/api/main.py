@@ -186,7 +186,7 @@ def create_app(
     assurance = runtime.is_assurance_environment
     app = FastAPI(
         title="Wilson Eval3ngine API",
-        version="0.1.0",
+        version="0.2.0",
         description=(
             "Evidence-oriented evaluation API with project-scoped identity, "
             "bounded execution, and explicit security/assurance boundaries."
@@ -246,7 +246,7 @@ def create_app(
         lines.append("# HELP we3_info Platform information")
         lines.append("# TYPE we3_info gauge")
         lines.append(
-            f'we3_info{{environment="{runtime.environment}",version="0.1.0"}} 1'
+            f'we3_info{{environment="{runtime.environment}",version="0.2.0"}} 1'
         )
         lines.append("# HELP we3_uptime_seconds Process uptime in seconds")
         lines.append("# TYPE we3_uptime_seconds gauge")
