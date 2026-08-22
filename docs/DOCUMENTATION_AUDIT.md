@@ -1,20 +1,20 @@
 # Documentation Reconciliation Audit
 
 **Audit date:** 2026-08-21  
-**Scope:** public-facing documentation, repository architecture/status claims, install/use guidance, visual assets, and selected implementation wording  
+**Scope:** public-facing documentation, repository architecture/status claims, install/use guidance, GUI/runtime composition, visual assets, validation configuration, CI wiring, and selected implementation wording  
 **Historical Plans/TODO policy:** preserved in place and intentionally not rewritten
 
 ## Why this audit exists
 
-The repository evolved faster than several public documents. Earlier documentation correctly described the first deterministic vertical slice at the time it was written, but later source added provider adapters, review/adjudication, durable scheduling, encrypted storage, identity/security controls, certification orchestration, operations, and hardened deployment material; retaining the old global “foundation” description eventually understated the repository.
+The repository evolved faster than several public documents. Earlier material correctly described the first deterministic vertical slice when it was written, but later source added real-provider paths, review/adjudication, durable scheduling, encrypted storage, identity/security controls, certification orchestration, operations, hardened deployment material, and multiple GUI composition passes. Without reconciliation, readers could understate the platform in one section while simultaneously over-reading old screenshots or historical test claims in another.
 
-A previous documentation pass also introduced two presentation defects: it relied on GitHub Mermaid rendering for core diagrams and created three small WebP gallery files that did not render as valid images in GitHub. This pass treats documentation rendering as part of correctness, replaces those fragile references with static SVG diagrams and the repository's original PNG assets, and records the maturity distinction explicitly.
+The second pass also identified a more subtle documentation problem: the public walkthrough described **six historical GUI captures** even though the current baseline interface explicitly implements five workspaces—**Endpoints, Models, Generate, Charts, Reports**. The historical screenshots were real artifacts, but their grouping no longer matched the operator flow. Correct documentation therefore needed not only newer images, but an explanation of what inventory counts, provider health, demo charts, PDF previews, legacy report metadata, and runtime-injected browser overlays actually mean.
 
 ## Repository areas reviewed for current claims
 
-The public documentation was reconciled against the following implementation families rather than against planning documents alone:
+The reconciliation uses current implementation/configuration rather than planning documents alone, including:
 
-- package/version/entry points in `pyproject.toml` and `src/wilson_eval3ngine/__init__.py`;
+- package/version/entry points in `pyproject.toml`;
 - CLI and synchronous application orchestration;
 - domain contracts and dataset/experiment validation;
 - expectation compilation, rendering, and logical run identity;
@@ -24,81 +24,141 @@ The public documentation was reconciled against the following implementation fam
 - evidence storage, encrypted storage, audit, reports, and signing;
 - persistence and PostgreSQL durable scheduling;
 - API/auth/project security and GUI access/provider/secret boundaries;
-- telemetry/tracing, backups/recovery, production Compose/container material;
+- GUI baseline HTML, runtime UX overlay composition, and active browser assets;
+- telemetry/tracing, backup/recovery, production Compose/container material;
 - certification requirements/orchestration;
-- point-in-time security assessment and private-runtime assurance contract;
+- `.github/workflows/ci.yml` and source-level validation expectations;
 - active documentation, historical Phase-1 reports, Plans/TODOs, and archived visual assets.
 
-## Corrections made
+## Corrections and findings
 
 ### 1. Project maturity
 
-**Previous problem:** public docs described the entire repository as `0.1.0 foundation`, even though “foundation” accurately named only the original deterministic local vertical slice and historical identifiers.
+**Problem:** older public docs described the entire repository as `0.1.0 foundation`, even though `foundation` accurately named only the original deterministic local lane and historical identifiers.
 
-**Correction:** current docs describe the package as version `0.1.0` and the project as an **active evaluation platform in pre-production assurance**. The deterministic local lane and `examples/experiments/foundation.yaml` retain their historical name, while production certification is described as evidence-dependent because target runtime facts are not proven by source code alone.
+**Correction:** current docs describe package version `0.1.0` and the project as an **active evaluation platform in pre-production assurance**. Production certification remains evidence-dependent because source code cannot prove the target deployment's identities, secrets, network policy, providers, certificates, recovery behavior, or other private runtime facts.
 
 ### 2. Provider implementation
 
-**Previous problem:** older status material said real providers were not implemented.
+**Problem:** older status language said real providers were not implemented.
 
-**Correction:** documentation now records implemented Azure OpenAI, Anthropic, Ollama, and supported CLI adapter paths while distinguishing source implementation from authorized provider configuration/runtime validation. The deterministic local service still defaults to the mock provider, so the docs state that narrower fact without using it to characterize the whole provider layer.
+**Correction:** current docs distinguish the deterministic mock lane from implemented Azure OpenAI, Anthropic, Ollama, local/private, and supported CLI adapter paths. A provider adapter existing in source is not treated as proof that any particular external endpoint/credential/model configuration has been authorized or validated.
 
 ### 3. Human review
 
-**Previous problem:** older status language reduced human review to an escalation flag.
+**Problem:** older status material reduced human review to an escalation flag.
 
-**Correction:** current docs describe the implemented review/adjudication primitives: task creation, assignment, blind dual review, recusal, abstention, disagreement, adjudication, and immutable review records. They also state that a functioning organizational review operation still requires identities, staffing, policy, SLA, and runtime integration.
+**Correction:** documentation now describes implemented review/adjudication primitives—task creation, assignment, blind dual review, recusal, abstention, disagreement, adjudication, and immutable review records—while keeping staffing, identity, policy, SLA, and runtime integration as real organizational requirements.
 
-### 4. Statistics
+### 4. Statistics remain partially provisional
 
-**Previous problem:** high-level descriptions could imply that all planned comparison statistics were production complete.
+**Problem:** high-level language could imply all planned comparison statistics were production complete.
 
-**Correction:** `STATUS.md` explicitly records the placeholder p-value path in metric comparison and the prompt-family-count approximation noted by `create_metric_snapshot`. Wilson intervals and the core gate behavior are described as implemented, while unfinished comparison/bootstrap/reference work is not promoted into a stronger claim.
+**Correction:** `STATUS.md`, Getting Started, and the README explicitly preserve two current limitations in `src/wilson_eval3ngine/metrics/engine.py`: one comparison path returns placeholder `p_value=0.5` where completed bootstrap/reference significance is intended, and one snapshot helper approximates `prompt_family_count` with `len(run_ids)`. Wilson intervals/core metric snapshots remain implemented, but those provisional paths must not be used to overclaim certification-grade significance or prompt-family independence.
 
 ### 5. Certification
 
-**Previous problem:** “not approved for production certification” was presented beside a global foundation label without explaining that certification orchestration itself now exists.
+**Problem:** old “not approved for production certification” wording sat beside a global foundation label without explaining that certification orchestration now exists.
 
-**Correction:** documentation now states that the certification subsystem is implemented across ten requirement categories while production certification of an actual release/deployment remains dependent on satisfied evidence. This explains both facts without conflating “certification code exists” with “this deployment is certified.”
+**Correction:** documentation explains both facts: certification requirements/orchestration are implemented, while certification of a release/deployment only exists when the required evidence is actually satisfied for that exact target.
 
 ### 6. Security assessment dating
 
-**Previous problem:** a detailed 2026-08-01 assessment risked being read as continuously current runtime evidence.
+**Problem:** the detailed 2026-08-01 master assessment could be mistaken for continuously refreshed runtime evidence.
 
-**Correction:** current docs label `docs/security/MASTER_SECURITY_ASSESSMENT.md` as a point-in-time assessment of the branch/head it reviewed. The durable public/private assurance boundary is referenced separately through `docs/security/PRIVATE_RUNTIME_ASSURANCE.md`.
+**Correction:** current docs identify it as a point-in-time assessment. The enduring public/private assurance split is documented separately through `docs/security/PRIVATE_RUNTIME_ASSURANCE.md`.
 
-### 7. README usability
+### 7. Current GUI is five workspaces, not six screenshot stages
 
-**Previous problem:** the README was concise but too compressed, leaving readers to infer how inputs, runs, evidence, metrics, gates, GUI workflows, and production controls related.
+**Problem:** the README/GUI guide promoted six older captures as if they were the current workflow. The live baseline `gui/static/index.html` explicitly labels **Workflow 1 of 5** through **Workflow 5 of 5**, with Charts before Reports.
 
-**Correction:** the README now explains the problem WE3 solves, target users, five outcomes, separate reliability states, full evaluation sequence, installation, deterministic first run, GUI workflow, architecture, implementation/assurance matrix, visual evidence, repository map, and documentation map in explanatory prose. The required Agentic Engineering Origin content remains intact and is presented in a Markdown quote block as requested.
+**Correction:** five current operator captures are stored under `docs/assets/gui/current/` and active documentation now follows:
 
-### 8. Broken images
+1. Endpoints
+2. Models
+3. Generate
+4. Charts
+5. Reports
 
-**Previous problem:** `docs/assets/images/ui-workflow.webp`, `metrics-gallery.webp`, and `performance-gallery.webp` did not render correctly on GitHub.
+The older six PNGs remain in `docs/assets/gui/` as historical visual evidence rather than being deleted. Prompt-package selection is documented inside Generate; PDF viewing is documented inside Reports.
 
-**Correction:** the public docs no longer rely on those generated WebPs. The original Wilson logo, six GUI screenshots, and complete sample-chart PNG set are promoted from their archived Git blobs into stable `docs/assets/brand/`, `docs/assets/gui/`, and `docs/assets/charts/` paths.
+### 8. Screenshot values are point-in-time state
 
-### 9. Broken Mermaid diagrams
+**Problem:** a polished screenshot can invite readers to treat visible endpoint/model/run/report counts, provider status, model names, or chart values as stable project facts.
 
-**Previous problem:** GitHub displayed “Unable to render rich display” for Mermaid in the README/architecture page.
+**Correction:** current docs state that those values describe only the captured session. The top-bar numbers are inventory counters, provider online/offline is a connectivity signal, and exact evaluation values must come from run evidence/sidecars/metric snapshots rather than image pixels.
 
-**Correction:** active public docs use static SVG files in `docs/assets/diagrams/`. Historical Mermaid in archived documents or preserved Plans/TODOs remains untouched because those files are provenance rather than the active public rendering surface.
+### 9. Demo charts versus run evidence
 
-## Visual source provenance
+**Problem:** the Charts workspace supports explicit demo generation, so a screenshot containing sample/demo charts can be visually indistinguishable from real evidence unless its semantics are explained.
 
-The Wilson logo and six GUI screenshots already existed in `.archive/unused_files/static/images/`. The chart catalogue already existed in `.archive/unused_files/gui_charts/charts/sample-charts/`; this pass reuses those exact binary Git blobs under active documentation paths instead of recompressing or fabricating replacements.
+**Correction:** the operator guide states that demo charts are synthetic, deliberately labelled, generated only through the demo action, and must never be cited as model benchmark or release evidence. Run-derived charts should be reconciled through run identity, metadata, sidecars, and structured metrics.
 
-This is important because the visual documentation now has a simple provenance story: active docs point to valid repository binaries, while the archive continues to preserve the original location. The documentation diagrams are the only newly authored visual files, and they describe repository architecture rather than claiming runtime measurements.
+### 10. Reports and legacy provenance
+
+**Problem:** historical report artifacts may contain incomplete lineage such as missing recorded models. Hiding or inventing that lineage would be worse than displaying the gap.
+
+**Correction:** current docs describe incomplete legacy metadata as a provenance warning. A release-sensitive claim that depends on missing lineage should be reconciled through sidecars/hashes or regenerated under the current evidence path.
+
+### 11. Runtime GUI composition was easy to misread
+
+**Problem:** `gui/static/index.html` directly loads `enhanced.js`, which could make `ux4.js`, `ux5.js`, and `ux6.js` look dead when only the baseline document is inspected.
+
+**Finding:** `src/wilson_eval3ngine/gui/ux_overlay.py` injects the `ux4`, `ux5`, and `ux6` CSS/JavaScript assets into `/` before the listener serves the supported GUI and also replaces the historical regular-file credential helper with the supported one-shot secret transport.
+
+**Correction:** architecture/operator docs now explain the composed runtime path instead of declaring apparently unreferenced overlay assets obsolete.
+
+### 12. JavaScript lint coverage missed active overlays
+
+**Problem:** `make lint` syntax-checked `enhanced.js` and `ux4.js` but omitted the runtime-injected `ux5.js` and `ux6.js` layers.
+
+**Correction:** the lint target now runs `node --check` across `enhanced.js`, `ux4.js`, `ux5.js`, and `ux6.js`, matching the supported browser composition more closely.
+
+### 13. Makefile cleanup side effect was attached to the wrong command
+
+**Problem:** recursive `__pycache__` deletion was placed under `backup-restore-plan`, giving a backup planning operation an unrelated source-tree cleanup side effect, while `clean` did not perform that cleanup.
+
+**Correction:** `__pycache__` removal is now part of `make clean`; `backup-restore-plan` performs only the restore-plan action.
+
+### 14. Documentation validator did not validate WebP signatures
+
+**Problem:** the active documentation validator understood PNG and SVG signatures but did not validate WebP. That was especially relevant because a previous pass had encountered broken WebP gallery files.
+
+**Correction:** `scripts/validate_documentation_assets.py` now verifies WebP files as `RIFF....WEBP` before considering them valid documentation assets. The current GUI screenshots can therefore use practical WebP files without weakening render-critical validation.
+
+### 15. CI and verification language
+
+**Finding:** `.github/workflows/ci.yml` defines quality/test/coverage/build, supply-chain/security, deterministic foundation validation, main-branch build provenance attestation, and scheduled backup verification jobs. Documentation now describes those configured jobs without claiming that an unobserved branch has passed them.
+
+**Rule:** workflow configuration shows what CI intends to execute. A green status/running artifact for a specific commit is separate execution evidence and should be cited only when actually observed.
+
+## Current visual provenance
+
+The canonical current GUI captures were supplied from the current operator interface and added under:
+
+```text
+docs/assets/gui/current/
+├── 01-endpoints.webp
+├── 02-models.webp
+├── 03-generate.webp
+├── 04-charts.webp
+└── 05-reports.webp
+```
+
+`docs/assets/gui/README-current-captures.md` records their interpretation/provenance rules. The old six PNGs remain beside them as historical point-in-time captures. Chart examples remain under `docs/assets/charts/`; they demonstrate visualization capability but are not automatically current run evidence.
+
+The three static SVG architecture diagrams remain repository-authored explanatory diagrams rather than runtime measurement artifacts.
 
 ## Historical material preserved
 
-No file under `docs/Plans_/` or `docs/08-planning/Plans_/` is modified by this correction. Those directories remain original build/planning evidence, and the documentation index explains why they should be read historically rather than as the current manual.
-
-Superseded public documentation already stored under `.archive/documentation/` remains available. Historical test reports retain their original claims in the archive while the active path points readers toward current status/verification evidence.
+No file under `docs/Plans_/` or `docs/08-planning/Plans_/` is rewritten by this correction. Superseded public documentation under `.archive/documentation/` remains available. Historical test reports retain their original claims as evidence about those snapshots rather than being silently rewritten to match the current branch.
 
 ## Remaining assurance work
 
-This documentation pass is a source/document reconciliation and rendering correction. It does not substitute for running the complete test, browser, container, provider, restore, security, or private runtime-assurance matrix for a production release.
+This pass reconciles source, public documentation, operator screenshots, and selected validation wiring. It does **not** substitute for executing the complete test, browser, container, real-provider, restore, security, deployment, or private runtime-assurance matrix.
 
-The rule for future updates is straightforward: **implemented code can justify an implementation claim; integrated code can justify a supported-path claim; only executed and retained evidence can justify a runtime/certification claim.**
+Before merge/release, the branch should still be validated through the repository's normal commands/workflows. In particular, do not convert the existence of CI configuration into a statement that this documentation branch has passed CI unless the run is actually observed.
+
+The durable rule for future work is:
+
+**implemented code can justify an implementation claim; supported composition can justify a supported-path claim; only executed and retained evidence can justify a runtime/certification claim.**

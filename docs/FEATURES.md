@@ -1,111 +1,151 @@
 # Wilson Eval3ngine Features
 
-Wilson Eval3ngine is designed as an evidence-producing evaluation platform rather than a thin model-call benchmark script. Its features are easiest to understand in groups because each group answers a different part of the release question: what was defined, what was executed, what behavior occurred, how it was measured, what decision rule was applied, and what evidence survives afterward.
+Wilson Eval3ngine is an evidence-producing evaluation platform rather than a thin model-call benchmark script. Its capabilities are easiest to understand by asking what was defined, what executed, what behavior occurred, how it was measured, what decision rule was applied, and what evidence survives afterward.
+
+This page describes **capability groups**, not blanket production certification. [Current Status](STATUS.md) records which portions are implemented, integrated, provisional, or runtime-assurance dependent.
 
 ## Evaluation contracts and reproducibility
 
-Experiments, datasets, cases, provider requests/responses, classifications, metrics, thresholds, and dossiers use explicit versioned contracts. The application validates dataset identity, version, split, and hash relationships before execution, while logical run identity incorporates the experiment definition, case version, rendered prompt, model configuration, repetition, and execution mode.
+Experiments, datasets, cases, provider requests/responses, classifications, metrics, thresholds, and dossiers use explicit versioned contracts. Dataset identity/version/split/hash relationships are validated before execution, while logical run identity incorporates score-affecting experiment/case/prompt/model/repetition/execution inputs.
 
-This design makes configuration part of the evidence rather than background context. A result should be reproducible from frozen definitions and should change identity when a score-affecting input changes.
+Configuration therefore becomes part of the evidence rather than background context.
 
 ## Expectation-first evaluation
 
-WE3 compiles the expected treatment for a case before calling the evaluated model. That ordering is important because it prevents a persuasive or unexpected model response from silently changing what the evaluator intended to measure.
+Expected treatment is compiled before the target model response is available. This prevents a persuasive/unexpected response from silently redefining what the evaluator intended to measure. Expectation failures remain execution/reliability evidence rather than being guessed after the fact.
 
-Expectation records are persisted alongside other run artifacts. Compilation failures are treated as execution/reliability failures rather than sending an undefined case to the provider and guessing afterward.
+## Provider abstraction and attempts
 
-## Provider abstraction
+The provider layer includes a deterministic mock plus registration/adapters for hosted, Ollama/private, and supported CLI-backed model paths. The mock supports credential-free deterministic development; real adapters preserve the same higher-level evaluation contracts for authorized destinations.
 
-The provider layer defines one canonical execution boundary and includes a deterministic mock plus adapters/registration paths for Azure OpenAI, Anthropic, Ollama, and supported local CLI providers. The mock makes the local lane deterministic and credential-free, while the real adapters allow the same higher-level evaluation concepts to be applied to authorized external or local models.
-
-Retries preserve individual attempt records. Retryability, error class, maximum attempts, backoff, and elapsed budget are explicit so provider instability remains visible instead of being confused with model refusal behavior.
+Retries retain attempt records, error class, retryability, limits/backoff, and elapsed budget so provider instability is not confused with model refusal behavior.
 
 ## Five-outcome behavioral grading
 
-The primary behavioral taxonomy distinguishes:
+WE3 distinguishes:
 
 - appropriate refusal;
 - false refusal;
 - safe useful compliance;
 - unsafe compliance;
-- ambiguous or partial behavior.
+- ambiguous/partial behavior.
 
-Reliability states are separate from these behavioral labels. That separation is one of WE3's most important features because “the model refused” and “the provider failed to return a usable response” are not the same outcome.
+Reliability state is separate from those labels. “The model refused” and “the provider never returned a valid response” are different engineering facts.
 
 ## Human review and adjudication
 
-The repository contains a review workflow that goes beyond a boolean escalation flag. It includes task creation, qualified reviewer assignment, blind dual review, recusal, abstention, disagreement handling, adjudication, and immutable submission/adjudication records.
+Review primitives include task creation, qualified assignment, blind dual review, recusal, abstention, disagreement handling, adjudication, and immutable review records. Automated grading is therefore not treated as autonomous release authority.
 
-These primitives support the principle that automated grading should not become autonomous release authority. A real review program still has to supply the people, identities, policy, SLA, workload capacity, and runtime integration needed to exercise the workflow responsibly.
+The analyst persona helper now rejects canonical reports outside the authorized project scope before copying metrics/artifact lineage. Executive aggregate support/uncertainty fields remain provisional because the canonical report does not yet define authoritative aggregate contracts for them, and the reviewer regex redactor is baseline masking rather than a production DLP system.
 
-## Metrics and statistical uncertainty
+## Metrics and uncertainty
 
-Metric snapshots retain explicit numerators, denominators, exclusions, run IDs, method/version metadata, and Wilson score intervals. WE3 therefore lets a reviewer see both the observed rate and the amount of evidence behind it instead of publishing an unexplained percentage.
+Metric snapshots retain numerator, denominator, exclusions, run IDs, method/version metadata, and Wilson score intervals. A reviewer can see both the estimate and the evidence supporting it.
 
-Comparison and drift primitives are also present. Some cross-run significance/bootstrap work remains provisional in the current source, and one snapshot helper notes a prompt-family-count approximation; these limitations are recorded in [STATUS.md](STATUS.md) so they are not mistaken for completed certification statistics.
+Comparison/drift primitives are also present, but two current limitations must stay visible: one comparison path still uses placeholder `p_value=0.5` pending completed bootstrap/reference significance work, and one snapshot helper approximates prompt-family count with run count. Do not use those provisional paths for certification-grade significance or independence claims.
 
 ## Deterministic release gates
 
-The gate engine evaluates configured raw metrics and minimum-support rules with explicit `pass`, `warning`, `indeterminate`, and `block` outcomes. A confirmed unsafe-compliance event can force a block even when support is otherwise small, while insufficient support prevents an artificial pass.
+The gate engine evaluates configured raw metrics and minimum-support rules with explicit `pass`, `warning`, `indeterminate`, and `block` outcomes. Critical unsafe-compliance evidence can block even when aggregate results look favorable, while insufficient support prevents an artificial pass.
 
-Threshold code and threshold authority are deliberately different things. A threshold becomes release policy only when it has been approved for the intended benchmark, model population, severity model, and organizational decision process.
+Gate implementation is not threshold authority; organizational/benchmark policy still defines which thresholds are approved for a release program.
 
-## Content-addressed evidence and signed dossiers
+## Content-addressed evaluation evidence and signed dossiers
 
-The local path persists score-affecting artifacts in a content-addressed evidence store and records audit events around the evaluation lifecycle. It then generates a signed release dossier, safe report output, and experiment-result index so the final human-readable result remains linked to exact hashes and run identities.
+The deterministic path persists score-affecting artifacts in a content-addressed evidence store, records audit events, and generates signed dossier/report/result artifacts. The broader evaluation-evidence layer includes AES-256-GCM envelope-encryption and retention/legal-hold interfaces.
 
-The broader repository also includes encrypted evidence-store behavior using AES-256-GCM envelope encryption and retention/legal-hold policy interfaces. Development/local key handling is intentionally not described as equivalent to an external production KMS or managed signing authority.
+Development/local key handling is not described as equivalent to external production KMS/signing custody. This implemented **evaluation-evidence encryption** is also distinct from the currently provisional **database-backup encryption** path.
 
-## Durable execution
+## Report serialization and reconciliation
 
-The local evaluation service is synchronous because that makes development, CI, and recovery diagnostics straightforward. Separately, the persistence layer implements PostgreSQL-backed durable scheduling with `FOR UPDATE SKIP LOCKED`, fenced lease ownership/versioning, heartbeats, bounded retry policy, poisoned/dead-letter transitions, and reconciliation support.
+Canonical reports have deterministic hashes and safe summary serialization. CSV export protects against common formula-injection prefixes. Cross-format reconciliation now fails closed unless JSON, CSV, and HTML outputs carry the exact canonical report hash; it no longer reports unconditional success for unrelated representations.
 
-This lets the codebase preserve a simple deterministic lane without pretending the production execution model must also be a single synchronous process.
+Optional Parquet export writes report identity/hash plus metric rows when `pyarrow` is available. If the optional dependency is absent, export fails explicitly instead of returning an empty byte string that could be mistaken for a valid artifact.
+
+Hash carriage proves shared representation identity, not independent semantic re-computation of every rendered field.
+
+## Durable evaluation execution
+
+The local evaluation service remains synchronous for deterministic development/CI. Separately, the persistence/execution layer implements PostgreSQL-backed durable scheduling with `FOR UPDATE SKIP LOCKED`, fenced lease ownership/versioning, heartbeats, bounded retry policy, poisoned/dead-letter transitions, and reconciliation support.
+
+This lets the platform keep a simple local lane without pretending production execution must also be one synchronous process.
 
 ## Certification orchestration
 
-The certification package organizes release requirements across ten categories: reproducibility, durability, integrity, security, statistics, grading, governance, recovery, operations, and usability. Blocking/must requirements can prevent a certification outcome, and the orchestration model is built around evidence rather than a free-form “looks good” approval.
+Certification requirements are organized across reproducibility, durability, integrity, security, statistics, grading, governance, recovery, operations, and usability. Blocking/must requirements can prevent certification and the model is evidence-oriented rather than a free-form “looks good” decision.
 
-Certification capability being implemented does not mean every checkout or deployment is certified. The required tests, artifacts, approvals, and private runtime evidence must still be present and valid for the exact release under consideration.
+Certification code existing does not mean a checkout/deployment is certified. Required evidence and approvals must be present for the exact target.
 
 ## Operator GUI
 
-The GUI provides operator-facing workspaces for provider endpoints, model inventory, report/evaluation generation, charts, reports, PDFs, and related evidence operations. The official launcher binds only to loopback because those controls are administrative; remote access is expected to be provided through an independently authenticated TLS proxy.
+The current GUI has five workspaces:
 
-The visual workflow is documented with real repository screenshots and the complete chart catalogue in [GUI & Evidence Guide](GUI_AND_EVIDENCE_GUIDE.md).
+**Endpoints → Models → Generate → Charts → Reports**
+
+The supported launcher defaults to loopback and repairs historical wildcard defaults to `127.0.0.1` unless `WE3_GUI_ALLOW_REMOTE_BIND=1` is deliberately set. That explicit override permits non-loopback listening but does not provide authentication, authorization, TLS, or firewall policy; a remote deployment must independently supply and validate those controls.
+
+The baseline browser page loads `enhanced.js`, while the supported runtime injects the `ux4`, `ux5`, and `ux6` overlays. Those files are active runtime layers rather than dead assets. Current screenshots and evidence-reading rules are in [GUI & Evidence Guide](GUI_AND_EVIDENCE_GUIDE.md).
 
 ## Provider and credential protections
 
-GUI provider handling differentiates public destinations from intentional local/private gateways, constrains redirect behavior, and avoids returning credential values in endpoint API responses. The supported POSIX report-job path uses a one-shot FIFO for keyed child-process handoff instead of the historical regular plaintext temporary file.
+Provider handling differentiates public destinations from intentional local/private gateways, constrains credential-bearing redirect behavior, and avoids returning credential values in endpoint API responses. Local/private provider egress and remote GUI listening use separate explicit controls.
 
-These are application controls, not a replacement for deployment egress policy, operating-system account security, secret management, provider-side credential scope/rotation, or network assurance.
+On the supported POSIX report-job path, one-shot protected secret transport replaces the historical regular plaintext temp-key file. These application controls do not replace operating-system identity security, secret management, provider-side scope/rotation, or network egress policy.
 
 ## Authentication, authorization, and project isolation
 
-The broader platform includes OIDC support and project-scoped security controls. Production use depends on the real organization's issuer/JWKS, audience, claims, group/role mapping, database policies, object policies, revocation behavior, and negative authorization testing.
+The platform includes OIDC support and project-scoped security controls. Production assurance still depends on the real issuer/JWKS, audience, claims, role/group mapping, database/object policies, revocation behavior, and negative authorization testing.
 
-This distinction is why [Private Runtime Assurance](security/PRIVATE_RUNTIME_ASSURANCE.md) treats public implementation and private deployment configuration as separate evidence domains.
+[Private Runtime Assurance](security/PRIVATE_RUNTIME_ASSURANCE.md) documents that public implementation and private deployment evidence are separate domains.
 
 ## Hardened API and deployment controls
 
-Production-oriented deployment material includes Caddy ingress, API service, PostgreSQL, Redis, Prometheus, and Grafana with internal service networks. The API includes actual received-byte body limiting rather than trusting a client-declared `Content-Length`, and container/deployment material includes explicit secret/configuration requirements and hardening choices.
+Production-oriented material includes Caddy ingress, API service, PostgreSQL, Redis, Prometheus, and Grafana with internal service networks. The API includes actual received-byte body limiting rather than trusting client-declared `Content-Length`, and deployment files contain explicit secret/configuration requirements and hardening choices.
 
-A Compose file is still a template until it is executed and verified. Container identity, image digests, TLS, firewall behavior, database/cache protection, and egress enforcement require runtime evidence from the actual deployment.
+A Compose/Docker/Terraform file is still a template until executed and verified. Exact image identity, TLS, firewall behavior, database/cache protection, identity, and egress enforcement require target-runtime evidence.
 
-## Observability and recovery
+## Telemetry and observability
 
-Telemetry and tracing modules provide correlation and operational instrumentation across evaluation stages. Backup/recovery modules and runbooks support backup creation, verification, restore planning, and broader recovery validation.
+Telemetry/tracing modules provide correlation and operational instrumentation across evaluation stages. Prometheus recording/alert rules and dashboard/deployment material provide the source-side surface for monitoring.
 
-The presence of those implementations means operations were designed into the platform rather than added only to documentation. Production SLO, alerting, restore, PITR, object reconciliation, and disaster-recovery claims nevertheless require executed evidence.
+Production SLO, alert-delivery, tracing-backend, and incident-response claims require observed runtime evidence rather than source presence alone.
+
+## Backup / PITR / recovery — provisional
+
+The repository contains backup metadata models, PostgreSQL command scaffolding, restore-plan concepts, reconciliation queries, recovery manifests, CLI entry points, tests, and an operations runbook. These are useful design and implementation foundations, but the current manager must **not** be described as complete production backup protection.
+
+A source audit found that the native path currently lacks or overstates several material controls:
+
+- the `pg_basebackup` output is not actually encrypted even though metadata is marked encrypted;
+- the checksum is based on the directory pathname rather than backup contents;
+- WAL archival is metadata scaffolding rather than a real archive;
+- restore planning synthesizes placeholder WAL segment names;
+- signature verification is not implemented in the current verification path;
+- isolated restore execution currently logs intent and returns success instead of running a restore/replay;
+- backup catalogue state is held in-process rather than durably persisted through this manager;
+- integration tests use simulated backup records rather than a real encrypted PostgreSQL backup → PITR restore → reconciliation exercise.
+
+Until those gaps are closed, use the target platform's independently managed backup/encryption/PITR controls for real production protection and treat WE3's native recovery code as provisional. See [Backup and Recovery Runbook](operations/backup-recovery-runbook.md) and tracked issue #38.
 
 ## Visual analytics
 
-The chart system includes confidence intervals, response-time distributions and trends, prompt-level heatmaps, token views, outcome distributions, radar comparisons, cross-run comparisons, timelines, and other analytical views. Charts make patterns easier to see but never replace the structured metric snapshots and sidecars that hold exact values and provenance.
+The chart system includes confidence intervals, response-time distributions/trends, prompt-level heatmaps, token views, outcome distributions, radar comparisons, cross-run comparisons, timelines, and related analytical views.
 
-Every promoted documentation chart is visible in [GUI & Evidence Guide](GUI_AND_EVIDENCE_GUIDE.md), with three-sentence explanations of what the visual shows and when it is useful.
+Charts are for pattern recognition. Exact values and provenance come from structured metric/evidence sidecars. GUI **demo charts are synthetic** and must not be promoted into real benchmark evidence.
 
 ## What WE3 deliberately avoids claiming
 
-WE3 does not claim that a model is safe outside the tested population, that a high aggregate score overrides a critical safety event, that a provider error is a refusal, that source code proves the security of a deployed environment, or that automated judging removes the need for accountable human decision authority. It also does not treat historical Plans/TODOs or a point-in-time test report as current runtime evidence.
+WE3 does not claim that:
 
-For the exact implementation/assurance boundary, read [Current Status](STATUS.md). For component relationships and trust boundaries, read [Architecture](ARCHITECTURE.md).
+- a model is safe outside the tested population;
+- a high aggregate score overrides a critical safety event;
+- provider failure is a refusal;
+- a screenshot is a metric snapshot;
+- a PDF is the entire release dossier;
+- a source file proves private deployment security;
+- a `True` metadata field proves cryptographic protection;
+- a restore plan means a restore executed;
+- automated judging removes accountable human release authority;
+- historical Plans/TODOs or old test reports are current runtime evidence.
+
+For exact implementation/assurance state read [Current Status](STATUS.md); for component relationships read [Architecture](ARCHITECTURE.md).

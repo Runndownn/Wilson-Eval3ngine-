@@ -1,40 +1,47 @@
 # Wilson Eval3ngine Documentation
 
-This directory contains two different kinds of material and they should not be confused. The files linked under **Current documentation** describe the present repository, while Plans/TODOs, historical reports, design records, and point-in-time assessments preserve how the platform was developed and evaluated at earlier moments.
+This directory contains current product/operator documentation **and** historical engineering material. Do not treat every Markdown file, TODO, screenshot, or old test report as equally current. The documents under **Current documentation** describe the present repository; plans, design passes, archived docs, and point-in-time assessments preserve how the platform was developed and verified at earlier moments.
 
 ## Current documentation
 
 | Document | Use it for |
 |---|---|
 | [Getting Started](GETTING_STARTED.md) | Install WE3, run the credential-free local example, start the GUI, and understand the first successful workflow. |
-| [Features](FEATURES.md) | Learn what capabilities exist and why they matter. |
-| [Architecture](ARCHITECTURE.md) | Understand modules, execution flow, persistence, certification, trust boundaries, and the local-versus-production architecture. |
+| [Features](FEATURES.md) | Learn what capability groups exist and why they matter. |
+| [Architecture](ARCHITECTURE.md) | Understand modules, execution flow, persistence, certification, trust boundaries, and local-versus-production architecture. |
 | [Current Status](STATUS.md) | Determine what is implemented, integrated, provisional, historical, or still dependent on private runtime assurance. |
-| [GUI & Evidence Guide](GUI_AND_EVIDENCE_GUIDE.md) | See all promoted GUI screenshots and charts, plus explanations of the operator workflow and evidence presentation. |
-| [Provider & Local Model Setup](operations/api-key-local-model-setup.md) | Configure hosted providers, local/private gateways, Ollama, and CLI-backed model access safely. |
+| [GUI & Evidence Guide](GUI_AND_EVIDENCE_GUIDE.md) | Use the current five-workspace UI and interpret charts/reports without confusing inventory, demos, or screenshots with release evidence. |
+| [Provider & Local Model Setup](operations/api-key-local-model-setup.md) | Configure hosted providers, intentional local/private gateways, Ollama, and CLI-backed model access safely. |
 | [Private Runtime Assurance](security/PRIVATE_RUNTIME_ASSURANCE.md) | Understand which production facts belong in private runtime evidence rather than the public repository. |
 | [Master Security Assessment](security/MASTER_SECURITY_ASSESSMENT.md) | Review the detailed 2026-08-01 point-in-time security assessment, its findings, and residual risks. |
-| [Documentation Audit](DOCUMENTATION_AUDIT.md) | See how current documentation was reconciled against code and which older claims were corrected. |
+| [Documentation Audit](DOCUMENTATION_AUDIT.md) | See how documentation was reconciled against code and what stale claims/assets were corrected. |
 
-The root [README](../README.md) is the public entry point. It intentionally explains the complete project in approachable language, while the documents above provide the next layer of detail without requiring readers to work through implementation plans first.
+The root [README](../README.md) is the public entry point. It gives the minimum complete mental model; the documents above add operational and assurance detail without requiring a reader to reverse-engineer the plans or source tree first.
 
 ## Source-of-truth rules
 
-Current source code and machine-readable configuration are authoritative for implementation claims. Current status documentation explains whether an implementation is also composed into a supported path or whether its production claim still depends on runtime evidence; a screenshot, old TODO completion marker, historical test count, or old architecture blueprint must not silently override that distinction.
+For **implementation behavior**, current source code and machine-readable configuration win. For **maturity/assurance**, [STATUS.md](STATUS.md) explains whether source is merely implemented, composed into a supported path, still statistically provisional, or dependent on private runtime evidence. For **exact evaluation values**, use run evidence, sidecars, metric snapshots, gate records, hashes, and dossiers—not screenshots or old report prose.
 
-The package version is currently `0.1.0`, but the repository as a whole is not accurately described as only “the foundation.” The historical deterministic local lane retains foundation identifiers, while the broader platform includes provider, durable scheduler, review, encrypted storage, identity, operations, certification, and deployment capabilities and is best described as an **active evaluation platform in pre-production assurance**.
+A useful precedence model is:
+
+1. current source/configuration for what the software implements;
+2. current status/operations docs for what is supported and what still needs assurance;
+3. retained run evidence for what a specific evaluation/deployment actually demonstrated;
+4. historical plans, screenshots, reports, and archives for provenance only.
+
+The package version remains `0.1.0`, but the repository is not accurately described as only “the foundation.” `foundation` names the retained deterministic local lane; the broader repository includes real-provider paths, durable scheduling, review/adjudication, encrypted storage, identity/security, operations, recovery, certification, and deployment capabilities.
 
 ## Historical planning and TODO material
 
-`docs/Plans_/` and `docs/08-planning/Plans_/` are preserved in place and are not rewritten into present-tense product documentation. They document the engineering process, decisions, evidence tasks, and build progression that created the platform, which makes them valuable provenance even when an old plan's “future” capability now exists in source.
+`docs/Plans_/` and `docs/08-planning/Plans_/` are preserved in place and are not rewritten into present-tense product documentation. They document the engineering process, decisions, evidence tasks, and build progression that created the platform. A completed capability may therefore still appear as a future/TODO item in an old plan.
 
-`docs/Prompts_/` and other historical/design directories should likewise be read according to their date and purpose. When a historical document conflicts with current code or [STATUS.md](STATUS.md), use the current implementation/status evidence for present-tense claims and keep the historical document as provenance.
+`docs/Prompts_/`, design-pass documents, and other historical directories should likewise be read according to their date and purpose. When an old document conflicts with current source or [STATUS.md](STATUS.md), preserve it as provenance but use the current implementation/status evidence for present-tense claims.
 
 ## Documentation archive
 
-Superseded public-facing documents are stored under `.archive/documentation/` with dated snapshots. This keeps the active documentation tree readable without deleting the previous README, framework status, implementation blueprint, GUI guide, or historical Phase-1 test report.
+Superseded public-facing documents are stored under `.archive/documentation/` with dated snapshots. Historical Phase-1 reports and previous README/blueprint/status material remain useful evidence about earlier repository states, not automatic proof about the latest branch or a private deployment.
 
-The separate `.archive/unused_files/` area contains assets and source artifacts that are not active runtime files. Documentation-relevant GUI screenshots, logo art, and chart PNGs have been promoted by exact Git blob identity into `docs/assets/` so the README and GUI guide can render them reliably without depending on archive-relative paths.
+`.archive/unused_files/` contains source/assets that are not the active runtime or active public-documentation surface. Reusing a historical binary in documentation does not make its displayed data current; provenance and current meaning must be explained separately.
 
 ## Visual asset convention
 
@@ -49,6 +56,12 @@ docs/assets/
 │   ├── system-architecture.svg
 │   └── trust-boundaries.svg
 ├── gui/
+│   ├── current/
+│   │   ├── 01-endpoints.webp
+│   │   ├── 02-models.webp
+│   │   ├── 03-generate.webp
+│   │   ├── 04-charts.webp
+│   │   └── 05-reports.webp
 │   ├── 01-endpoints.png
 │   ├── 02-models.png
 │   ├── 03-generate.png
@@ -59,8 +72,27 @@ docs/assets/
     └── *.png
 ```
 
-PNG is used for the historical/runtime screenshots and generated charts because those repository assets are already valid GitHub-renderable binaries. SVG is used only for the three documentation architecture diagrams, which are static repository files rather than relying on GitHub's Mermaid renderer.
+`gui/current/` is the canonical five-workspace walkthrough matching the current UI: **Endpoints → Models → Generate → Charts → Reports**. The six PNGs in the parent `gui/` directory are retained historical point-in-time screenshots. Prompt-package controls are now explained as part of **Generate**, while PDF viewing is part of **Reports**.
+
+Current screenshots use WebP to keep documentation assets practical at repository scale; the documentation validator checks their `RIFF/WEBP` signature in addition to PNG and SVG validation. Sample/generated chart PNGs remain examples of visualization capability and must not be presented as current benchmark evidence unless tied to the specific run that produced them.
+
+## Understanding the GUI source
+
+The baseline `gui/static/index.html` does not by itself show every active browser asset. It loads `enhanced.js`, while the supported GUI server installs `ux4`, `ux5`, and `ux6` CSS/JavaScript overlays at runtime. Documentation and linting therefore need to reason about the composed supported path, not only literal script tags in the baseline HTML.
+
+This is a useful general rule for the repository: apparently unreferenced files should not be declared dead until runtime composition, imports, tests, and deployment wiring have been checked.
 
 ## Maintaining documentation
 
-When behavior changes, update the smallest current document that owns the claim and update `STATUS.md` if maturity or assurance changed. Do not turn Plans/TODOs into a second current manual, do not claim that code proves private deployment facts, and do not publish real secrets, identities, endpoints, certificates, private network details, or raw runtime evidence simply to make a public document appear complete.
+When behavior changes:
+
+- update the smallest current document that owns the claim;
+- update [STATUS.md](STATUS.md) if maturity/assurance changed;
+- update screenshots only when they represent the current workflow and explain point-in-time values as such;
+- keep synthetic/demo charts explicitly synthetic;
+- preserve missing provenance rather than inventing lineage for a legacy report;
+- keep Plans/TODOs historical rather than rewriting them into a second current manual;
+- never claim that source code proves private deployment facts;
+- never publish credentials, real private endpoints, certificates, identity details, provider allowlists, or raw runtime assurance evidence merely to make documentation look complete.
+
+The durable rule is: **implemented code can justify an implementation claim; supported composition can justify a supported-path claim; only executed and retained evidence can justify a runtime/certification claim.**

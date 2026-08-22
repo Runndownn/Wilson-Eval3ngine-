@@ -1,5 +1,7 @@
 """Unit tests for TODO 48 persona-specific views."""
 
+import pytest
+
 from wilson_eval3ngine.reports.models import CanonicalReport
 from wilson_eval3ngine.ui.views import (
     build_executive_summary,
@@ -20,7 +22,6 @@ class TestExecutiveSummary:
         )
         summary = build_executive_summary(report)
         assert summary.schema_version == "we3.executive_summary.v1"
-        # Verify no evidence fields in slots
         summary_slots = {f.name for f in summary.__dataclass_fields__.values()}
         assert "redacted_evidence" not in summary_slots
         assert "raw_evidence" not in summary_slots
@@ -29,6 +30,7 @@ class TestExecutiveSummary:
         """Executive summary shows aggregate status only."""
         report = CanonicalReport(
             experiment_id="exp_123",
+            project_id="proj_1",
             gate_statuses={"model_a": "pass", "model_b": "warning"},
         )
         summary = build_executive_summary(report, cost_usd=5.50)
@@ -40,6 +42,7 @@ class TestExecutiveSummary:
         """Critical blocks are included in summary."""
         report = CanonicalReport(
             experiment_id="exp_123",
+            project_id="proj_1",
             gate_statuses={"model_a": "pass", "model_b": "block"},
         )
         summary = build_executive_summary(report)
@@ -66,13 +69,29 @@ class TestAnalystView:
         assert len(view.slices) == 1
 
     def test_analyst_view_no_cross_project(self):
-        """Analyst view is scoped to project."""
+        """Analyst view is scoped to the canonical report's project."""
         report = CanonicalReport(
             experiment_id="exp_123",
             project_id="proj_1",
         )
         view = build_analyst_view(report, "proj_1")
         assert view.project_id == "proj_1"
+
+    def test_analyst_view_rejects_cross_project_report(self):
+        """A caller cannot relabel another project's report as authorized."""
+        report = CanonicalReport(
+            experiment_id="exp_123",
+            project_id="proj_1",
+            artifact_hashes=["sensitive-artifact-hash"],
+        )
+        with pytest.raises(PermissionError, match="outside the authorized project scope"):
+            build_analyst_view(report, "proj_2")
+
+    def test_analyst_view_rejects_unscoped_report(self):
+        """Unscoped reports cannot be exposed through a scoped analyst view."""
+        report = CanonicalReport(experiment_id="exp_123")
+        with pytest.raises(ValueError, match="missing project scope"):
+            build_analyst_view(report, "proj_1")
 
 
 class TestRedaction:

@@ -2,31 +2,41 @@
 
 ## Purpose
 
-This guide explains the supported operator workflow for registering hosted or local model endpoints without placing credentials in source files, shell history, process arguments, or regular plaintext report-key files. It describes repository behavior, not the current inventory of any private network or third-party account. Provider model counts, token lifetimes, endpoint availability, and CLI storage locations can change and must be verified against the provider's current documentation.
+This guide explains the supported operator workflow for hosted and local model endpoints without placing credentials in source files, shell history, process arguments, or regular plaintext report-key files. It documents repository behavior, not any private provider/network inventory. Provider model counts, token lifetimes, endpoint availability, and CLI credential locations can change and must be verified in the authorized environment.
 
-## Security model
+## GUI listener security
 
-The official GUI launcher binds only to loopback. Start it with:
+The supported launcher defaults to loopback:
 
 ```bash
 we3-gui-start --host 127.0.0.1 --port 8080
 ```
 
-Open `http://127.0.0.1:8080` from the same host. Do not bind the GUI directly to a LAN, VPN, container host interface, or public address; it has administrative authority over endpoints, credentials, jobs, reports, charts, and deletion actions. Remote operation requires a separately authenticated TLS reverse proxy that connects to the loopback listener and enforces an explicit authorization policy.
+Open `http://127.0.0.1:8080` on the same host. Historical wildcard defaults (`0.0.0.0`, `::`) are repaired to loopback unless the operator explicitly enables remote binding:
 
-Endpoint credentials are encrypted in local GUI state using a master key owned by the same operating-system account. This protects accidental disclosure and offline copies that do not include the master key, but it is not equivalent to an external vault and does not protect against compromise of that account or process. Production use should migrate endpoint references to an approved secret manager or operating-system credential store.
+```bash
+WE3_GUI_ALLOW_REMOTE_BIND=1 we3-gui-start --host 10.0.0.25 --port 8080
+```
 
-When the official launcher starts a keyed report job on POSIX, it replaces the historical regular temporary file with a one-shot FIFO. The FIFO is mode `0600`, its containing directory is mode `0700`, the secret is bounded to 4096 bytes, one child reads it, parent memory is overwritten, and the path is removed after success, cancellation, or cleanup. Platforms without FIFO support fail closed for keyed report jobs rather than writing a plaintext fallback.
+`WE3_GUI_ALLOW_REMOTE_BIND=1` changes only the bind-policy check. It does **not** add authentication, authorization, TLS, firewalling, trusted proxy handling, or multi-user isolation. Use it only when the deployment deliberately supplies those controls and has validated the exposed listener. A broad wildcard bind with the override receives an explicit launcher warning.
+
+For normal desktop/operator use, keep loopback and put any required remote access behind an independently authenticated and authorized TLS reverse proxy.
+
+## Credential security model
+
+Endpoint credentials are encrypted in local GUI state using a master key owned by the same operating-system account. This reduces accidental disclosure/offline-copy risk when the master key is absent; it is not equivalent to an external vault and does not protect against compromise of the account/process. Production use should rely on the approved secret authority/credential store for that deployment.
+
+On supported POSIX systems, the keyed report-job path replaces the historical regular temporary key file with a one-shot FIFO. The FIFO is mode `0600`, its containing directory is mode `0700`, the secret is bounded, one child reads it, parent memory is overwritten, and the path is cleaned after success/cancellation/failure. Platforms without the supported secure transport must fail closed rather than restore a plaintext fallback.
 
 ## Endpoint network profiles
 
-The GUI distinguishes public HTTPS providers from local or private development gateways.
+The GUI distinguishes public HTTPS providers from intentional local/private gateways.
 
 ### Public hosted provider
 
-Use the provider's canonical HTTPS base URL. Embedded URL credentials are prohibited, automatic redirects are disabled, and destination addresses are checked before dispatch. Configure the credential through the GUI rather than editing `gui/data/endpoints.json` directly.
+Use the provider's canonical HTTPS base URL. Embedded URL credentials are prohibited, automatic redirects are constrained/disabled for the protected flow, and destination addresses are validated before dispatch. Configure the credential through the GUI rather than editing `gui/data/endpoints.json` manually.
 
-Example values:
+Example:
 
 ```text
 Name: Hosted provider
@@ -35,17 +45,24 @@ URL: https://api.example.invalid/v1
 API key: supplied through the password field
 ```
 
-The `.invalid` domain is illustrative and will not connect.
+`.invalid` is intentionally non-routable documentation data.
 
-### Loopback or private development gateway
+### Local/private provider gateway
 
-Local and private destinations are denied unless the operator deliberately enables them for the GUI process:
+Private and loopback provider destinations require explicit provider-policy enablement:
 
 ```bash
 WE3_GUI_ALLOW_LOCAL_PROVIDERS=1 we3-gui-start --host 127.0.0.1 --port 8080
 ```
 
-This setting allows configured private or loopback providers; it does not disable the permanent blocks for link-local, metadata, multicast, unspecified, and reserved destinations. It also does not replace host or container egress policy. Limit the process to the exact gateway addresses and ports required for the deployment.
+This flag is different from `WE3_GUI_ALLOW_REMOTE_BIND`:
+
+- `WE3_GUI_ALLOW_LOCAL_PROVIDERS=1` controls whether the GUI may call intentional private/loopback **provider destinations**;
+- `WE3_GUI_ALLOW_REMOTE_BIND=1` controls whether the GUI **listener itself** may bind to a non-loopback address.
+
+Do not confuse the two. Enabling local providers does not remotely expose the GUI, and enabling remote GUI binding does not authorize arbitrary private-provider egress.
+
+The provider policy continues to block unsafe destination classes such as link-local/metadata/multicast/unspecified/reserved addresses as implemented. Host/container egress controls are still required.
 
 A common local Ollama endpoint is:
 
@@ -56,62 +73,60 @@ URL: http://127.0.0.1:11434
 API key: empty unless the local gateway requires one
 ```
 
-Verify the local service without sending a model prompt:
+Connectivity-only verification:
 
 ```bash
 curl --fail --silent --show-error http://127.0.0.1:11434/api/tags
 ```
 
-Do not copy private IP addresses, usernames, SSH targets, or model inventories from another operator's documentation. Register the address that belongs to the current authorized environment.
+Do not use sensitive prompts for connectivity testing or copy private IPs/model inventories from somebody else's environment.
 
 ### CLI providers
 
-CLI adapters use the local operating-system identity and the provider CLI's own credential store. Register the exact adapter URL shown by the GUI, such as `cli://codex`, only after installing and authenticating that CLI under the same restricted account that runs the GUI.
+CLI adapters use the local operating-system identity and the provider CLI's own credential store. Register the exact adapter identifier shown by the GUI (for example `cli://codex`) only after installing/authenticating that CLI under the same restricted account that runs WE3.
 
-Check availability without printing credentials:
+Check executable availability without printing credentials:
 
 ```bash
 command -v codex
 ```
 
-The GUI must not be run as `root` merely to reach a CLI credential file.
+Do not run the GUI as `root` solely to reach another credential store.
 
-## Register an endpoint
+## Register and prove an endpoint
 
-1. Start the official loopback launcher.
-2. Open the **Endpoints** tab.
+1. Start the GUI using the secure-default loopback listener unless your deployment explicitly requires/controls remote binding.
+2. Open **Endpoints**.
 3. Select the provider adapter.
-4. Enter a descriptive name and canonical URL.
+4. Enter a descriptive display name and canonical URL.
 5. Enter the credential in the API-key field when required.
 6. Save the endpoint.
-7. Run **Test** and inspect the safe status response.
-8. Open the **Models** tab and run discovery only after the endpoint test succeeds.
+7. Run the connection/health test and inspect its safe status response.
+8. Move to **Models** and discover/reconcile inventory only after connectivity succeeds.
 
-The endpoint list returned to the browser omits credential values. Logs and telemetry use a constant redaction marker rather than stable key prefixes or suffixes.
+The browser-facing endpoint list must not return credential values. Logs/telemetry should use constant redaction rather than stable secret prefixes/suffixes.
+
+An endpoint becoming `online` establishes connectivity at that moment. It does not establish model quality, safety, release eligibility, or even that every model exposed by the endpoint is usable for every evaluation mode.
 
 ## Credential acquisition and rotation
 
-Obtain credentials only through the provider's supported login, device authorization, organization administration, or secret-management workflow. Do not extract tokens from a credential file into a shell variable merely to paste them into `curl`; shell history, environment inspection, crash reporting, and terminal recording can retain them.
-
-For provider CLIs, use the provider's interactive login command and its credential-status command. The exact command, token lifetime, refresh behavior, and storage location are provider-controlled and should be verified from current official documentation.
+Obtain credentials only through the provider's supported login/device-authorization/organization/secret-management workflow. Avoid extracting tokens into shell variables or printing them for ad-hoc `curl`; histories, environment inspection, crash reporting, terminal recording, and process tooling can retain them.
 
 Rotate a GUI endpoint credential as follows:
 
-1. Issue or refresh the replacement credential through the provider.
-2. Stop new evaluation jobs for that endpoint.
-3. Update or recreate the endpoint through the GUI.
-4. Test the endpoint and one synthetic evaluation.
-5. Revoke the previous credential at the provider.
-6. Review audit and error telemetry for failed use of the old credential.
-7. Remove stale local backups that contain the old encrypted endpoint record according to the retention policy.
+1. issue/refresh the replacement through the provider;
+2. stop new jobs for that endpoint;
+3. update/recreate the endpoint through the supported workflow;
+4. test connectivity and a synthetic approved evaluation;
+5. revoke the previous credential;
+6. review audit/error telemetry for old-credential use;
+7. handle any retained state/backups according to the **actual** storage/retention control in the target environment.
 
-If a GUI instance, report-key path, terminal transcript, log, or backup may have exposed a credential, revoke first and investigate second.
+The current WE3 database-backup/PITR manager is provisional; do not assume its metadata proves encrypted backup protection. See [Backup and Recovery Runbook](backup-recovery-runbook.md).
 
 ## Report generation
 
-Use the GUI job workflow rather than invoking `scripts/generate_5_reports.py` with a secret-bearing environment variable or an ad-hoc key file. The official launcher installs the one-shot transport and handles cleanup around the child process.
-
-The following historical patterns are unsupported for production operations:
+Use the supported GUI workflow rather than secret-bearing ad-hoc environment variables or regular plaintext key files. Historical patterns such as these are unsupported for production operation:
 
 ```text
 WE3_REPORT_GATEWAY_API_KEY=<secret>
@@ -119,7 +134,7 @@ WE3_REPORT_API_KEY_FILE=/tmp/plaintext-key
 python -m wilson_eval3ngine.gui.server
 ```
 
-They may remain as compatibility code while migration is completed, but documentation and automation must not rely on them. The supported entry point is `we3-gui-start`.
+The supported entry point is `we3-gui-start`, which composes access control, secure secret transport, and current UX overlays before starting the listener.
 
 ## Local model verification
 
@@ -130,7 +145,7 @@ curl --fail --silent --show-error http://127.0.0.1:11434/api/tags \
   | python -m json.tool
 ```
 
-Run a minimal local-only smoke prompt after confirming that the model and data are approved for the environment:
+After confirming the model/data are approved, a minimal local smoke prompt is:
 
 ```bash
 curl --fail --silent --show-error http://127.0.0.1:11434/api/chat \
@@ -139,27 +154,15 @@ curl --fail --silent --show-error http://127.0.0.1:11434/api/chat \
   | python -m json.tool
 ```
 
-Replace `MODEL_ID` with a value returned by the local inventory. Do not use sensitive prompts for connectivity testing.
+Replace `MODEL_ID` with a value from the local inventory. This is a connectivity/capability smoke check, not evaluation evidence.
 
 ## Production deployment secrets
 
-`docker-compose.prod.yml` requires these values and has no development fallback:
+`docker-compose.prod.yml` requires production values including database/cache/dashboard credentials, OIDC issuer/JWKS, and public TLS routing configuration. Supply them through the deployment platform's approved secret/configuration mechanism. A Git-ignored plaintext `.env` file is still not a production secret manager.
 
-```text
-WE3_POSTGRES_PASSWORD
-WE3_REDIS_PASSWORD
-WE3_GRAFANA_PASSWORD
-WE3_OIDC_ISSUER
-WE3_OIDC_JWKS_URI
-WE3_DOMAIN
-WE3_TLS_EMAIL
-```
+Only the intended ingress should be externally reachable in the production topology. Direct local debugging and intentionally remote GUI operation are separate modes and require their own explicit controls/evidence.
 
-Supply them through the deployment platform's approved secret mechanism. A local `.env` file is excluded from Git, but a plaintext environment file is still not a production secret manager. Restrict its mode, lifecycle, backups, and operator access when it is used for isolated validation.
-
-Only Caddy publishes production host ports. API, PostgreSQL, Redis, Prometheus, and Grafana remain on internal container networks. A separate loopback-only development override should be used when direct local debugging is necessary.
-
-Validate interpolation without using real secrets:
+Validate Compose interpolation with synthetic values only:
 
 ```bash
 WE3_POSTGRES_PASSWORD=test-postgres \
@@ -172,40 +175,44 @@ WE3_TLS_EMAIL=security@example.invalid \
 docker compose -f docker-compose.prod.yml config >/dev/null
 ```
 
-These values are synthetic and must not be deployed.
-
 ## Troubleshooting
+
+### GUI unexpectedly binds to loopback
+
+If a legacy command asks for `0.0.0.0` without `WE3_GUI_ALLOW_REMOTE_BIND=1`, the supported launcher intentionally repairs it to `127.0.0.1`. Prefer that secure default. If remote binding is genuinely required, configure the independent TLS/auth/network controls first, then use the explicit override and a specific address when practical.
 
 ### Endpoint is rejected as private
 
-Confirm that the endpoint is intentionally local or private, then start the GUI with `WE3_GUI_ALLOW_LOCAL_PROVIDERS=1`. Do not enable the setting to work around a public provider DNS error. Review all resolved addresses and the network egress policy.
+Confirm it is an intentional private/local provider, then enable `WE3_GUI_ALLOW_LOCAL_PROVIDERS=1`. Do not use that flag to work around a public provider DNS error; inspect resolution and egress policy instead.
 
 ### Endpoint redirects
 
-Automatic provider redirects are disabled to prevent credential forwarding. Configure the canonical final HTTPS endpoint. Do not enable unrestricted redirect following.
+Use the canonical final endpoint rather than enabling unrestricted redirect following for credential-bearing traffic.
 
-### Report job cannot create a secure transport
+### Keyed report job cannot establish secure transport
 
-Keyed report jobs require POSIX FIFO support on this branch. Use a supported POSIX host/container or implement and validate a native secure transport for the platform. Do not restore a regular plaintext temporary file.
+Use a supported POSIX host/container or implement/validate a native protected transport. Do not fall back to a regular plaintext temporary key file.
 
 ### Credential decrypt fails after moving state
 
-The encrypted endpoint record and its local master key belong to the same installation. Restore both only through an authorized backup procedure, or recreate the endpoint with a newly issued credential. Do not copy the master key into source control or a shared filesystem.
+The encrypted record/master key belong to the installation. Restore them only through an authorized state/secret procedure, or issue a new provider credential and recreate the endpoint. Never copy the master key into source control/shared storage.
 
 ### Provider returns unauthorized
 
-Verify that the endpoint references the current credential, the credential has not expired or been revoked, the provider URL is canonical, and the required scope/audience is correct. Rotate rather than repeatedly logging or printing the token.
+Verify current credential, expiry/revocation, canonical URL, scope/audience, and endpoint association. Rotate rather than repeatedly printing or logging the token.
 
 ## Validation checklist
 
-- [ ] GUI listener is loopback-only.
-- [ ] Remote proxy, when used, requires TLS, authentication, authorization, and trusted forwarding configuration.
-- [ ] No endpoint credential appears in source, shell history, process arguments, environment dumps, logs, telemetry, reports, or screenshots.
-- [ ] Local/private provider access is explicitly enabled and limited by host/container egress policy.
-- [ ] Report jobs use the one-shot transport and leave no stale secret directory.
+- [ ] GUI listener is loopback by default.
+- [ ] Any non-loopback bind is explicitly enabled with `WE3_GUI_ALLOW_REMOTE_BIND=1` and protected by independently validated TLS/authentication/authorization/firewall controls.
+- [ ] Local/private provider egress is separately enabled only when intentional and constrained by network policy.
+- [ ] No endpoint credential appears in source, shell history, arguments, environment dumps, logs, telemetry, reports, or screenshots.
+- [ ] Endpoint health is not treated as model-quality evidence.
+- [ ] Keyed report jobs use protected one-shot transport on supported paths.
 - [ ] Old credentials are revoked after rotation.
-- [ ] Production Compose fails when required secrets are absent.
-- [ ] Only the intended TLS ingress is reachable from outside the production network.
-- [ ] Master security assessment and CI results match the deployed commit.
+- [ ] Production configuration fails closed when mandatory secrets are absent.
+- [ ] Only intended production ingress is externally reachable.
+- [ ] Backup/encryption/restore claims are supported by real target-environment evidence rather than scaffold metadata.
+- [ ] Security/CI/runtime-assurance evidence matches the exact deployed commit.
 
-See `docs/security/MASTER_SECURITY_ASSESSMENT.md` for current findings, residual risk, validation state, and rollout/rollback requirements.
+See [Security Policy](../../SECURITY.md), [Current Status](../STATUS.md), and [Private Runtime Assurance](../security/PRIVATE_RUNTIME_ASSURANCE.md) for the surrounding assurance model.

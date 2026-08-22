@@ -48,6 +48,10 @@ def _validate_image(path: Path) -> str | None:
     header = path.read_bytes()[:32]
     if suffix == ".png" and not header.startswith(b"\x89PNG\r\n\x1a\n"):
         return "invalid PNG signature"
+    if suffix == ".webp" and not (
+        header.startswith(b"RIFF") and len(header) >= 12 and header[8:12] == b"WEBP"
+    ):
+        return "invalid WebP signature"
     if suffix == ".svg":
         text = path.read_text(encoding="utf-8", errors="strict").lstrip()
         if not text.startswith("<svg"):

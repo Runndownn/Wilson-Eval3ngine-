@@ -1,10 +1,10 @@
 # Getting Started with Wilson Eval3ngine
 
-This guide gets a new user from a clean checkout to a working evaluation with the fewest concepts necessary. Start with the deterministic local run so you can see the evidence pipeline without provider credentials, then move to the GUI and real providers only after the local workflow makes sense.
+This guide gets a new user from a clean checkout to a working, inspectable evaluation without requiring them to infer how the repository fits together. Start with the deterministic local lane so the evidence model is clear before introducing provider credentials, external network behavior, or production infrastructure.
 
 ## 1. Requirements
 
-WE3 declares support for Python `3.12` through `3.14`. You also need Git and a normal Python virtual environment; Docker is optional for local learning and becomes relevant only when validating deployment-oriented paths.
+WE3 declares support for Python `3.12` through `3.14`. You also need Git and a normal Python virtual environment. Docker is optional for local learning and becomes relevant when validating deployment-oriented paths.
 
 ## 2. Clone and install
 
@@ -30,15 +30,15 @@ python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
 ```
 
-The editable install provides the `we3`, `we3-gui-start`, and `we3-gui-stop` commands declared by the package. The development extra installs the test and coverage dependencies needed for normal repository validation.
+The editable install provides `we3`, `we3-gui-start`, and `we3-gui-stop`. The development extra installs the normal test/coverage tooling used by repository validation.
 
-## 3. Validate the included experiment
+## 3. Validate before executing
 
 ```bash
 we3 validate examples/experiments/foundation.yaml
 ```
 
-This checks the included deterministic experiment and its referenced dataset/contracts before execution. The `foundation.yaml` filename is historical: it names the original local vertical-slice example, not the maturity level of the entire current repository.
+This validates the included experiment and referenced dataset/contracts before work is sent anywhere. The `foundation.yaml` name is historical: it identifies the deterministic local vertical-slice example, not the maturity level of the entire current repository.
 
 ## 4. Run the credential-free local evaluation
 
@@ -46,37 +46,32 @@ This checks the included deterministic experiment and its referenced dataset/con
 we3 run examples/experiments/foundation.yaml --output var/foundation --database-url sqlite:///./var/we3.db --artifact-root var/artifacts
 ```
 
-The local lane uses deterministic mock-provider behavior, SQLite, and local filesystem artifacts. It is designed to let a new contributor observe the full measurement sequence—input validation, expectation compilation, request rendering, provider attempts, response evidence, grading, metrics, Wilson intervals, gates, report/dossier generation, and result indexing—without needing an external account.
+The local lane uses deterministic mock-provider behavior, SQLite, and local filesystem artifacts. It exposes the measurement sequence safely: input validation, expectation compilation, request rendering, provider attempts, response evidence, grading, metric snapshots, Wilson intervals, gates, report/dossier generation, and result indexing.
 
-After the run, inspect `var/foundation/`. The exact files can evolve, but the lane returns paths for the signed dossier, safe HTML report, experiment-result index, and signing key used for that local execution, while content-addressed run artifacts are written beneath the configured artifact root.
+After the run, inspect `var/foundation/` and the configured artifact root. The exact output set can evolve, so trust returned paths and current contracts rather than a memorized file list.
 
-## 5. Verify the generated dossier
+## 5. Verify the dossier
 
 ```bash
 we3 verify-dossier var/foundation/release_dossier.json
 ```
 
-Signature verification checks that the dossier has not simply been edited after generation. In the deterministic local path the signing key is a development artifact; managed production signing identity and key custody are separate assurance concerns.
+Signature verification detects post-generation dossier modification. In the deterministic local path the signing key is a development artifact; managed production signing identity and key custody are separate assurance concerns.
 
-## 6. Use the Makefile shortcuts
-
-The repository wraps the same basic workflow in convenient targets:
+## 6. Useful Make targets
 
 ```bash
 make validate
 make demo
 make verify
-```
-
-For development validation:
-
-```bash
 make lint
 make test
 make coverage
 ```
 
-These commands are appropriate source-level checks. They do not, by themselves, prove the behavior of an external provider or a production deployment.
+`make lint` compiles Python source/tests/scripts, validates active documentation image references, and syntax-checks the browser JavaScript used by the supported GUI composition. `make coverage` enforces the repository's configured overall 80% threshold. These are source-level checks, not proof of a real provider or deployment.
+
+`make clean` owns source-tree cleanup, including `__pycache__`; backup restore planning no longer has unrelated cleanup side effects.
 
 ## 7. Start the operator GUI
 
@@ -84,30 +79,72 @@ These commands are appropriate source-level checks. They do not, by themselves, 
 we3-gui-start --host 127.0.0.1 --port 8080
 ```
 
-Open `http://127.0.0.1:8080` on the same host. The official launcher accepts loopback only because the GUI can manage provider credentials, endpoints, model inventory, jobs, reports, charts, exports, and deletion; remote access belongs behind a separately authenticated TLS proxy.
+Open `http://127.0.0.1:8080` on the same host. This is the supported secure default. The launcher repairs historical wildcard defaults such as `0.0.0.0` to loopback unless the operator deliberately sets `WE3_GUI_ALLOW_REMOTE_BIND=1`.
 
-The normal workflow is:
+If a controlled deployment genuinely needs a non-loopback listener, configure independent TLS, authentication, authorization, firewall/network policy, and trusted proxy behavior first, then use the explicit override. The override only changes bind policy; it is not an access-control system.
+
+The current workflow is:
 
 1. **Endpoints** — add and test an approved provider destination.
-2. **Models** — discover or inspect the exact models available through that endpoint.
-3. **Generate** — select models and prompt material, review the workload, and start a bounded job.
-4. **Charts** — inspect distributions, comparisons, uncertainty, latency, tokens, and outcome patterns.
-5. **Reports** — inspect PDF narratives, hashes, sidecars, and evidence exports.
+2. **Models** — discover or register exact provider/model identities.
+3. **Generate** — select models and prompt material, review execution mode and request volume, then start a bounded job.
+4. **Charts** — inspect run-scoped visualizations and data/metadata context.
+5. **Reports** — read PDFs and reconcile narrative output with hashes, sidecars, run/model metadata, and exports.
 
-See [GUI & Evidence Guide](GUI_AND_EVIDENCE_GUIDE.md) for screenshots and the complete chart catalogue.
+Current screenshots and interpretation rules are in [GUI & Evidence Guide](GUI_AND_EVIDENCE_GUIDE.md).
 
-## 8. Connect a real hosted or local provider
+## 8. What you should understand when the GUI opens
 
-Do not begin by placing a provider key in source code, an example YAML, a shell command, or a committed `.env` file. Use the supported endpoint/credential workflow described in [Provider Credentials and Local Model Endpoints](operations/api-key-local-model-setup.md), where public HTTPS providers, intentional local/private gateways, Ollama, and CLI-backed adapters are documented separately.
+The top-bar **Endpoints / Models / Runs / Reports** values are inventory counters. They are not quality scores and do not mean a release passed. A workspace can contain hundreds of discovered models and zero evaluated runs.
 
-The important mental model is that provider connectivity is not the evaluation result. First prove that the destination and credential work, then discover the model identity, and only then run evaluation work so connection errors remain distinguishable from model behavior.
+On **Endpoints**, `online` means the destination was reachable under the connection test. It does not mean the model is safe or good. Debug an offline endpoint as a connectivity/credential/TLS/routing/provider problem before interpreting missing output behaviorally.
 
-## 9. Understand what a result means
+On **Models**, family grouping and recommended starting points are navigation aids. Reproducibility still depends on the exact provider model ID and endpoint/configuration lineage.
 
-A WE3 result should be read as a bundle of related evidence, not as one chart. Behavioral classifications tell you what the model did, reliability state tells you whether the execution itself was valid, metric snapshots tell you how results were counted, confidence intervals show uncertainty, gates apply an explicit decision policy, and hashes/signatures provide lineage/integrity evidence.
+On **Generate**, ask: *what population and how many requests am I about to execute?* Check selected models, prompt set, execution mode, and request volume, particularly for metered hosted providers.
 
-A successful local run demonstrates that the deterministic measurement path works for that code/configuration. It does not certify an arbitrary real provider, production network, organizational identity system, secret manager, backup/restore operation, human-review program, or deployed container stack.
+On **Charts**, distinguish run-derived evidence from **demo charts**. Demo charts are synthetic demonstrations generated through the demo action and must not become benchmark or release claims.
 
-## 10. Where to go next
+On **Reports**, the PDF is a presentation layer. If a legacy report lacks recorded models/current run metadata, preserve that provenance gap and use associated sidecars/hashes or rerun under the current evidence path rather than inventing lineage.
 
-Read [Features](FEATURES.md) for a capability-oriented tour, [Architecture](ARCHITECTURE.md) for the component/data-flow model, and [Current Status](STATUS.md) before making maturity or production-readiness claims. Security reviewers should continue with [Master Security Assessment](security/MASTER_SECURITY_ASSESSMENT.md) and [Private Runtime Assurance](security/PRIVATE_RUNTIME_ASSURANCE.md).
+## 9. Connect a real hosted or local provider
+
+Do not place a provider key in source, committed YAML, a shell command, or a committed `.env` file. Use [Provider Credentials and Local Model Endpoints](operations/api-key-local-model-setup.md).
+
+The mental model is **connectivity first, identity second, evaluation third**:
+
+1. prove the destination/credential works;
+2. discover or register the exact model identity;
+3. then evaluate so provider failures remain distinguishable from model behavior.
+
+Remember that local/private provider egress and remote GUI listening use different controls: `WE3_GUI_ALLOW_LOCAL_PROVIDERS` governs provider destinations, while `WE3_GUI_ALLOW_REMOTE_BIND` governs the GUI listener.
+
+## 10. Understand the GUI composition
+
+`gui/static/index.html` contains the five baseline workspaces and loads `enhanced.js`. The supported server path injects versioned `ux4`, `ux5`, and `ux6` CSS/JavaScript overlays before serving `/`. Those files are active runtime behavior even though their tags are not permanently written into the baseline HTML.
+
+When debugging the interface, inspect the baseline and runtime composition before assuming an apparently unreferenced `ux*.js` file is dead code.
+
+## 11. Understand what a result means
+
+Read a result as a bundle, not one chart/PDF. Behavioral classifications say what the model did; reliability state says whether execution was valid; metric snapshots say how the population was counted; confidence intervals show uncertainty; gates apply explicit rules; hashes/signatures provide lineage/integrity evidence.
+
+A successful deterministic run demonstrates the local measurement path for the checked-out code/configuration. It does **not** certify an arbitrary real provider, IdP, secret manager, production network, human-review operation, backup/restore deployment, or container stack.
+
+## 12. Know the current provisional areas
+
+### Statistics
+
+One metric-comparison path still exposes placeholder `p_value=0.5` pending completed bootstrap/reference significance work. One snapshot helper also approximates `prompt_family_count` with run count. Do not use those paths for certification-grade significance or independence claims.
+
+### Persona views
+
+The analyst view now rejects reports outside the authorized project scope, but executive support/uncertainty aggregate fields are still provisional constants because the canonical report does not yet carry authoritative aggregate contracts for them. The reviewer regex redactor is baseline masking, not a production DLP policy.
+
+### Backup/PITR/recovery
+
+The current backup subsystem contains models, command scaffolding, reconciliation, tests, CLI commands, and runbooks, but real payload encryption, content-based integrity/signature verification, durable catalogue persistence, WAL archival/coverage, and actual isolated restore execution are incomplete. Do not use the native scaffold as the sole production recovery control. Read [Backup and Recovery Runbook](operations/backup-recovery-runbook.md) and the tracked completion issue before making an RPO/RTO claim.
+
+## 13. Where to go next
+
+Read [Features](FEATURES.md) for capability groups, [Architecture](ARCHITECTURE.md) for component/data-flow relationships, and [Current Status](STATUS.md) before making maturity/production-readiness claims. Security reviewers should continue with [Security Policy](../SECURITY.md), [Master Security Assessment](security/MASTER_SECURITY_ASSESSMENT.md), and [Private Runtime Assurance](security/PRIVATE_RUNTIME_ASSURANCE.md).

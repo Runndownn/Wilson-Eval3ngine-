@@ -8,6 +8,8 @@ lint:
 	python scripts/validate_documentation_assets.py
 	node --check gui/static/enhanced.js
 	node --check gui/static/ux4.js
+	node --check gui/static/ux5.js
+	node --check gui/static/ux6.js
 
 docs-check:
 	python scripts/validate_documentation_assets.py
@@ -42,6 +44,7 @@ api:
 
 clean:
 	rm -rf .pytest_cache .coverage htmlcov var build dist *.egg-info src/*.egg-info
+	find . -type d -name __pycache__ -prune -exec rm -rf {} +
 
 # ============================================================================
 # Backup Commands (TODO 55)
@@ -61,4 +64,3 @@ backup-verify:
 
 backup-restore-plan:
 	we3 backup-restore-plan --timestamp "$$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-	find . -type d -name __pycache__ -prune -exec rm -rf {} +

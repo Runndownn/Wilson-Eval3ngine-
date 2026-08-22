@@ -1,5 +1,7 @@
 """Unit tests for TODO 47 report models and serializers."""
 
+import json
+
 from wilson_eval3ngine.reports.models import CanonicalReport, ExportRequest, ExportState
 from wilson_eval3ngine.reports.serializers import (
     sanitize_csv_cell,
@@ -24,7 +26,6 @@ class TestCanonicalReport:
         )
         hash1 = report.compute_report_hash()
 
-        # Same report should produce same hash
         report2 = CanonicalReport(
             experiment_id="exp_test",
             project_id="proj_1",
@@ -51,7 +52,6 @@ class TestCanonicalReport:
             },
         )
         output = report.to_dict()
-        # Metrics and gates should be sorted
         assert list(output["metric_values"].keys()) == ["model_a", "model_b"]
         assert list(output["gate_statuses"].keys()) == ["model_a", "model_b"]
 
@@ -94,24 +94,20 @@ class TestCsvSanitization:
     """Tests for CSV formula injection prevention."""
 
     def test_sanitize_normal_value(self):
-        """Normal values pass through unchanged."""
         assert sanitize_csv_cell("hello") == "hello"
         assert sanitize_csv_cell(42) == "42"
         assert sanitize_csv_cell(3.14) == "3.14"
 
     def test_sanitize_formula_prefix(self):
-        """Formula injection characters are escaped."""
         assert sanitize_csv_cell("=SUM(A1:A10)") == "'=SUM(A1:A10)"
         assert sanitize_csv_cell("+cmd") == "'+cmd"
         assert sanitize_csv_cell("-sub") == "'-sub"
         assert sanitize_csv_cell("@email") == "'@email"
 
     def test_sanitize_special_chars(self):
-        """Special formula-starting characters are escaped."""
         assert sanitize_csv_cell("\tcmd") == "'\tcmd"
 
     def test_sanitize_quotes(self):
-        """Double quotes are escaped for CSV."""
         assert sanitize_csv_cell('say "hi"') == 'say ""hi""'
 
 
@@ -119,7 +115,6 @@ class TestCsvSerialization:
     """Tests for CSV serialization."""
 
     def test_serialize_to_csv_structure(self):
-        """CSV output has correct structure."""
         report = CanonicalReport(
             experiment_id="exp_123",
             project_id="proj_1",
@@ -134,31 +129,41 @@ class TestCsvSerialization:
                 }
             },
         )
-        csv = serialize_to_csv(report)
-        lines = csv.split("\n")
-
-        # Should have header section
+        csv_output = serialize_to_csv(report)
+        lines = csv_output.split("\n")
         assert any("experiment,experiment_id" in line for line in lines)
         assert any("gates,model_a" in line for line in lines)
         assert any("metrics,model_a" in line for line in lines)
 
     def test_serialize_csv_no_raw_evidence(self):
-        """CSV does not contain raw prompts or responses."""
         report = CanonicalReport(
             experiment_id="exp_123",
             gate_statuses={"model_a": "pass"},
         )
-        csv = serialize_to_csv(report)
-        assert "prompt" not in csv.lower()
-        assert "response" not in csv.lower()
-        assert "raw" not in csv.lower()
+        csv_output = serialize_to_csv(report)
+        assert "prompt" not in csv_output.lower()
+        assert "response" not in csv_output.lower()
+        assert "raw" not in csv_output.lower()
 
 
 class TestReconciliation:
     """Tests for cross-format reconciliation."""
 
-    def test_reconcile_report_hash(self):
-        """Reconciliation verifies all formats derive from canonical."""
+    def test_reconcile_report_hash_accepts_embedded_canonical_hash(self):
+        report = CanonicalReport(
+            experiment_id="exp_123",
+            gate_statuses={"model_a": "pass"},
+        )
+        report_hash = report.compute_report_hash()
+        result = reconcile_report_hash(
+            json_output=json.dumps({"report_hash": report_hash}),
+            csv_output=f"section,field,value\nexperiment,report_hash,{report_hash}",
+            html_output=f'<html><meta name="we3-report-hash" content="{report_hash}"></html>',
+            canonical=report,
+        )
+        assert result == {"json": True, "csv": True, "html": True}
+
+    def test_reconcile_report_hash_rejects_unrelated_outputs(self):
         report = CanonicalReport(
             experiment_id="exp_123",
             gate_statuses={"model_a": "pass"},
@@ -169,4 +174,15 @@ class TestReconciliation:
             html_output="<html></html>",
             canonical=report,
         )
-        assert all(result.values())
+        assert result == {"json": False, "csv": False, "html": False}
+
+    def test_reconcile_report_hash_detects_mixed_format_mismatch(self):
+        report = CanonicalReport(experiment_id="exp_123")
+        report_hash = report.compute_report_hash()
+        result = reconcile_report_hash(
+            json_output=json.dumps({"report_hash": report_hash}),
+            csv_output="section,field,value\nexperiment,report_hash,wrong-hash",
+            html_output=f"<html>{report_hash}</html>",
+            canonical=report,
+        )
+        assert result == {"json": True, "csv": False, "html": True}
