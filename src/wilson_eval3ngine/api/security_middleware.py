@@ -1,9 +1,10 @@
 """Hardened request-boundary middleware composition.
 
-This module owns controls whose security properties depend on deployment trust:
-CORS origin enforcement, distributed rate limiting, and security-sensitive
-request metadata. It composes the existing logging, tracing, content-type, CSRF,
-headers, health checks, and actual-byte body limiter without duplicating them.
+Security properties that depend on deployment trust are bound here instead of
+being inferred later inside route code.  The registrar captures secret/trust
+configuration while the application is composed, which is important for the
+external-secret entrypoint because secret leases are deliberately removed from
+the mutable environment before the first request.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
+from ..security.csrf import CSRFProtection, CSRFValidationError
 from ..security.input_validation import (
     IdempotencyKeyValidator,
     ProjectIdValidator,
@@ -35,6 +37,7 @@ from . import middleware as legacy
 
 logger = logging.getLogger("wilson.api.security_middleware")
 _CORRELATION_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+_STATE_CHANGING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 
 def _csv(value: str) -> tuple[str, ...]:
@@ -56,27 +59,21 @@ def _merge_vary(response: Response, token: str) -> None:
     response.headers["Vary"] = ", ".join(sorted(values))
 
 
+def _error(status_code: int, code: str, detail: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "schema_version": "we3.error.v1",
+            "code": code,
+            "retryable": status_code >= 500,
+            "safe_detail": detail,
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 class RequestMetadataValidationMiddleware(BaseHTTPMiddleware):
-    """Reject malformed security metadata before it reaches route code.
-
-    Idempotency keys used to be validated only by one run endpoint while other
-    operation endpoints consumed them directly. Validation here makes the
-    contract uniform. Project and correlation headers are also bounded before
-    they can enter security context, storage keys, or structured logs.
-    """
-
-    @staticmethod
-    def _invalid(code: str, detail: str) -> JSONResponse:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "schema_version": "we3.error.v1",
-                "code": code,
-                "retryable": False,
-                "safe_detail": detail,
-            },
-            headers={"Cache-Control": "no-store"},
-        )
+    """Reject malformed security metadata before it reaches route code."""
 
     async def dispatch(
         self,
@@ -85,41 +82,88 @@ class RequestMetadataValidationMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         correlation_id = request.headers.get("X-Correlation-ID")
         if correlation_id is not None and not _CORRELATION_ID.fullmatch(correlation_id):
-            return self._invalid(
-                "invalid_correlation_id",
-                "correlation identifier is invalid",
-            )
+            return _error(400, "invalid_correlation_id", "correlation identifier is invalid")
 
         project_id = request.headers.get("X-WE3-Project-ID")
         if project_id is not None:
             try:
                 ProjectIdValidator.validate(project_id)
             except ValidationError:
-                return self._invalid(
-                    "invalid_project_id",
-                    "project identifier is invalid",
-                )
+                return _error(400, "invalid_project_id", "project identifier is invalid")
 
         idempotency_key = request.headers.get("Idempotency-Key")
         if idempotency_key is not None:
             try:
                 IdempotencyKeyValidator.validate(idempotency_key)
             except ValidationError:
-                return self._invalid(
-                    "invalid_idempotency_key",
-                    "idempotency key is invalid",
-                )
+                return _error(400, "invalid_idempotency_key", "idempotency key is invalid")
 
+        return await call_next(request)
+
+
+class BoundCSRFProtectionMiddleware(BaseHTTPMiddleware):
+    """CSRF validation whose HMAC key is captured during app composition.
+
+    Current production authentication is bearer-header OIDC, which is not an
+    ambient browser credential and is therefore exempt.  If a future route uses
+    cookie/session credentials, state-changing requests must present the same
+    HMAC token in the cookie and ``X-CSRF-Token`` header.
+    """
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        auth_mode: str,
+        csrf_secret: str,
+        assurance_environment: bool,
+    ) -> None:
+        super().__init__(app)
+        self._auth_mode = auth_mode
+        if assurance_environment and not csrf_secret:
+            raise ValueError("CSRF secret is required in staging/production")
+        self._csrf = CSRFProtection(secret=csrf_secret or None)
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        if request.method not in _STATE_CHANGING_METHODS:
+            return await call_next(request)
+
+        authorization = request.headers.get("Authorization", "")
+        if self._auth_mode == "oidc" and authorization.startswith("Bearer "):
+            return await call_next(request)
+        if self._auth_mode == "dev":
+            return await call_next(request)
+
+        header_token = request.headers.get("X-CSRF-Token", "")
+        cookie_token = request.cookies.get("csrf_token", "")
+        if not header_token or not cookie_token:
+            return _error(
+                403,
+                "csrf_token_missing",
+                "request verification token is required",
+            )
+        try:
+            self._csrf.validate_token(header_token, cookie_token)
+        except CSRFValidationError:
+            return _error(
+                403,
+                "csrf_token_invalid",
+                "request verification token is invalid",
+            )
         return await call_next(request)
 
 
 class StrictCORSMiddleware(BaseHTTPMiddleware):
     """Enforce an exact browser-origin policy before route side effects.
 
-    CORS is not an authentication mechanism and does not replace CSRF controls.
-    When a browser supplies an ``Origin`` header, an unauthorized origin is
-    rejected before the endpoint is called. Preflight method/header requests are
-    validated rather than receiving a generic success response.
+    CORS is not authentication and is not a substitute for CSRF.  Its job here
+    is to reject an unauthorized browser ``Origin`` before endpoint execution
+    and to validate preflight method/header requests instead of acknowledging
+    every preflight with a generic success response.
     """
 
     def __init__(
@@ -137,33 +181,17 @@ class StrictCORSMiddleware(BaseHTTPMiddleware):
         )
         self._allowed_origins = frozenset(origins)
         self._allowed_methods = frozenset(
-            method.upper()
-            for method in (allowed_methods or legacy.CORS_ALLOWED_METHODS)
+            method.upper() for method in (allowed_methods or legacy.CORS_ALLOWED_METHODS)
         )
         self._allowed_headers = frozenset(
-            header.lower()
-            for header in (allowed_headers or legacy.CORS_ALLOWED_HEADERS)
+            header.lower() for header in (allowed_headers or legacy.CORS_ALLOWED_HEADERS)
         )
         self._allow_credentials = allow_credentials
         self._max_age = max_age
-
         if "*" in self._allowed_origins:
             raise ValueError("wildcard CORS origins are not permitted")
         if allow_credentials and "*" in self._allowed_headers:
             raise ValueError("wildcard CORS headers are not permitted with credentials")
-
-    @staticmethod
-    def _deny(code: str, detail: str) -> JSONResponse:
-        return JSONResponse(
-            status_code=403,
-            content={
-                "schema_version": "we3.error.v1",
-                "code": code,
-                "retryable": False,
-                "safe_detail": detail,
-            },
-            headers={"Cache-Control": "no-store", "Vary": "Origin"},
-        )
 
     def _apply_headers(self, response: Response, origin: str) -> None:
         response.headers["Access-Control-Allow-Origin"] = origin
@@ -179,7 +207,9 @@ class StrictCORSMiddleware(BaseHTTPMiddleware):
         origin = request.headers.get("Origin")
         if origin is not None and origin not in self._allowed_origins:
             logger.warning("cors_origin_rejected")
-            return self._deny("origin_not_allowed", "request origin is not allowed")
+            response = _error(403, "origin_not_allowed", "request origin is not allowed")
+            _merge_vary(response, "Origin")
+            return response
 
         if request.method == "OPTIONS" and request.headers.get(
             "Access-Control-Request-Method"
@@ -188,7 +218,8 @@ class StrictCORSMiddleware(BaseHTTPMiddleware):
                 "Access-Control-Request-Method", ""
             ).upper()
             if requested_method not in self._allowed_methods:
-                return self._deny(
+                return _error(
+                    403,
                     "cors_method_not_allowed",
                     "requested cross-origin method is not allowed",
                 )
@@ -201,7 +232,8 @@ class StrictCORSMiddleware(BaseHTTPMiddleware):
                 if item.strip()
             }
             if not requested_headers.issubset(self._allowed_headers):
-                return self._deny(
+                return _error(
+                    403,
                     "cors_headers_not_allowed",
                     "requested cross-origin headers are not allowed",
                 )
@@ -233,13 +265,16 @@ class AuthoritativeRateLimitMiddleware(BaseHTTPMiddleware):
         redis_client: Any | None = None,
         default_limit: int = legacy.RATE_LIMIT_DEFAULT,
         default_window: int = 60,
+        *,
+        trusted_proxy_cidrs: Iterable[str] = (),
+        assurance_environment: bool | None = None,
     ) -> None:
         super().__init__(app)
-        fail_closed = _is_assurance_environment()
-        trusted_proxy_cidrs = _csv(
-            os.environ.get("WE3_TRUSTED_PROXY_CIDRS", "")
+        fail_closed = (
+            _is_assurance_environment()
+            if assurance_environment is None
+            else assurance_environment
         )
-
         if fail_closed:
             if redis_client is None:
                 raise RateLimitBackendUnavailable(
@@ -262,19 +297,6 @@ class AuthoritativeRateLimitMiddleware(BaseHTTPMiddleware):
         self._default_limit = default_limit
         self._window_seconds = default_window
 
-    @staticmethod
-    def _unavailable() -> JSONResponse:
-        return JSONResponse(
-            status_code=503,
-            content={
-                "schema_version": "we3.error.v1",
-                "code": "rate_limit_backend_unavailable",
-                "retryable": True,
-                "safe_detail": "request rate authority is unavailable",
-            },
-            headers={"Cache-Control": "no-store", "Retry-After": "1"},
-        )
-
     async def dispatch(
         self,
         request: Request,
@@ -282,11 +304,9 @@ class AuthoritativeRateLimitMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         identity = self._limiter.resolve_client_identity(request)
         path = request.url.path
-        config = legacy.RATE_LIMIT_RULES.get(
-            path, RateLimitConfig(self._default_limit)
-        )
+        config = legacy.RATE_LIMIT_RULES.get(path, RateLimitConfig(self._default_limit))
         effective_limit = config.effective_limit()
-        # No project header is included here. Tenant identity is not trusted
+        # No project header is included here: tenant identity is not trusted
         # until authentication has succeeded.
         key = build_rate_limit_key(identity.enforcement_token, path)
 
@@ -301,7 +321,16 @@ class AuthoritativeRateLimitMiddleware(BaseHTTPMiddleware):
                 "rate_limit_backend_unavailable",
                 extra={"client_ip": identity.log_label, "path": path},
             )
-            return self._unavailable()
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "schema_version": "we3.error.v1",
+                    "code": "rate_limit_backend_unavailable",
+                    "retryable": True,
+                    "safe_detail": "request rate authority is unavailable",
+                },
+                headers={"Cache-Control": "no-store", "Retry-After": "1"},
+            )
 
         if not result.allowed:
             logger.warning(
@@ -350,23 +379,33 @@ def add_hardened_production_middleware(
 ) -> None:
     """Compose the supported request security boundary.
 
-    Starlette executes middleware in reverse registration order. Structured
-    logging remains outermost. Metadata/CORS/rate controls execute before route
-    code; the streamed-byte limiter wraps body consumption before framework
-    parsing reaches endpoints.
+    Values read below are captured while ``create_app`` is executing. This is
+    intentional: the external-secret entrypoint still holds its secret leases at
+    that point, even though Starlette will instantiate middleware later.
     """
     legacy.register_default_health_checks(database_url, artifact_root, auth_mode)
+    assurance = _is_assurance_environment()
+    csrf_secret = os.environ.get("WE3_CSRF_SECRET", "")
+    allowed_origins = _csv(os.environ.get("WE3_CORS_ALLOWED_ORIGINS", ""))
+    trusted_proxy_cidrs = _csv(os.environ.get("WE3_TRUSTED_PROXY_CIDRS", ""))
 
     app.add_middleware(StreamingBodyLimitMiddleware)
-    app.add_middleware(legacy.CSRFProtectionMiddleware, auth_mode=auth_mode)
+    app.add_middleware(
+        BoundCSRFProtectionMiddleware,
+        auth_mode=auth_mode,
+        csrf_secret=csrf_secret,
+        assurance_environment=assurance,
+    )
     app.add_middleware(legacy.ContentTypeValidationMiddleware)
     app.add_middleware(RequestMetadataValidationMiddleware)
-    app.add_middleware(StrictCORSMiddleware)
+    app.add_middleware(StrictCORSMiddleware, allowed_origins=allowed_origins)
     app.add_middleware(
         AuthoritativeRateLimitMiddleware,
         redis_client=redis_client,
         default_limit=legacy.RATE_LIMIT_DEFAULT,
         default_window=60,
+        trusted_proxy_cidrs=trusted_proxy_cidrs,
+        assurance_environment=assurance,
     )
     app.add_middleware(legacy.SecurityHeadersMiddleware)
     app.add_middleware(legacy.TracingMiddleware)
@@ -375,6 +414,7 @@ def add_hardened_production_middleware(
 
 __all__ = [
     "AuthoritativeRateLimitMiddleware",
+    "BoundCSRFProtectionMiddleware",
     "RequestMetadataValidationMiddleware",
     "StrictCORSMiddleware",
     "add_hardened_production_middleware",
