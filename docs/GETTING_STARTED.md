@@ -30,7 +30,7 @@ python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
 ```
 
-The editable install provides `we3`, `we3-gui-start`, and `we3-gui-stop`. The development extra installs the normal test/coverage tooling used by repository validation.
+The editable development install provides `we3`, `we3-backup`, `we3-gui-start`, and `we3-gui-stop`; backup-specific PostgreSQL/AWS dependencies are optional and installed separately when recovery work is required.
 
 ## 3. Validate before executing
 
@@ -71,7 +71,7 @@ make coverage
 
 `make lint` compiles Python source/tests/scripts, validates active documentation image references, and syntax-checks the browser JavaScript used by the supported GUI composition. `make coverage` enforces the repository's configured overall 80% threshold. These are source-level checks, not proof of a real provider or deployment.
 
-`make clean` owns source-tree cleanup, including `__pycache__`; backup restore planning no longer has unrelated cleanup side effects.
+`make clean` owns source-tree cleanup, including `__pycache__`; recovery planning has no unrelated source-tree cleanup side effect.
 
 ## 7. Start the operator GUI
 
@@ -129,9 +129,9 @@ When debugging the interface, inspect the baseline and runtime composition befor
 
 Read a result as a bundle, not one chart/PDF. Behavioral classifications say what the model did; reliability state says whether execution was valid; metric snapshots say how the population was counted; confidence intervals show uncertainty; gates apply explicit rules; hashes/signatures provide lineage/integrity evidence.
 
-A successful deterministic run demonstrates the local measurement path for the checked-out code/configuration. It does **not** certify an arbitrary real provider, IdP, secret manager, production network, human-review operation, backup/restore deployment, or container stack.
+A successful deterministic run demonstrates the local measurement path for the checked-out code/configuration. It does **not** certify an arbitrary real provider, IdP, secret manager, production network, human-review operation, production backup deployment, or container stack.
 
-## 12. Know the current provisional areas
+## 12. Know the current provisional and runtime-dependent areas
 
 ### Statistics
 
@@ -139,12 +139,25 @@ One metric-comparison path still exposes placeholder `p_value=0.5` pending compl
 
 ### Persona views
 
-The analyst view now rejects reports outside the authorized project scope, but executive support/uncertainty aggregate fields are still provisional constants because the canonical report does not yet carry authoritative aggregate contracts for them. The reviewer regex redactor is baseline masking, not a production DLP policy.
+The analyst view rejects reports outside the authorized project scope, but executive support/uncertainty aggregate fields are still provisional constants because the canonical report does not yet carry authoritative aggregate contracts for them. The reviewer regex redactor is baseline masking, not a production DLP policy.
 
-### Backup/PITR/recovery
+### Backup/PITR/recovery is implemented, but production assurance is separate
 
-The current backup subsystem contains models, command scaffolding, reconciliation, tests, CLI commands, and runbooks, but real payload encryption, content-based integrity/signature verification, durable catalogue persistence, WAL archival/coverage, and actual isolated restore execution are incomplete. Do not use the native scaffold as the sole production recovery control. Read [Backup and Recovery Runbook](operations/backup-recovery-runbook.md) and the tracked completion issue before making an RPO/RTO claim.
+The repository now implements encrypted PostgreSQL physical backup, KMS-wrapped data keys, signed manifest verification, a restart-durable backup catalogue, real WAL-file ingestion and continuity checks, signed recovery baselines, loopback-only PostgreSQL PITR restore, cryptographic audit-chain verification, and reconciliation against the actual outbox/provenance tables. Those capabilities are intentionally outside the simple SQLite foundation lane.
+
+To work on recovery, install the optional dependencies and inspect the dedicated interface:
+
+```bash
+python -m pip install -e ".[dev,backup]"
+we3-backup --help
+```
+
+Do not begin by running a recovery command against a production database. Read [Backup and Recovery Runbook](operations/backup-recovery-runbook.md) first and reproduce the workflow only in an authorized disposable/isolated environment. The runbook explains KMS/trust configuration, how a signed recovery baseline differs from a backup manifest, why real WAL continuity matters, and how restore evidence should be interpreted.
+
+The repository's CI contains a separate disposable-PostgreSQL recovery exercise because a physical backup/PITR claim cannot be proven by the local SQLite evaluation demo. A passing CI recovery exercise is evidence for that commit and CI environment; it still does not prove a private deployment's 15-minute RPO, four-hour RTO, KMS policy, backup-storage durability, tablespace topology, or return-to-service approval process.
+
+The native streaming recovery path currently rejects PostgreSQL clusters with user-defined tablespaces. That is an explicit supported-boundary check rather than a silent partial backup.
 
 ## 13. Where to go next
 
-Read [Features](FEATURES.md) for capability groups, [Architecture](ARCHITECTURE.md) for component/data-flow relationships, and [Current Status](STATUS.md) before making maturity/production-readiness claims. Security reviewers should continue with [Security Policy](../SECURITY.md), [Master Security Assessment](security/MASTER_SECURITY_ASSESSMENT.md), and [Private Runtime Assurance](security/PRIVATE_RUNTIME_ASSURANCE.md).
+Read [Features](FEATURES.md) for capability groups, [Architecture](ARCHITECTURE.md) for component/data-flow relationships, and [Current Status](STATUS.md) before making maturity/production-readiness claims. Security reviewers should continue with [Security Policy](../SECURITY.md), [Master Security Assessment](security/MASTER_SECURITY_ASSESSMENT.md), and [Private Runtime Assurance](security/PRIVATE_RUNTIME_ASSURANCE.md). Recovery operators should use [Backup and Recovery Runbook](operations/backup-recovery-runbook.md) rather than the historical flat backup CLI examples.
