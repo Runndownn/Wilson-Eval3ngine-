@@ -1,79 +1,97 @@
-"""Unit tests for REST API operations (TODO 45).
-
-Tests cover:
-- Idempotency key enforcement
-- ETag validation for state changes
-- Cursor pagination implementation
-- Operation resource responses
-- Versioned error responses with trace IDs
-"""
+"""Unit tests for REST operation safety contracts."""
 
 from __future__ import annotations
 
-import pytest
 from datetime import timedelta
+from unittest.mock import Mock
+
+import pytest
 
 from wilson_eval3ngine.api.operations import (
+    IdempotencyBackendUnavailable,
+    IdempotencyConflict,
     IdempotencyRecord,
     IdempotencyStore,
     compute_etag,
-    encode_cursor,
     decode_cursor,
+    encode_cursor,
 )
 from wilson_eval3ngine.util import utc_now
 
 
 class TestIdempotencyStore:
-    """Tests for idempotency key storage."""
-
     def test_create_and_retrieve_record(self) -> None:
-        """Idempotency records can be created and retrieved."""
         store = IdempotencyStore()
         key = "test-key-123"
         op_id = store.create(key, "proj_a", b"test payload")
 
-        assert op_id is not None
         retrieved = store.get(key, "proj_a")
         assert retrieved is not None
         assert retrieved.operation_id == op_id
         assert retrieved.project_id == "proj_a"
+        assert retrieved.request_hash
 
-    def test_same_key_returns_existing_operation(self) -> None:
-        """Same idempotency key returns same operation_id."""
+    def test_same_key_same_intent_returns_existing_operation(self) -> None:
         store = IdempotencyStore()
         key = "test-key-456"
-
         op_id1 = store.create(key, "proj_a", b"payload1")
-        op_id2 = store.create(key, "proj_a", b"payload2")
-
+        op_id2 = store.create(key, "proj_a", b"payload1")
         assert op_id1 == op_id2
 
-    def test_different_projects_dont_share_keys(self) -> None:
-        """Idempotency keys are scoped to project."""
+    def test_same_key_different_intent_is_rejected(self) -> None:
+        store = IdempotencyStore()
+        key = "duplicate-key"
+        store.create(key, "proj_a", b"payload_v1")
+        with pytest.raises(IdempotencyConflict):
+            store.create(key, "proj_a", b"payload_v2")
+
+    def test_caller_can_bind_actual_operation_id(self) -> None:
+        store = IdempotencyStore()
+        op_id = store.create(
+            "actual-operation",
+            "proj_a",
+            b"start:proj_a:exp_1",
+            operation_id="op_actual",
+        )
+        assert op_id == "op_actual"
+        assert store.get("actual-operation", "proj_a").operation_id == "op_actual"
+
+    def test_different_projects_do_not_share_keys(self) -> None:
         store = IdempotencyStore()
         key = "cross-project-key"
-
         op_id_a = store.create(key, "proj_a", b"payload")
         op_id_b = store.create(key, "proj_b", b"payload")
-
         assert op_id_a != op_id_b
 
     def test_project_mismatch_returns_none(self) -> None:
-        """Cross-project key retrieval returns None."""
         store = IdempotencyStore()
-        key = "cross-project-key-2"
+        store.create("cross-project-key-2", "proj_a", b"payload")
+        assert store.get("cross-project-key-2", "proj_b") is None
 
-        store.create(key, "proj_a", b"payload")
-        retrieved = store.get(key, "proj_b")
+    def test_assurance_store_requires_shared_backend(self) -> None:
+        with pytest.raises(IdempotencyBackendUnavailable):
+            IdempotencyStore(fail_closed=True)
 
-        assert retrieved is None
+    def test_redis_binding_is_atomic_and_durable(self) -> None:
+        redis_client = Mock()
+        redis_client.set.return_value = True
+        redis_client.get.return_value = None
+        store = IdempotencyStore(redis_client=redis_client, fail_closed=True)
+        result = store.create(
+            "redis-key",
+            "proj_a",
+            b"intent",
+            ttl_seconds=600,
+            operation_id="op_redis",
+        )
+        assert result == "op_redis"
+        call = redis_client.set.call_args
+        assert call.args[0].startswith("we3:idempotency:")
+        assert call.kwargs == {"ex": 600, "nx": True}
 
 
 class TestIdempotencyRecordSerialization:
-    """Tests for idempotency record serialization."""
-
     def test_record_serializes_with_required_fields(self) -> None:
-        """Idempotency record has all required fields."""
         record = IdempotencyRecord(
             idempotency_key="key_123",
             project_id="proj_a",
@@ -82,7 +100,6 @@ class TestIdempotencyRecordSerialization:
             created_at=utc_now(),
             expires_at=utc_now() + timedelta(hours=1),
         )
-
         d = record.model_dump()
         assert d["idempotency_key"] == "key_123"
         assert d["operation_id"] == "op_456"
@@ -90,59 +107,38 @@ class TestIdempotencyRecordSerialization:
 
 
 class TestETagComputation:
-    """Tests for ETag computation."""
-
     def test_etag_deterministic(self) -> None:
-        """Same inputs produce same ETag."""
-        etag1 = compute_etag("experiment_1", "state", 42)
-        etag2 = compute_etag("experiment_1", "state", 42)
-
-        assert etag1 == etag2
+        assert compute_etag("experiment_1", "state", 42) == compute_etag(
+            "experiment_1", "state", 42
+        )
 
     def test_etag_changes_with_content(self) -> None:
-        """Different inputs produce different ETags."""
-        etag_a = compute_etag("experiment_a", "state")
-        etag_b = compute_etag("experiment_b", "state")
-
-        assert etag_a != etag_b
+        assert compute_etag("experiment_a", "state") != compute_etag(
+            "experiment_b", "state"
+        )
 
     def test_etag_format(self) -> None:
-        """ETag has proper weak validation format."""
-        etag = compute_etag("test")
-        assert etag.startswith('W/"')
+        assert compute_etag("test").startswith('W/"')
 
 
 class TestCursorPagination:
-    """Tests for cursor-based pagination."""
-
     def test_encode_cursor_produces_opaque_string(self) -> None:
-        """Cursor encoding produces opaque string."""
         cursor = encode_cursor("proj_a", "runs", "100")
-
         assert len(cursor) == 32
         assert isinstance(cursor, str)
 
     def test_cursor_uniqueness(self) -> None:
-        """Different cursors are unique."""
-        cursor_a = encode_cursor("proj_a", "runs")
-        cursor_b = encode_cursor("proj_b", "runs")
-
-        assert cursor_a != cursor_b
+        assert encode_cursor("proj_a", "runs") != encode_cursor("proj_b", "runs")
 
     def test_decode_cursor_returns_list(self) -> None:
-        """Cursor decoding returns list of values."""
         cursor = "test_cursor_123"
         result = decode_cursor(cursor)
-
         assert isinstance(result, list)
         assert result[0] == cursor
 
 
 class TestOperationLifecycle:
-    """Tests for operation lifecycle endpoints."""
-
     def test_operation_state_transitions(self) -> None:
-        """Operations have defined state transitions."""
         from wilson_eval3ngine.domain.enums import OperationState
 
         valid_states = [
@@ -151,11 +147,9 @@ class TestOperationLifecycle:
             OperationState.SUCCEEDED,
             OperationState.FAILED,
         ]
-
         assert len(valid_states) == 4
 
     def test_operation_has_required_fields(self) -> None:
-        """Operation resource has all required fields."""
         from wilson_eval3ngine.domain.contracts import Operation
 
         op = Operation(
@@ -164,7 +158,6 @@ class TestOperationLifecycle:
             manifest_path="test.yaml",
             output_dir="./output",
         )
-
         d = op.model_dump(mode="json")
         assert "operation_id" in d
         assert "project_id" in d
@@ -173,10 +166,7 @@ class TestOperationLifecycle:
 
 
 class TestVersionedErrorResponses:
-    """Tests for versioned API error responses."""
-
     def test_error_response_structure(self) -> None:
-        """Error responses have required fields."""
         error = {
             "code": "test_error",
             "retryable": False,
@@ -184,44 +174,16 @@ class TestVersionedErrorResponses:
             "trace_id": "trc_test",
             "schema_version": "we3.error.v1",
         }
-
-        assert "code" in error
-        assert "retryable" in error
-        assert "safe_detail" in error
-        assert "trace_id" in error
+        assert {"code", "retryable", "safe_detail", "trace_id"}.issubset(error)
 
     def test_error_no_stack_trace(self) -> None:
-        """Error responses never include stack traces."""
         safe_detail = "Invalid input provided"
-
-        # Should not contain file paths or internal details
         assert "/" not in safe_detail
         assert ".py" not in safe_detail
 
 
-class TestRequestValidation:
-    """Tests for request validation."""
-
-    def test_duplicate_request_with_different_payload_fails(self) -> None:
-        """Idempotency key with different payload fails."""
-        store = IdempotencyStore()
-        key = "duplicate-key"
-
-        # Create first request
-        op_id1 = store.create(key, "proj_a", b"payload_v1")
-
-        # Second request with different payload should return same op_id
-        # (actual replay protection would compare hashes)
-        op_id2 = store.create(key, "proj_a", b"payload_v2")
-
-        assert op_id1 == op_id2
-
-
 class TestSchemaVersionConsistency:
-    """Tests for API schema version consistency."""
-
     def test_responses_include_schema_version(self) -> None:
-        """All API responses include schema_version field."""
         expected_versions = [
             "we3.health.v1",
             "we3.validation_result.v1",
@@ -232,33 +194,21 @@ class TestSchemaVersionConsistency:
             "we3.metric_list.v1",
             "we3.error.v1",
         ]
-
-        for version in expected_versions:
-            assert version.startswith("we3.")
+        assert all(version.startswith("we3.") for version in expected_versions)
 
 
 class TestAPISafetyGuarantees:
-    """Tests for API safety guarantees."""
-
     def test_unknown_fields_rejected(self) -> None:
-        """Unknown fields in requests are rejected."""
-        from pydantic import BaseModel, ConfigDict
+        from pydantic import BaseModel, ConfigDict, ValidationError
 
         class StrictModel(BaseModel):
             model_config = ConfigDict(extra="forbid")
             value: str
 
-        # Valid request
-        valid = StrictModel(value="test")
-        assert valid.value == "test"
-
-        # Invalid with extra field should raise
-        with pytest.raises(Exception):  # ValidationError
+        assert StrictModel(value="test").value == "test"
+        with pytest.raises(ValidationError):
             StrictModel(value="test", extra_field="not_allowed")
 
-    def test_body_size_limits(self) -> None:
-        """Large request bodies are handled safely."""
-        # Max body size would be enforced at the HTTP server level
-        # For MVP, we verify the structure
+    def test_body_size_fixture_is_large_enough_for_boundary_tests(self) -> None:
         large_text = "x" * 100_000
         assert len(large_text) == 100_000
