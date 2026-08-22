@@ -8,6 +8,8 @@ lint:
 	python scripts/validate_documentation_assets.py
 	node --check gui/static/enhanced.js
 	node --check gui/static/ux4.js
+	node --check gui/static/ux5.js
+	node --check gui/static/ux6.js
 
 docs-check:
 	python scripts/validate_documentation_assets.py
