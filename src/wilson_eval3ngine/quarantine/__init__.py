@@ -1,49 +1,42 @@
-"""Attachment quarantine and inert rendering module (TODO 42).
+"""Attachment quarantine and inert rendering for safe content handling.
 
-T6.1.5 - Inert rendering and attachment quarantine for safe content handling.
-
-Provides:
-- Quarantine state machine for attachments
-- Content-based MIME detection
-- Safe derivative generation in isolated converters
-- Inert HTML/Markdown rendering with CSP enforcement
-- File structure validation with resource limits
+Provides content-based type validation, quarantine state transitions, bounded
+structure checks, isolated derivative generation, and inert HTML/Markdown
+rendering with an explicit content-security policy.
 """
 
 from .quarantine import (
+    AttachmentMetadata,
     AttachmentQuarantine,
-    QuarantineState,
     AttachmentRecord,
     QuarantineDecision,
-    AttachmentMetadata,
+    QuarantineState,
     process_attachment,
     validate_attachment_content,
 )
 from .inert_render import (
     InertRenderer,
-    RenderingOptions,
     RenderingAudit,
+    RenderingOptions,
+    generate_csp_header,
     render_as_inert,
     sanitize_html,
     sanitize_markdown,
-    generate_csp_header,
 )
 
 __all__ = [
-    # Quarantine
+    "AttachmentMetadata",
     "AttachmentQuarantine",
-    "QuarantineState",
     "AttachmentRecord",
     "QuarantineDecision",
-    "AttachmentMetadata",
-    "process_attachment",
-    "validate_attachment_content",
-    # Rendering
+    "QuarantineState",
     "InertRenderer",
-    "RenderingOptions",
     "RenderingAudit",
+    "RenderingOptions",
+    "generate_csp_header",
+    "process_attachment",
     "render_as_inert",
     "sanitize_html",
     "sanitize_markdown",
-    "generate_csp_header",
+    "validate_attachment_content",
 ]

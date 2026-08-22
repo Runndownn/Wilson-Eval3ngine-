@@ -1,8 +1,7 @@
-"""
-Canonical report models for TODO 47.
+"""Canonical report models for reproducible reports and governed exports.
 
-T7.1.3 - Build reproducible reports and governed exports.
-Produces deterministic, verifiable reports that reconcile across all formats.
+Every serializer derives from these immutable result structures so exported
+formats reconcile to the same evidence instead of recalculating outcomes.
 """
 
 from __future__ import annotations
@@ -13,7 +12,8 @@ from typing import Any
 
 
 class ExportState(str, Enum):
-    """Export operation states per TODO 47 requirement."""
+    """Lifecycle states for a governed export operation."""
+
     REQUESTED = "requested"
     AUTHORIZED = "authorized"
     BUILDING = "building"
@@ -24,12 +24,8 @@ class ExportState(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class CanonicalReport:
-    """Immutable canonical report model built from experiment outcomes.
+    """Immutable source of truth for report serialization."""
 
-    This is the single source of truth for report serialization.
-    All serializers (JSON, HTML, CSV, Parquet) derive from this model
-    without re-calculating results.
-    """
     schema_version: str = "we3.canonical_report.v1"
     experiment_id: str = ""
     project_id: str = ""
@@ -43,7 +39,7 @@ class CanonicalReport:
     artifact_hashes: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert to deterministic dictionary for serialization."""
+        """Convert to a deterministic dictionary for serialization."""
         return {
             "schema_version": self.schema_version,
             "experiment_id": self.experiment_id,
@@ -59,16 +55,18 @@ class CanonicalReport:
         }
 
     def compute_report_hash(self) -> str:
-        """Compute deterministic hash of the canonical report content."""
+        """Compute the deterministic hash of canonical report content."""
         from ..util import sha256_hex
+
         return sha256_hex(self.to_dict())
 
 
 @dataclass
 class ExportRequest:
-    """Export request model with state tracking."""
+    """Governed export request with explicit lifecycle state."""
+
     export_id: str = ""
-    export_type: str = ""  # dossier, report, raw_evidence
+    export_type: str = ""
     resource_id: str = ""
     project_id: str = ""
     requester_id: str = ""
@@ -95,8 +93,4 @@ class ExportRequest:
         }
 
 
-__all__ = [
-    "ExportState",
-    "CanonicalReport",
-    "ExportRequest",
-]
+__all__ = ["ExportState", "CanonicalReport", "ExportRequest"]
