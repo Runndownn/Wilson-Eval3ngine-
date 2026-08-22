@@ -1,15 +1,16 @@
 """Hardened request-boundary middleware composition.
 
 This module owns controls whose security properties depend on deployment trust:
-CORS origin enforcement and distributed rate limiting.  It composes the
-existing logging, tracing, content-type, CSRF, header, health, and streaming
-body-limit controls without duplicating their implementation.
+CORS origin enforcement, distributed rate limiting, and security-sensitive
+request metadata. It composes the existing logging, tracing, content-type, CSRF,
+headers, health checks, and actual-byte body limiter without duplicating them.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Any, Awaitable, Callable, Iterable
 
 from fastapi import FastAPI, Request, Response
@@ -17,6 +18,11 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
+from ..security.input_validation import (
+    IdempotencyKeyValidator,
+    ProjectIdValidator,
+    ValidationError,
+)
 from ..security.rate_limit import (
     RateLimitBackendUnavailable,
     RateLimitConfig,
@@ -28,6 +34,7 @@ from .body_limit import StreamingBodyLimitMiddleware
 from . import middleware as legacy
 
 logger = logging.getLogger("wilson.api.security_middleware")
+_CORRELATION_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
 
 def _csv(value: str) -> tuple[str, ...]:
@@ -49,14 +56,70 @@ def _merge_vary(response: Response, token: str) -> None:
     response.headers["Vary"] = ", ".join(sorted(values))
 
 
+class RequestMetadataValidationMiddleware(BaseHTTPMiddleware):
+    """Reject malformed security metadata before it reaches route code.
+
+    Idempotency keys used to be validated only by one run endpoint while other
+    operation endpoints consumed them directly. Validation here makes the
+    contract uniform. Project and correlation headers are also bounded before
+    they can enter security context, storage keys, or structured logs.
+    """
+
+    @staticmethod
+    def _invalid(code: str, detail: str) -> JSONResponse:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "schema_version": "we3.error.v1",
+                "code": code,
+                "retryable": False,
+                "safe_detail": detail,
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        correlation_id = request.headers.get("X-Correlation-ID")
+        if correlation_id is not None and not _CORRELATION_ID.fullmatch(correlation_id):
+            return self._invalid(
+                "invalid_correlation_id",
+                "correlation identifier is invalid",
+            )
+
+        project_id = request.headers.get("X-WE3-Project-ID")
+        if project_id is not None:
+            try:
+                ProjectIdValidator.validate(project_id)
+            except ValidationError:
+                return self._invalid(
+                    "invalid_project_id",
+                    "project identifier is invalid",
+                )
+
+        idempotency_key = request.headers.get("Idempotency-Key")
+        if idempotency_key is not None:
+            try:
+                IdempotencyKeyValidator.validate(idempotency_key)
+            except ValidationError:
+                return self._invalid(
+                    "invalid_idempotency_key",
+                    "idempotency key is invalid",
+                )
+
+        return await call_next(request)
+
+
 class StrictCORSMiddleware(BaseHTTPMiddleware):
     """Enforce an exact browser-origin policy before route side effects.
 
     CORS is not an authentication mechanism and does not replace CSRF controls.
-    The purpose of this middleware is narrower: when a browser supplies an
-    ``Origin`` header, an unauthorized origin is rejected before the endpoint is
-    called. Preflight method/header requests are validated rather than receiving
-    a generic 204 response.
+    When a browser supplies an ``Origin`` header, an unauthorized origin is
+    rejected before the endpoint is called. Preflight method/header requests are
+    validated rather than receiving a generic success response.
     """
 
     def __init__(
@@ -101,9 +164,6 @@ class StrictCORSMiddleware(BaseHTTPMiddleware):
             },
             headers={"Cache-Control": "no-store", "Vary": "Origin"},
         )
-
-    def _origin_allowed(self, origin: str | None) -> bool:
-        return origin is None or origin in self._allowed_origins
 
     def _apply_headers(self, response: Response, origin: str) -> None:
         response.headers["Access-Control-Allow-Origin"] = origin
@@ -180,9 +240,6 @@ class AuthoritativeRateLimitMiddleware(BaseHTTPMiddleware):
             os.environ.get("WE3_TRUSTED_PROXY_CIDRS", "")
         )
 
-        # Registering a Lua script is lazy in redis-py. An explicit ping is the
-        # startup proof that an assurance deployment can reach its distributed
-        # security-state authority.
         if fail_closed:
             if redis_client is None:
                 raise RateLimitBackendUnavailable(
@@ -229,6 +286,8 @@ class AuthoritativeRateLimitMiddleware(BaseHTTPMiddleware):
             path, RateLimitConfig(self._default_limit)
         )
         effective_limit = config.effective_limit()
+        # No project header is included here. Tenant identity is not trusted
+        # until authentication has succeeded.
         key = build_rate_limit_key(identity.enforcement_token, path)
 
         try:
@@ -292,14 +351,16 @@ def add_hardened_production_middleware(
     """Compose the supported request security boundary.
 
     Starlette executes middleware in reverse registration order. Structured
-    logging remains outermost; the streamed-byte limiter is innermost and wraps
-    body consumption before framework parsing reaches endpoints.
+    logging remains outermost. Metadata/CORS/rate controls execute before route
+    code; the streamed-byte limiter wraps body consumption before framework
+    parsing reaches endpoints.
     """
     legacy.register_default_health_checks(database_url, artifact_root, auth_mode)
 
     app.add_middleware(StreamingBodyLimitMiddleware)
     app.add_middleware(legacy.CSRFProtectionMiddleware, auth_mode=auth_mode)
     app.add_middleware(legacy.ContentTypeValidationMiddleware)
+    app.add_middleware(RequestMetadataValidationMiddleware)
     app.add_middleware(StrictCORSMiddleware)
     app.add_middleware(
         AuthoritativeRateLimitMiddleware,
@@ -314,6 +375,7 @@ def add_hardened_production_middleware(
 
 __all__ = [
     "AuthoritativeRateLimitMiddleware",
+    "RequestMetadataValidationMiddleware",
     "StrictCORSMiddleware",
     "add_hardened_production_middleware",
 ]
