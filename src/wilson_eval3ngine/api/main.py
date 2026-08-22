@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -13,27 +14,21 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..application.service import EvaluationService
 from ..config import Settings
 from ..domain.contracts import ExperimentManifest, Operation
-from ..domain.io import load_experiment
 from ..domain.enums import OperationState
+from ..domain.io import load_experiment
 from ..persistence.database import Database, Repository
 from ..security.error_handling import ErrorSanitizer
-from ..security.input_validation import (
-    IdempotencyKeyValidator,
-    ProjectIdValidator,
-    ValidationError,
-)
-from ..telemetry import get_correlation_context
+from ..security.input_validation import IdempotencyKeyValidator, ValidationError
 from ..observability import get_trace_id
-from ..util import new_id, utc_now
+from ..util import new_id, sha256_hex, utc_now
 from .auth import RequestContext, make_context_dependency
-from .middleware import (
-    add_production_middleware,
-    get_health_registry,
-)
+from .middleware import add_production_middleware, get_health_registry
 from .operations import (
+    IdempotencyBackendUnavailable,
+    IdempotencyConflict,
+    IdempotencyStore,
     add_operation_endpoints,
     compute_etag,
-    get_idempotency_store,
 )
 
 logger = logging.getLogger("wilson.api.main")
@@ -47,18 +42,33 @@ class RunRequest(BaseModel):
 
 
 class OperationRegistry:
+    """Process-local operation view used by the synchronous API lane.
+
+    Durable worker execution belongs to the PostgreSQL scheduler. This registry
+    remains intentionally local, but callers can supply a pre-reserved operation
+    ID so Redis idempotency and the returned operation refer to the same object.
+    """
+
     def __init__(self) -> None:
         self._lock = Lock()
         self._operations: dict[str, Operation] = {}
 
-    def create(self, request: RunRequest, *, project_id: str) -> Operation:
+    def create(
+        self,
+        request: RunRequest | Any,
+        *,
+        project_id: str,
+        operation_id: str | None = None,
+    ) -> Operation:
         operation = Operation(
-            operation_id=new_id("op"),
+            operation_id=operation_id or new_id("op"),
             project_id=project_id,
             manifest_path=request.manifest_path,
             output_dir=request.output_dir,
         )
         with self._lock:
+            if operation.operation_id in self._operations:
+                raise ValueError("operation identifier already exists")
             self._operations[operation.operation_id] = operation
         return operation
 
@@ -77,22 +87,74 @@ class OperationRegistry:
                 return None
             return operation
 
+    def state_counts(self) -> dict[str, int]:
+        with self._lock:
+            counts: dict[str, int] = {}
+            for operation in self._operations.values():
+                state = (
+                    operation.state.value
+                    if hasattr(operation.state, "value")
+                    else str(operation.state)
+                )
+                counts[state] = counts.get(state, 0) + 1
+            return counts
 
-def create_app(settings: Settings | None = None, *, database: Database | None = None) -> FastAPI:
+
+def _build_redis_client(runtime: Settings) -> Any | None:
+    if not runtime.redis_url:
+        if runtime.is_assurance_environment:
+            raise RuntimeError(
+                "staging/production requires Redis-backed security state"
+            )
+        return None
+
+    try:
+        import redis
+    except ImportError as exc:
+        if runtime.is_assurance_environment:
+            raise RuntimeError(
+                "Redis package is required for production security state"
+            ) from exc
+        logger.warning("redis_package_not_installed_using_local_development_state")
+        return None
+
+    client = redis.from_url(runtime.redis_url)
+    if runtime.is_assurance_environment:
+        try:
+            client.ping()
+        except Exception as exc:
+            raise RuntimeError(
+                "Redis security-state authority is unavailable"
+            ) from exc
+    logger.info("redis_security_state_configured")
+    return client
+
+
+def create_app(
+    settings: Settings | None = None,
+    *,
+    database: Database | None = None,
+) -> FastAPI:
     runtime = settings or Settings.from_env()
     runtime.validate_for_production()
-    context_dependency = make_context_dependency(runtime)
     operations = OperationRegistry()
+
     if database is None:
         database = Database(runtime.database_url)
         database.initialize()
     repository = Repository(database)
-    idempotency_store = get_idempotency_store()
 
-    # Track startup time for uptime reporting
+    # Build shared security authorities from the same Settings instance before
+    # routes are registered. A production app therefore cannot inherit a
+    # development singleton from an earlier app created in the same process.
+    redis_client = _build_redis_client(runtime)
+    idempotency_store = IdempotencyStore(
+        redis_client=redis_client,
+        fail_closed=runtime.is_assurance_environment,
+    )
+    context_dependency = make_context_dependency(runtime)
     start_time = time.monotonic()
 
-    # Graceful shutdown via lifespan context manager
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         logger.info(
@@ -114,16 +176,18 @@ def create_app(settings: Settings | None = None, *, database: Database | None = 
                 }
             },
         )
-        # Close database connections
         database.engine.dispose()
-        logger.info("shutdown_complete", extra={"structured": {"event": "shutdown_complete"}})
+        logger.info(
+            "shutdown_complete",
+            extra={"structured": {"event": "shutdown_complete"}},
+        )
 
     app = FastAPI(
         title="Wilson Eval3ngine API",
         version="0.1.0",
         description=(
-            "Foundation API. It validates contracts and exposes a development "
-            "operation wrapper around the synchronous deterministic runner."
+            "Evidence-oriented evaluation API with project-scoped identity, "
+            "bounded execution, and explicit security/assurance boundaries."
         ),
         lifespan=lifespan,
     )
@@ -132,19 +196,8 @@ def create_app(settings: Settings | None = None, *, database: Database | None = 
     app.state.repository = repository
     app.state.idempotency_store = idempotency_store
     app.state.database = database
+    app.state.redis_client = redis_client
     app.state.start_time = start_time
-
-    # Add production middleware (structured logging, security headers, rate limiting, body limits)
-    redis_client = None
-    if runtime.redis_url:
-        try:
-            import redis  # noqa: PLC0415
-            redis_client = redis.from_url(runtime.redis_url)
-            logger.info("redis_connected", extra={"url": runtime.redis_url})
-        except ImportError:
-            logger.warning("redis_package_not_installed_rate_limiting_in_memory")
-        except Exception as e:
-            logger.error("redis_connection_failed", extra={"error": str(e)})
 
     add_production_middleware(
         app,
@@ -156,7 +209,6 @@ def create_app(settings: Settings | None = None, *, database: Database | None = 
 
     @app.get("/health")
     def health() -> dict[str, Any]:
-        """Liveness probe - returns 200 if the process is alive."""
         return {
             "status": "ok",
             "schema_version": "we3.health.v1",
@@ -164,16 +216,9 @@ def create_app(settings: Settings | None = None, *, database: Database | None = 
         }
 
     @app.get("/ready")
-    def readiness() -> dict[str, Any]:
-        """Readiness probe - checks all critical dependencies.
-
-        Returns 200 if all critical health checks pass, 503 otherwise.
-        Used by Kubernetes/deployment orchestrators to determine if
-        the service is ready to receive traffic.
-        """
+    def readiness() -> JSONResponse:
         registry = get_health_registry()
         results = registry.run_all()
-
         status_code = 200 if not results["critical_failures"] else 503
         return JSONResponse(
             status_code=status_code,
@@ -189,65 +234,53 @@ def create_app(settings: Settings | None = None, *, database: Database | None = 
 
     @app.get("/metrics")
     def metrics() -> Response:
-        """Prometheus-compatible metrics endpoint.
-
-        Returns metrics in Prometheus text exposition format.
-        Rate limited to prevent abuse.
-        """
         registry = get_health_registry()
         health_results = registry.run_all()
-
         lines: list[str] = []
 
-        # Process info
         lines.append("# HELP we3_info Platform information")
         lines.append("# TYPE we3_info gauge")
         lines.append(
             f'we3_info{{environment="{runtime.environment}",version="0.1.0"}} 1'
         )
 
-        # Uptime
         lines.append("# HELP we3_uptime_seconds Process uptime in seconds")
         lines.append("# TYPE we3_uptime_seconds gauge")
-        lines.append(f"we3_uptime_seconds {round(time.monotonic() - app.state.start_time, 2)}")
+        lines.append(
+            f"we3_uptime_seconds {round(time.monotonic() - app.state.start_time, 2)}"
+        )
 
-        # Health check metrics
         lines.append("# HELP we3_health_check Health check status (1=pass, 0=fail)")
         lines.append("# TYPE we3_health_check gauge")
         for name, check in health_results["checks"].items():
             value = 1 if check["status"] == "pass" else 0
-            lines.append(f'we3_health_check{{name="{name}",critical="{str(check["critical"]).lower()}"}} {value}')
+            lines.append(
+                f'we3_health_check{{name="{name}",critical="{str(check["critical"]).lower()}"}} {value}'
+            )
 
-        # Operation counts
         lines.append("# HELP we3_operations_total Total operations by state")
         lines.append("# TYPE we3_operations_total counter")
-        op_states: dict[str, int] = {}
-        for op in operations._operations.values():
-            state = op.state.value if hasattr(op.state, "value") else str(op.state)
-            op_states[state] = op_states.get(state, 0) + 1
-        for state, count in op_states.items():
-            lines.append(f'we3_operations_total{{state="{state}"}} {count}')
+        for state_name, count in operations.state_counts().items():
+            lines.append(f'we3_operations_total{{state="{state_name}"}} {count}')
 
-        # Database connection pool metrics
         try:
             pool = database.engine.pool
             lines.append("# HELP we3_db_pool_size Database connection pool size")
             lines.append("# TYPE we3_db_pool_size gauge")
             lines.append(f"we3_db_pool_size {pool.size()}")
-
             lines.append("# HELP we3_db_pool_checkedout Database connections checked out")
             lines.append("# TYPE we3_db_pool_checkedout gauge")
             lines.append(f"we3_db_pool_checkedout {pool.checkedout()}")
-
             lines.append("# HELP we3_db_pool_overflow Database connection overflow")
             lines.append("# TYPE we3_db_pool_overflow gauge")
             lines.append(f"we3_db_pool_overflow {pool.overflow()}")
         except Exception:
+            # SQLite/static pools do not expose the same counters. Metrics
+            # absence is preferable to emitting backend implementation detail.
             pass
 
-        body = "\n".join(lines) + "\n"
         return Response(
-            content=body,
+            content="\n".join(lines) + "\n",
             media_type="text/plain; version=0.0.4; charset=utf-8",
         )
 
@@ -277,7 +310,7 @@ def create_app(settings: Settings | None = None, *, database: Database | None = 
 
     def execute_operation(
         operation_id: str,
-        request: RunRequest,
+        run_request: RunRequest,
         context: RequestContext,
     ) -> None:
         operations.update(operation_id, state=OperationState.RUNNING)
@@ -287,9 +320,9 @@ def create_app(settings: Settings | None = None, *, database: Database | None = 
                 artifact_root=runtime.artifact_root,
             )
             outcome = service.run_manifest(
-                request.manifest_path,
-                output_dir=request.output_dir,
-                signing_key_path=request.signing_key_path,
+                run_request.manifest_path,
+                output_dir=run_request.output_dir,
+                signing_key_path=run_request.signing_key_path,
             )
             operations.update(
                 operation_id,
@@ -297,6 +330,13 @@ def create_app(settings: Settings | None = None, *, database: Database | None = 
                 result_path=str(outcome.result_index_path),
             )
         except Exception as exc:
+            logger.exception(
+                "operation_execution_failed",
+                extra={
+                    "operation_id": operation_id,
+                    "error_class": type(exc).__name__,
+                },
+            )
             operations.update(
                 operation_id,
                 state=OperationState.FAILED,
@@ -311,8 +351,6 @@ def create_app(settings: Settings | None = None, *, database: Database | None = 
         background_tasks: BackgroundTasks,
         context: RequestContext = Depends(context_dependency),
     ) -> dict[str, Any]:
-        """Run an experiment with idempotent operation handling."""
-        # Check role
         if context.role not in {"evaluation_engineer", "project_admin"}:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -325,45 +363,24 @@ def create_app(settings: Settings | None = None, *, database: Database | None = 
                 },
             )
 
-        # Idempotency check with validation
-        idempotency_key = request.headers.get("Idempotency-Key")
-        if idempotency_key:
-            try:
-                validated_key = IdempotencyKeyValidator.validate(idempotency_key)
-            except ValidationError:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail={
-                        "code": "invalid_idempotency_key",
-                        "retryable": False,
-                        "safe_detail": "Idempotency key contains invalid characters",
-                        "schema_version": "we3.error.v1",
-                        "trace_id": get_trace_id(),
-                    },
-                )
-            existing = idempotency_store.get(validated_key, context.project_id)
-            if existing:
-                operation = operations.get(existing.operation_id, project_id=context.project_id)
-                if operation:
-                    return {
-                        "schema_version": "we3.operation_ack.v1",
-                        "trace_id": get_trace_id(),
-                        "project_id": context.project_id,
-                        "operation": operation.model_dump(mode="json"),
-                        "idempotent": True,
-                    }
-
         try:
             manifest = load_experiment(run_request.manifest_path)
-        except Exception:
-            # Manifest load failure - return trace_id for telemetry correlation
-            return {
-                "schema_version": "we3.operation_ack.v1",
-                "trace_id": get_trace_id(),
-                "project_id": context.project_id,
-                "operation": None,
-                "error": "manifest_load_failed",
-            }
+        except Exception as exc:
+            logger.info(
+                "manifest_load_rejected",
+                extra={"error_class": type(exc).__name__},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "code": "manifest_load_failed",
+                    "retryable": False,
+                    "safe_detail": "experiment manifest could not be loaded",
+                    "schema_version": "we3.error.v1",
+                    "trace_id": get_trace_id(),
+                },
+            ) from exc
+
         if manifest.project != context.project_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -375,9 +392,138 @@ def create_app(settings: Settings | None = None, *, database: Database | None = 
                     "trace_id": get_trace_id(),
                 },
             )
+
+        request_bytes = json.dumps(
+            run_request.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        request_hash = sha256_hex(request_bytes)
+        idempotency_key = request.headers.get("Idempotency-Key")
+        validated_key: str | None = None
+
+        if idempotency_key:
+            try:
+                validated_key = IdempotencyKeyValidator.validate(idempotency_key)
+                existing = idempotency_store.get(
+                    validated_key,
+                    context.project_id,
+                )
+            except ValidationError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={
+                        "code": "invalid_idempotency_key",
+                        "retryable": False,
+                        "safe_detail": "idempotency key is invalid",
+                        "schema_version": "we3.error.v1",
+                        "trace_id": get_trace_id(),
+                    },
+                ) from exc
+            except IdempotencyBackendUnavailable as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail={
+                        "code": "idempotency_unavailable",
+                        "retryable": True,
+                        "safe_detail": "idempotency authority is unavailable",
+                        "schema_version": "we3.error.v1",
+                        "trace_id": get_trace_id(),
+                    },
+                ) from exc
+
+            if existing is not None:
+                if existing.request_hash != request_hash:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail={
+                            "code": "idempotency_conflict",
+                            "retryable": False,
+                            "safe_detail": "idempotency key is bound to different request intent",
+                            "schema_version": "we3.error.v1",
+                            "trace_id": get_trace_id(),
+                        },
+                    )
+                operation = operations.get(
+                    existing.operation_id,
+                    project_id=context.project_id,
+                )
+                if operation is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail={
+                            "code": "idempotency_operation_state_unavailable",
+                            "retryable": True,
+                            "safe_detail": "existing operation state is not available in this process",
+                            "schema_version": "we3.error.v1",
+                            "trace_id": get_trace_id(),
+                        },
+                    )
+                return {
+                    "schema_version": "we3.operation_ack.v1",
+                    "trace_id": get_trace_id(),
+                    "project_id": context.project_id,
+                    "operation": operation.model_dump(mode="json"),
+                    "idempotent": True,
+                }
+
+        operation_id = new_id("op")
+        if validated_key is not None:
+            try:
+                bound_id = idempotency_store.create(
+                    validated_key,
+                    context.project_id,
+                    request_bytes,
+                    operation_id=operation_id,
+                )
+            except IdempotencyConflict as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "code": "idempotency_conflict",
+                        "retryable": False,
+                        "safe_detail": "idempotency key is bound to different request intent",
+                        "schema_version": "we3.error.v1",
+                        "trace_id": get_trace_id(),
+                    },
+                ) from exc
+            except IdempotencyBackendUnavailable as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail={
+                        "code": "idempotency_unavailable",
+                        "retryable": True,
+                        "safe_detail": "idempotency authority is unavailable",
+                        "schema_version": "we3.error.v1",
+                        "trace_id": get_trace_id(),
+                    },
+                ) from exc
+
+            if bound_id != operation_id:
+                winner = operations.get(bound_id, project_id=context.project_id)
+                if winner is not None:
+                    return {
+                        "schema_version": "we3.operation_ack.v1",
+                        "trace_id": get_trace_id(),
+                        "project_id": context.project_id,
+                        "operation": winner.model_dump(mode="json"),
+                        "idempotent": True,
+                    }
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "code": "idempotency_race",
+                        "retryable": True,
+                        "safe_detail": "another request established this idempotency key first",
+                        "schema_version": "we3.error.v1",
+                        "trace_id": get_trace_id(),
+                    },
+                )
+
         operation = operations.create(
             run_request,
             project_id=context.project_id,
+            operation_id=operation_id,
         )
         background_tasks.add_task(
             execute_operation,
@@ -385,15 +531,6 @@ def create_app(settings: Settings | None = None, *, database: Database | None = 
             run_request,
             context,
         )
-
-        # Store idempotency if key was provided
-        if idempotency_key:
-            try:
-                import json
-                request_bytes = json.dumps(run_request.model_dump()).encode()
-                idempotency_store.create(idempotency_key, context.project_id, request_bytes)
-            except Exception:
-                pass  # Don't fail on idempotency storage errors
 
         return {
             "schema_version": "we3.operation_ack.v1",
@@ -419,8 +556,12 @@ def create_app(settings: Settings | None = None, *, database: Database | None = 
                     "trace_id": get_trace_id(),
                 },
             )
-        # Include ETag for state verification
-        etag = compute_etag(operation_id, operation.state.value)
+        state_value = (
+            operation.state.value
+            if hasattr(operation.state, "value")
+            else str(operation.state)
+        )
+        etag = compute_etag(operation_id, state_value)
         return {
             "schema_version": "we3.operation.v1",
             "trace_id": get_trace_id(),
@@ -455,7 +596,6 @@ def create_app(settings: Settings | None = None, *, database: Database | None = 
             "etag": etag,
         }
 
-    # Add extended operation endpoints
     add_operation_endpoints(
         app,
         context_dependency,
