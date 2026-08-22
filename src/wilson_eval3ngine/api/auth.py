@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from ..security.oidc import OIDCAuthenticator
 
 logger = logging.getLogger("wilson.api.auth")
+_MAX_BEARER_TOKEN_BYTES = 16 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +33,39 @@ _ALLOWED_DEV_ROLES = {
     "project_admin",
     "release_authority",
 }
+
+
+def extract_single_bearer_token(request: Request) -> str | None:
+    """Return one bounded ASCII bearer token or fail closed to ``None``.
+
+    Security-sensitive authentication must not depend on how an HTTP stack
+    combines duplicate ``Authorization`` fields. The raw ASGI header sequence is
+    therefore inspected directly and exactly one header is required. Ambiguous,
+    malformed, non-ASCII, empty, and oversized values all share the same public
+    failure surface so parser behavior cannot select a different credential.
+    """
+    values = [
+        value
+        for name, value in request.scope.get("headers", [])
+        if name.lower() == b"authorization"
+    ]
+    if len(values) != 1 or len(values[0]) > _MAX_BEARER_TOKEN_BYTES + 7:
+        return None
+    try:
+        decoded = values[0].decode("ascii")
+    except UnicodeDecodeError:
+        return None
+    if not decoded.startswith("Bearer "):
+        return None
+    token = decoded[7:].strip()
+    if not token:
+        return None
+    try:
+        if len(token.encode("ascii")) > _MAX_BEARER_TOKEN_BYTES:
+            return None
+    except UnicodeEncodeError:
+        return None
+    return token
 
 
 def _audit_authenticated_request(
@@ -151,7 +185,6 @@ def make_context_dependency(
 
     def get_context(
         request: Request,
-        authorization: str | None = Header(None),
         x_we3_project_id: str | None = Header(None),
         x_we3_role: str = Header("viewer"),
     ) -> RequestContext:
@@ -198,25 +231,14 @@ def make_context_dependency(
             return context
 
         if settings.auth_mode == "oidc":
-            if not authorization or not authorization.startswith("Bearer "):
+            token = extract_single_bearer_token(request)
+            if token is None:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail={
-                        "code": "missing_bearer_token",
+                        "code": "missing_or_ambiguous_bearer_token",
                         "retryable": False,
-                        "safe_detail": "authorization header required",
-                        "schema_version": "we3.error.v1",
-                    },
-                )
-
-            token = authorization[7:]
-            if not token or len(token) > 16_384:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail={
-                        "code": "invalid_token",
-                        "retryable": False,
-                        "safe_detail": "token validation failed",
+                        "safe_detail": "exactly one valid authorization bearer header is required",
                         "schema_version": "we3.error.v1",
                     },
                 )
@@ -307,4 +329,4 @@ def make_context_dependency(
     return get_context
 
 
-__all__ = ["RequestContext", "make_context_dependency"]
+__all__ = ["RequestContext", "extract_single_bearer_token", "make_context_dependency"]
