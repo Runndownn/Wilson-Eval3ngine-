@@ -1,11 +1,14 @@
 # Wilson Eval3ngine production image
 #
-# The builder produces a wheel from the complete source tree. The runtime stage
-# installs only that wheel and the explicitly selected production extras, so
-# the image never relies on an editable checkout or an undeclared process
-# manager.
+# Production and secure builds now share one trust contract. The private build
+# system MUST supply an immutable base image reference such as
+# registry/repository@sha256:<64-hex-digest>; there is intentionally no mutable
+# default tag. Runtime secrets are resolved by api.secure_entrypoint from the
+# configured external/mounted secret authority rather than ordinary process
+# environment variables.
 
-FROM python:3.13-slim AS builder
+ARG PYTHON_BASE_IMAGE
+FROM ${PYTHON_BASE_IMAGE} AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -13,7 +16,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /build
-
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
 
@@ -26,10 +28,10 @@ RUN python -m pip install \
         --wheel-dir /build/runtime-wheels \
         /build/dist/*.whl \
         "psycopg[binary]>=3.2,<4" \
-        "boto3>=1.35,<2"
+        "boto3>=1.35,<2" \
+        "redis>=5,<6"
 
-
-FROM python:3.13-slim AS runtime
+FROM ${PYTHON_BASE_IMAGE} AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -39,23 +41,21 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     HOME=/home/we3 \
     WE3_ENVIRONMENT=production \
     WE3_AUTH_MODE=oidc \
-    WE3_ARTIFACT_ROOT=/var/lib/we3/artifacts
+    WE3_ARTIFACT_ROOT=/var/lib/we3/artifacts \
+    WE3_SECRET_BACKEND=mounted \
+    WE3_SECRET_MOUNT=/run/secrets
 
 RUN groupadd --system --gid 10001 we3 \
-    && useradd --system \
-        --gid we3 \
-        --uid 10001 \
-        --home-dir /home/we3 \
-        --create-home \
-        --shell /usr/sbin/nologin \
-        we3 \
+    && useradd --system --gid we3 --uid 10001 --home-dir /home/we3 \
+        --create-home --shell /usr/sbin/nologin we3 \
     && apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates libpq5 \
     && rm -rf /var/lib/apt/lists/* \
     && update-ca-certificates
 
 COPY --from=builder /build/runtime-wheels /tmp/wheels
-RUN python -m pip install --no-index --find-links=/tmp/wheels /tmp/wheels/wilson_eval3ngine-*.whl \
+RUN python -m pip install --no-index --find-links=/tmp/wheels \
+        /tmp/wheels/wilson_eval3ngine-*.whl \
     && rm -rf /tmp/wheels
 
 WORKDIR /app
@@ -69,10 +69,9 @@ RUN install -d -o we3 -g we3 -m 0750 \
         /app/var
 
 USER 10001:10001
-
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD ["python", "-c", "import sys,urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=5); sys.exit(0 if r.status == 200 else 1)"]
 
-CMD ["python", "-m", "uvicorn", "wilson_eval3ngine.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--no-server-header", "--timeout-keep-alive", "10", "--limit-max-requests", "10000"]
+CMD ["python", "-m", "uvicorn", "wilson_eval3ngine.api.secure_entrypoint:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--no-server-header", "--timeout-keep-alive", "10", "--limit-max-requests", "10000"]
