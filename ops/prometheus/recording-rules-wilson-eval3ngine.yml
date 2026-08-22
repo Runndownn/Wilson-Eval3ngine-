@@ -1,0 +1,62 @@
+# Prometheus recording rules for SLI calculations.
+
+# These recording rules pre-compute expensive SLI queries for efficient alerting.
+
+groups:
+  - name: we3.sli.recording.rules
+    interval: 1m
+    rules:
+      # API Availability
+      - record: we3_sli_api_availability_v1
+        expr: |
+          sum(rate(we3_operation_success[5m])) / 
+          sum(rate(we3_operation_total[5m]))
+        labels:
+          sli: "api_availability"
+
+      # Evidence Durability  
+      - record: we3_sli_evidence_durability_v1
+        expr: |
+          count(persisted_evidence) / 
+          count(accepted_evidence)
+        labels:
+          sli: "evidence_durability"
+
+      # Queue Start Latency
+      - record: we3_sli_queue_start_latency_p95_v1
+        expr: |
+          histogram_quantile(0.95, we3_queue_start_latency_ms_bucket) / 60000
+        labels:
+          sli: "queue_latency"
+
+      # Grading Duration
+      - record: we3_sli_grading_duration_p95_v1
+        expr: |
+          histogram_quantile(0.95, we3_grading_duration_ms_bucket) / 1000
+        labels:
+          sli: "grading_duration"
+
+      # Report Generation
+      - record: we3_sli_report_generation_p99_v1
+        expr: |
+          histogram_quantile(0.99, we3_report_generation_seconds_bucket)
+        labels:
+          sli: "report_generation"
+
+      # Hash Verification
+      - record: we3_sli_hash_verification_v1
+        expr: |
+          count(hash_verified) / 
+          count(hash_scheduled)
+        labels:
+          sli: "hash_verification"
+
+      # Provider Errors
+      - record: we3_provider_errors_total
+        expr: |
+          sum(increase(we3_operation_errors_total{error_class=~"provider_.*"}[5m]))
+
+      # Unresolved Critical Reviews
+      - record: we3_unresolved_critical_reviews
+        expr: |
+          count(review_tasks{category="critical_unsafe", state!="resolved"})
