@@ -100,6 +100,12 @@ def test_api_egress_is_routed_through_explicit_proxy_boundary() -> None:
     assert "ports" not in proxy
 
 
+def test_browser_and_proxy_trust_inputs_are_explicit() -> None:
+    environment = _compose()["services"]["api"]["environment"]
+    assert "WE3_CORS_ALLOWED_ORIGINS" in environment
+    assert "WE3_TRUSTED_PROXY_CIDRS" in environment
+
+
 def test_monitoring_admin_api_is_not_enabled() -> None:
     command = _compose()["services"]["prometheus"]["command"]
     assert "--web.enable-admin-api" not in command
@@ -169,5 +175,15 @@ def test_proxy_headers_are_site_scoped_and_metrics_are_restricted() -> None:
     text = CADDYFILE.read_text(encoding="utf-8")
     assert "(security_headers)" in text
     assert 'Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"' in text
+    assert 'Cross-Origin-Opener-Policy "same-origin"' in text
+    assert 'Cross-Origin-Resource-Policy "same-origin"' in text
+    assert 'Cross-Origin-Embedder-Policy "require-corp"' in text
     assert "@private_clients remote_ip" in text
     assert 'respond "Forbidden" 403' in text
+
+
+def test_public_api_host_blocks_diagnostics_and_overwrites_forwarded_identity() -> None:
+    text = CADDYFILE.read_text(encoding="utf-8")
+    assert "@internal_diagnostics path /metrics /ready /openapi.json /docs* /redoc*" in text
+    assert 'respond @internal_diagnostics "Not Found" 404' in text
+    assert "header_up X-Forwarded-For {remote_host}" in text
