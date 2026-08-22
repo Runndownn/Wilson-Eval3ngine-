@@ -1,5 +1,7 @@
 # Wilson Eval3ngine Threat Model
 
+This threat model describes the platform-level security boundaries. The final section is explicitly scoped to the retained deterministic local foundation lane; the current project-level maturity and assurance matrix is maintained in [../STATUS.md](../STATUS.md).
+
 ## Assets
 
 Model-provider credentials, hidden benchmark content, raw harmful responses, personal or secret-bearing source material, release thresholds, grader prompts/models, approvals, signing keys, audit events, and published dossiers.
@@ -30,6 +32,6 @@ Model-provider credentials, hidden benchmark content, raw harmful responses, per
 | Attachment executes | MIME-by-content validation, quarantine, safe derivative |
 | Audit/signing key compromised | Managed KMS, rotation, external checkpoints, revocation |
 
-## Foundation residual risk
+## Deterministic local foundation-lane residual risk
 
-Local filesystem artifacts, development headers, in-process grading, and a generated development signing key are accepted only for synthetic local testing. Production mode rejects the development identity configuration.
+Local filesystem artifacts, development identity modes, in-process grading, and a generated development signing key are acceptable only for synthetic local testing and deterministic development/CI workflows. They are not the security boundary for production operation: production-oriented paths require the approved identity, storage/key, isolation, network, provider, audit, recovery, and runtime-assurance controls described in the current security and status documentation.

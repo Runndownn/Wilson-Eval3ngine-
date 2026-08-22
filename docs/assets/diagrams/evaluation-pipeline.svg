@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="620" viewBox="0 0 1400 620" role="img" aria-labelledby="title desc">
+<title id="title">Wilson Eval3ngine evaluation pipeline</title>
+<desc id="desc">A left-to-right evidence-first evaluation flow from versioned inputs through validation, expectation compilation, provider execution, grading, statistical metrics, gates, and signed evidence.</desc>
+<rect width="1400" height="620" rx="24" fill="#0d1117"/>
+<text x="700" y="52" text-anchor="middle" fill="#f0f6fc" font-family="Arial, sans-serif" font-size="30" font-weight="700">Evidence-first evaluation pipeline</text>
+<text x="700" y="82" text-anchor="middle" fill="#8b949e" font-family="Arial, sans-serif" font-size="17">Every decision remains linked to the exact inputs, provider attempts, classifications, metrics, and evidence that produced it.</text>
+<defs><marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0,0 L12,6 L0,12 z" fill="#58a6ff"/></marker></defs>
+<g font-family="Arial, sans-serif" font-size="17" text-anchor="middle">
+<rect x="45" y="150" width="225" height="92" rx="14" fill="#161b22" stroke="#30363d" stroke-width="2"/><text x="157" y="187" fill="#f0f6fc" font-weight="700">1. Versioned inputs</text><text x="157" y="214" fill="#8b949e">experiment + dataset</text>
+<rect x="325" y="150" width="225" height="92" rx="14" fill="#161b22" stroke="#30363d" stroke-width="2"/><text x="437" y="187" fill="#f0f6fc" font-weight="700">2. Validate contracts</text><text x="437" y="214" fill="#8b949e">identity + hash + schema</text>
+<rect x="605" y="150" width="225" height="92" rx="14" fill="#161b22" stroke="#30363d" stroke-width="2"/><text x="717" y="187" fill="#f0f6fc" font-weight="700">3. Compile expectation</text><text x="717" y="214" fill="#8b949e">expected treatment first</text>
+<rect x="885" y="150" width="225" height="92" rx="14" fill="#161b22" stroke="#30363d" stroke-width="2"/><text x="997" y="187" fill="#f0f6fc" font-weight="700">4. Execute provider</text><text x="997" y="214" fill="#8b949e">request + bounded attempts</text>
+<rect x="1165" y="150" width="190" height="92" rx="14" fill="#161b22" stroke="#30363d" stroke-width="2"/><text x="1260" y="187" fill="#f0f6fc" font-weight="700">5. Grade</text><text x="1260" y="214" fill="#8b949e">five outcomes</text>
+<path d="M270 196 H315" stroke="#58a6ff" stroke-width="3" marker-end="url(#arrow)"/><path d="M550 196 H595" stroke="#58a6ff" stroke-width="3" marker-end="url(#arrow)"/><path d="M830 196 H875" stroke="#58a6ff" stroke-width="3" marker-end="url(#arrow)"/><path d="M1110 196 H1155" stroke="#58a6ff" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="215" y="335" width="260" height="102" rx="14" fill="#161b22" stroke="#30363d" stroke-width="2"/><text x="345" y="375" fill="#f0f6fc" font-weight="700">6. Compute evidence</text><text x="345" y="403" fill="#8b949e">metrics + Wilson intervals</text>
+<rect x="570" y="335" width="260" height="102" rx="14" fill="#161b22" stroke="#30363d" stroke-width="2"/><text x="700" y="375" fill="#f0f6fc" font-weight="700">7. Apply gates</text><text x="700" y="403" fill="#8b949e">pass / warn / indeterminate / block</text>
+<rect x="925" y="335" width="260" height="102" rx="14" fill="#161b22" stroke="#30363d" stroke-width="2"/><text x="1055" y="375" fill="#f0f6fc" font-weight="700">8. Publish evidence</text><text x="1055" y="403" fill="#8b949e">dossier + report + hashes</text>
+<path d="M1260 242 V286 H345 V325" stroke="#58a6ff" stroke-width="3" fill="none" marker-end="url(#arrow)"/><path d="M475 386 H560" stroke="#58a6ff" stroke-width="3" marker-end="url(#arrow)"/><path d="M830 386 H915" stroke="#58a6ff" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="160" y="500" width="1080" height="72" rx="14" fill="#111820" stroke="#238636" stroke-width="2"/><text x="700" y="530" fill="#7ee787" font-weight="700">Evidence spine</text><text x="700" y="557" fill="#c9d1d9">content-addressed artifacts • audit lineage • exact run population • versioned methods • signatures</text>
+<path d="M345 437 V490" stroke="#238636" stroke-width="2" stroke-dasharray="8 6"/><path d="M700 437 V490" stroke="#238636" stroke-width="2" stroke-dasharray="8 6"/><path d="M1055 437 V490" stroke="#238636" stroke-width="2" stroke-dasharray="8 6"/>
+</g>
+</svg>
