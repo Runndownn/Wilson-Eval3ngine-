@@ -1,6 +1,6 @@
 # Wilson Eval3ngine — Current Status
 
-**Package version:** `0.1.0`  
+**Package version:** `0.2.0`  
 **Project stage:** active evaluation platform / pre-production assurance  
 **Authority:** this page describes the current `main` source tree; historical plans and point-in-time assessments are provenance, not current product truth.
 
