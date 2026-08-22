@@ -1,13 +1,14 @@
-"""Unit tests for Provider Scope Approval (TODO 24).
+"""Provider scope policy tests.
 
-Tests cover:
-- Provider/model allowlist validation
-- Data classification policy evaluation
-- Region restrictions
-- Model scope attribute verification
-- Experiment manifest validation against approved scope
+Real provider approval is explicit governance input; only deterministic mock scope
+is built into source.
 """
 
+from __future__ import annotations
+
+import json
+
+import pytest
 
 from wilson_eval3ngine.providers.scope import (
     APPROVED_PROVIDERS,
@@ -15,211 +16,201 @@ from wilson_eval3ngine.providers.scope import (
     ModelScope,
     ProviderScope,
     ProviderTier,
-    validate_provider_model,
     list_approved_models,
+    load_provider_scope_file,
+    register_provider_scope,
+    validate_provider_model,
 )
 
 
-class TestProviderScope:
-    """Test suite for ProviderScope definition."""
-
-    def test_approved_providers_defined(self):
-        """Verify approved providers are defined."""
-        assert "openai" in APPROVED_PROVIDERS
-        assert "anthropic" in APPROVED_PROVIDERS
-
-    def test_provider_scope_has_required_fields(self):
-        """ProviderScope contains all required fields."""
-        scope = APPROVED_PROVIDERS["openai"]
-
-        assert scope.provider_name == "openai"
-        assert scope.tier == ProviderTier.APPROVED
-        assert len(scope.regions) > 0
-        assert len(scope.models) > 0
-
-    def test_model_scope_has_required_fields(self):
-        """ModelScope contains all required metadata."""
-        model_scope = APPROVED_PROVIDERS["openai"].models["gpt-4-turbo-2024-04-09"]
-
-        assert model_scope.model_id == "gpt-4-turbo-2024-04-09"
-        assert model_scope.alias_forbidden is True
-        assert model_scope.context_limit > 0
-        assert model_scope.input_token_price > 0
-        assert model_scope.output_token_price > 0
+def _real_scope(name: str = "vendor-test") -> ProviderScope:
+    model = ModelScope(
+        model_id="model-2026-08-22",
+        context_limit=32_000,
+        supports_json=True,
+        allowed_classifications=frozenset(
+            {DataClassification.PUBLIC, DataClassification.INTERNAL}
+        ),
+    )
+    return ProviderScope(
+        provider_name=name,
+        tier=ProviderTier.APPROVED,
+        regions=("region-a",),
+        models={model.model_id: model},
+        processing_terms_ref="policy://legal/provider-v3",
+        retention_days=0,
+        policy_version="provider-policy-2026-08-22",
+    )
 
 
-class TestProviderModelAllowlist:
-    """Test suite for provider/model allowlist validation."""
-
-    def test_allows_approved_model(self):
-        """Approved model returns valid status."""
-        is_valid, reason = validate_provider_model(
-            provider="openai",
-            model="gpt-4-turbo-2024-04-09",
-        )
-
-        assert is_valid is True
-        assert reason == "approved"
-
-    def test_rejects_unapproved_provider(self):
-        """Unapproved provider is rejected."""
-        is_valid, reason = validate_provider_model(
-            provider="unknown-provider",
-            model="some-model",
-        )
-
-        assert is_valid is False
-        assert "not in approved scope" in reason
-
-    def test_rejects_unapproved_model(self):
-        """Unapproved model is rejected."""
-        is_valid, reason = validate_provider_model(
-            provider="openai",
-            model="gpt-3-unapproved",
-        )
-
-        assert is_valid is False
-        assert "not approved" in reason
-
-    def test_rejects_unapproved_region(self):
-        """Unapproved region is rejected."""
-        is_valid, reason = validate_provider_model(
-            provider="openai",
-            model="gpt-4-turbo-2024-04-09",
-            region="ap-south-1",  # Not in approved regions
-        )
-
-        assert is_valid is False
-        assert "not supported" in reason
-
-    def test_allows_approved_region(self):
-        """Approved region is accepted."""
-        is_valid, reason = validate_provider_model(
-            provider="openai",
-            model="gpt-4-turbo-2024-04-09",
-            region="us-east-1",
-        )
-
-        assert is_valid is True
+def test_source_only_approves_deterministic_mock() -> None:
+    assert set(APPROVED_PROVIDERS) == {"mock"}
+    scope = APPROVED_PROVIDERS["mock"]
+    assert scope.tier == ProviderTier.FALLBACK
+    assert scope.policy_version == "builtin-mock-v1"
 
 
-class TestDataClassificationPolicy:
-    """Test suite for data classification restrictions."""
+def test_real_provider_fails_closed_until_explicitly_registered(monkeypatch) -> None:
+    valid, reason = validate_provider_model("vendor-test", "model-2026-08-22")
+    assert valid is False
+    assert "configured approved scope" in reason
 
-    def test_public_classification_allowed(self):
-        """Public classification allowed for all approved models."""
-        is_valid, _ = validate_provider_model(
-            provider="openai",
-            model="gpt-4-turbo-2024-04-09",
-            classification=DataClassification.PUBLIC,
-        )
-        assert is_valid is True
-
-    def test_internal_classification_allowed(self):
-        """Internal classification allowed for approved tier."""
-        is_valid, _ = validate_provider_model(
-            provider="openai",
-            model="gpt-4-turbo-2024-04-09",
-            classification=DataClassification.INTERNAL,
-        )
-        assert is_valid is True
-
-    def test_experimental_provider_restrictions(self):
-        """Experimental tier restricted to public classification."""
-        # Create experimental scope inline
-        experimental_scope = ProviderScope(
-            provider_name="test-exp",
-            tier=ProviderTier.EXPERIMENTAL,
-            regions=["us-east-1"],
-            models={
-                "test-model": ModelScope(
-                    model_id="test-model",
-                    context_limit=8_000,
-                ),
-            },
-        )
-
-        # Should fail for restricted classification
-        is_valid = experimental_scope.allows_classification(
-            DataClassification.RESTRICTED, "test-model"
-        )
-        assert is_valid is False
+    scope = _real_scope()
+    monkeypatch.setitem(APPROVED_PROVIDERS, scope.provider_name, scope)
+    valid, reason = validate_provider_model(
+        "vendor-test",
+        "model-2026-08-22",
+        region="region-a",
+        classification=DataClassification.INTERNAL,
+    )
+    assert valid is True
+    assert reason == "approved"
 
 
-class TestListApprovedModels:
-    """Test suite for listing approved models."""
+def test_model_identity_and_region_are_exact(monkeypatch) -> None:
+    scope = _real_scope()
+    monkeypatch.setitem(APPROVED_PROVIDERS, scope.provider_name, scope)
 
-    def test_list_approved_models_all(self):
-        """List all approved models."""
-        models = list_approved_models()
-
-        assert len(models) >= 4  # At least 4 models across providers
-
-    def test_list_approved_models_by_provider(self):
-        """List approved models for specific provider."""
-        models = list_approved_models(provider="openai")
-
-        assert len(models) >= 2
-        for m in models:
-            assert m["provider"] == "openai"
+    assert validate_provider_model("vendor-test", "model-latest")[0] is False
+    assert validate_provider_model(
+        "vendor-test", "model-2026-08-22", region="region-b"
+    )[0] is False
 
 
-class TestExperimentManifestScopeValidation:
-    """Test suite for ExperimentManifest scope validation."""
+def test_classification_policy_is_model_data_not_vendor_name_logic(monkeypatch) -> None:
+    scope = _real_scope()
+    monkeypatch.setitem(APPROVED_PROVIDERS, scope.provider_name, scope)
 
-    def test_approved_models_accepted(self, foundation_manifest):
-        """Experiment with approved models passes validation."""
-        manifest_path = foundation_manifest
-        from wilson_eval3ngine.domain.io import load_experiment
-
-        # Foundation manifest uses mock provider which is now in approved scope
-        manifest = load_experiment(manifest_path)
-
-        assert manifest is not None
-        assert len(manifest.models) >= 1
-
-    def test_mock_provider_is_fallback_tier(self):
-        """Mock provider is registered as fallback tier."""
-        scope = APPROVED_PROVIDERS.get("mock")
-        assert scope is not None
-        assert scope.tier == ProviderTier.FALLBACK
-
-    def test_unapproved_provider_model_rejected(self):
-        """Experiment with unapproved provider/model is rejected."""
-        # Create a minimal experiment manifest with unapproved model
-        # This would fail at the contract level
-        is_valid, reason = validate_provider_model(
-            provider="unapproved-provider",
-            model="unapproved-model",
-        )
-        assert is_valid is False
+    assert validate_provider_model(
+        "vendor-test",
+        "model-2026-08-22",
+        classification=DataClassification.PUBLIC,
+    )[0] is True
+    assert validate_provider_model(
+        "vendor-test",
+        "model-2026-08-22",
+        classification=DataClassification.RESTRICTED,
+    )[0] is False
 
 
-class TestModelIdentityRequirements:
-    """Test suite for model identity verification requirements."""
+def test_experimental_scope_can_be_explicitly_public_only() -> None:
+    model = ModelScope(
+        model_id="exp-model-v1",
+        allowed_classifications=frozenset({DataClassification.PUBLIC}),
+    )
+    scope = ProviderScope(
+        provider_name="experimental",
+        tier=ProviderTier.EXPERIMENTAL,
+        regions=("lab",),
+        models={model.model_id: model},
+        policy_version="lab-v1",
+    )
 
-    def test_alias_forbidden_by_default(self):
-        """Model aliases are forbidden for safety."""
-        model_scope = APPROVED_PROVIDERS["openai"].models["gpt-4-turbo-2024-04-09"]
-        assert model_scope.alias_forbidden is True
-
-    def test_identity_fingerprint_required(self):
-        """Identity fingerprinting required for approved models."""
-        model_scope = APPROVED_PROVIDERS["openai"].models["gpt-4-turbo-2024-04-09"]
-        assert model_scope.requires_identity_fingerprint is True
+    assert scope.allows_classification(DataClassification.PUBLIC, model.model_id) is True
+    assert scope.allows_classification(DataClassification.INTERNAL, model.model_id) is False
 
 
-class TestProviderAuthRequirements:
-    """Test suite for provider authentication requirements."""
+def test_provider_scope_is_immutable_at_nested_mapping_boundary() -> None:
+    scope = _real_scope()
+    with pytest.raises(TypeError):
+        scope.models["other"] = ModelScope(model_id="other")  # type: ignore[index]
 
-    def test_enterprise_auth_required(self):
-        """Enterprise authentication required for production providers."""
-        scope = APPROVED_PROVIDERS["openai"]
-        assert scope.enterprise_auth_required is True
-        assert scope.short_lived_credentials is True
 
-    def test_processing_terms_required(self):
-        """Processing terms required for data compliance."""
-        scope = APPROVED_PROVIDERS["openai"]
-        assert "EU Model Clauses" in scope.requires_processing_terms
-        assert scope.training_use_prohibited is True
+def test_conflicting_registration_requires_explicit_replace(monkeypatch) -> None:
+    scope = _real_scope()
+    monkeypatch.setitem(APPROVED_PROVIDERS, scope.provider_name, scope)
+    changed = ProviderScope(
+        provider_name=scope.provider_name,
+        tier=scope.tier,
+        regions=scope.regions,
+        models=scope.models,
+        policy_version="provider-policy-v2",
+    )
+
+    with pytest.raises(ValueError, match="already registered"):
+        register_provider_scope(changed)
+
+
+def test_versioned_policy_file_loads_as_complete_batch(tmp_path, monkeypatch) -> None:
+    # Isolate global registry modifications from the rest of the suite.
+    monkeypatch.setattr(
+        "wilson_eval3ngine.providers.scope.APPROVED_PROVIDERS",
+        {"mock": APPROVED_PROVIDERS["mock"]},
+    )
+    policy = {
+        "schema_version": "we3.provider_scope.v1",
+        "providers": [
+            {
+                "provider_name": "vendor-file",
+                "tier": "approved",
+                "policy_version": "policy-file-v1",
+                "regions": ["region-a"],
+                "processing_terms_ref": "policy://legal/v1",
+                "retention_days": 0,
+                "models": [
+                    {
+                        "model_id": "exact-model-v1",
+                        "context_limit": 8192,
+                        "allowed_classifications": ["public"],
+                    }
+                ],
+            }
+        ],
+    }
+    path = tmp_path / "provider-scope.json"
+    path.write_text(json.dumps(policy), encoding="utf-8")
+
+    names = load_provider_scope_file(path)
+
+    assert names == ["vendor-file"]
+    assert validate_provider_model("vendor-file", "exact-model-v1")[0] is True
+
+
+def test_policy_file_rejects_unknown_schema_without_partial_registration(
+    tmp_path, monkeypatch
+) -> None:
+    isolated = {"mock": APPROVED_PROVIDERS["mock"]}
+    monkeypatch.setattr("wilson_eval3ngine.providers.scope.APPROVED_PROVIDERS", isolated)
+    path = tmp_path / "bad.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "we3.provider_scope.v999",
+                "providers": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unsupported"):
+        load_provider_scope_file(path)
+    assert set(isolated) == {"mock"}
+
+
+def test_list_models_exposes_policy_version_not_fake_price_or_approval(monkeypatch) -> None:
+    scope = _real_scope()
+    monkeypatch.setitem(APPROVED_PROVIDERS, scope.provider_name, scope)
+    records = list_approved_models("vendor-test")
+
+    assert records == [
+        {
+            "provider": "vendor-test",
+            "model_id": "model-2026-08-22",
+            "tier": "approved",
+            "policy_version": "provider-policy-2026-08-22",
+            "regions": ["region-a"],
+            "context_limit": 32000,
+            "supports_tools": False,
+            "supports_json": True,
+            "supports_streaming": False,
+            "allowed_classifications": ["internal", "public"],
+        }
+    ]
+
+
+def test_foundation_manifest_still_uses_source_controlled_mock(foundation_manifest) -> None:
+    from wilson_eval3ngine.domain.io import load_experiment
+
+    manifest = load_experiment(foundation_manifest)
+    assert manifest.models
+    assert all(model.provider == "mock" for model in manifest.models)
