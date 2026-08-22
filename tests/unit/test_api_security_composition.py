@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 # Importing the API package performs the supported composition overrides before
 # api.main constructs the application.
 import wilson_eval3ngine.api  # noqa: F401
@@ -10,6 +14,7 @@ from wilson_eval3ngine.api.auth import extract_single_bearer_token
 from wilson_eval3ngine.api.body_limit import StreamingBodyLimitMiddleware
 from wilson_eval3ngine.api.security_middleware import (
     AuthoritativeRateLimitMiddleware,
+    RequestMetadataValidationMiddleware,
     StrictCORSMiddleware,
 )
 
@@ -78,3 +83,31 @@ def test_single_bearer_parser_rejects_malformed_or_non_ascii_values() -> None:
     assert extract_single_bearer_token(
         _request_with_headers([(b"authorization", b"Bearer \xff")])
     ) is None
+
+
+def _metadata_guard_app(*, assurance: bool) -> FastAPI:
+    app = FastAPI()
+    app.state.settings = SimpleNamespace(is_assurance_environment=assurance)
+    app.add_middleware(RequestMetadataValidationMiddleware)
+
+    @app.post("/v1/experiments:run")
+    def synchronous_run() -> dict[str, bool]:
+        return {"executed": True}
+
+    return app
+
+
+def test_synchronous_filesystem_run_lane_is_disabled_in_assurance() -> None:
+    client = TestClient(_metadata_guard_app(assurance=True))
+    response = client.post("/v1/experiments:run")
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "synchronous_execution_disabled"
+
+
+def test_synchronous_run_lane_remains_available_for_local_development() -> None:
+    client = TestClient(_metadata_guard_app(assurance=False))
+    response = client.post("/v1/experiments:run")
+
+    assert response.status_code == 200
+    assert response.json() == {"executed": True}
