@@ -3,11 +3,14 @@
 T6.1.7 - Integrate audit logging into API layer with signed checkpoints.
 
 Security:
-- All authorization decisions are logged to the audit ledger
-- Audit events are persisted to the database, not just logs
-- Checkpoints are signed with Ed25519 for integrity verification
+- Authorization/audit events can be written to the persistent audit ledger
+- Audit events are persisted to the database, not just process logs
+- Checkpoints can be signed with Ed25519 for integrity verification
 - Events include project scope, actor identity, and correlation IDs
-- Fail-closed: audit failures are logged but don't block operations
+- ``log_event`` is deliberately non-blocking on ledger failure: it logs the
+  failure and returns an empty hash. Callers that require audit persistence as
+  a precondition must check the returned hash or enforce a fail-closed policy
+  at their own service boundary.
 """
 
 from __future__ import annotations
@@ -25,20 +28,18 @@ logger = logging.getLogger("wilson.security.audit")
 
 
 class AuditService:
-    """Enhanced audit service with signing and API integration.
+    """Audit convenience layer with signing and API-oriented metadata.
 
-    Wraps the AuditLedger with additional features:
-    - Automatic event categorization
-    - Signed checkpoints for integrity verification
-    - Project-scoped event isolation
-    - Correlation ID tracking
-    - Batch event processing for performance
+    The service wraps :class:`AuditLedger` with event categorization,
+    correlation metadata, signed checkpoints, and helper methods for common
+    authentication/authorization/data-access events.
 
-    Security:
-    - All events are persisted to the database audit ledger
-    - Critical events trigger signed checkpoints
-    - Events are immutable once written
-    - Hash-linked chain prevents tampering
+    ``AuditLedger.append`` is the persistence primitive and raises on database
+    failure. ``AuditService.log_event`` intentionally catches that exception so
+    callers that only need best-effort audit telemetry are not automatically
+    failed. Security-sensitive callers that require durable audit evidence
+    before continuing must treat an empty returned hash as failure or call an
+    explicitly fail-closed policy/service boundary.
     """
 
     def __init__(
@@ -65,26 +66,25 @@ class AuditService:
         correlation_id: str = "",
         severity: str = "info",
     ) -> str:
-        """Log an audit event to the persistent ledger.
+        """Log an audit event to the persistent ledger when available.
 
         Args:
             project_id: Project scope for the event
-            event_type: Type of event (e.g., "auth_success", "auth_failure")
-            aggregate_type: Type of aggregate (e.g., "experiment", "operation")
+            event_type: Type of event (e.g., ``auth_success``/``auth_failure``)
+            aggregate_type: Type of aggregate (e.g., ``experiment``/``operation``)
             aggregate_id: ID of the aggregate
             actor_id: Identity of the actor
-            payload: Event payload (sanitized - no secrets)
+            payload: Sanitized event payload; secrets must not be included
             correlation_id: Request correlation ID
             severity: Event severity (info, warning, error)
 
         Returns:
-            Event hash for verification
+            The event hash when persistence succeeded; an empty string when the
+            ledger append failed. An empty result is therefore a failure signal,
+            not a valid audit identity.
         """
-        # Add correlation ID to payload
         if correlation_id:
             payload = {**payload, "_correlation_id": correlation_id}
-
-        # Add severity to payload
         payload = {**payload, "_severity": severity}
 
         try:
@@ -110,7 +110,9 @@ class AuditService:
             )
             return event_hash
         except Exception as e:
-            # Fail-closed: log the failure but don't block the operation
+            # This wrapper is intentionally non-blocking. The empty return value
+            # is the caller-visible failure signal; callers that require audit
+            # persistence must enforce their own fail-closed policy.
             logger.error(
                 "audit_event_failed",
                 extra={
@@ -132,29 +134,12 @@ class AuditService:
         failure_reason: str = "",
         correlation_id: str = "",
     ) -> str:
-        """Log an authentication event.
-
-        Args:
-            project_id: Project scope
-            success: Whether authentication succeeded
-            actor_id: Identity of the actor (or "unknown" if failed)
-            method: Authentication method used
-            failure_reason: Reason for failure (if applicable)
-            correlation_id: Request correlation ID
-
-        Returns:
-            Event hash
-        """
+        """Log an authentication event and return its audit hash on success."""
         event_type = "auth_success" if success else "auth_failure"
         severity = "info" if success else "warning"
-
-        payload = {
-            "method": method,
-            "success": success,
-        }
+        payload = {"method": method, "success": success}
         if failure_reason:
             payload["failure_reason"] = failure_reason
-
         return self.log_event(
             project_id=project_id,
             event_type=event_type,
@@ -177,23 +162,9 @@ class AuditService:
         allowed: bool,
         correlation_id: str = "",
     ) -> str:
-        """Log an authorization decision.
-
-        Args:
-            project_id: Project scope
-            actor_id: Identity of the actor
-            role: Role of the actor
-            resource: Resource being accessed
-            action: Action being performed
-            allowed: Whether access was allowed
-            correlation_id: Request correlation ID
-
-        Returns:
-            Event hash
-        """
+        """Log an authorization decision and return its audit hash on success."""
         event_type = "authz_allowed" if allowed else "authz_denied"
         severity = "info" if allowed else "warning"
-
         return self.log_event(
             project_id=project_id,
             event_type=event_type,
@@ -220,19 +191,7 @@ class AuditService:
         operation: str,
         correlation_id: str = "",
     ) -> str:
-        """Log a data access event.
-
-        Args:
-            project_id: Project scope
-            actor_id: Identity of the actor
-            resource_type: Type of resource accessed
-            resource_id: ID of the resource
-            operation: Operation performed (read, write, delete)
-            correlation_id: Request correlation ID
-
-        Returns:
-            Event hash
-        """
+        """Log a data-access event and return its audit hash on success."""
         return self.log_event(
             project_id=project_id,
             event_type=f"data_access_{operation}",
@@ -256,26 +215,19 @@ class AuditService:
         event_window_start: datetime | str,
         event_window_end: datetime | str,
     ) -> AuditCheckpoint | None:
-        """Create a signed audit checkpoint.
+        """Create a signed checkpoint over the current audit-chain root.
 
-        Checkpoints provide integrity verification for audit trails.
-        Only created if signing key is available.
-
-        Args:
-            project_id: Project scope
-            event_count: Number of events in the window
-            event_window_start: Start of event window
-            event_window_end: End of event window
-
-        Returns:
-            Signed AuditCheckpoint, or None if signing not available
+        Checkpoints are created only when a signing key is configured. When a
+        trust registry is supplied, the newly created checkpoint must also
+        verify against that registry before it is returned.
         """
         if self._signing_key is None:
-            logger.warning("checkpoint_skipped_no_signing_key", extra={"project_id": project_id})
+            logger.warning(
+                "checkpoint_skipped_no_signing_key",
+                extra={"project_id": project_id},
+            )
             return None
 
-        # Get the current event hash chain root
-        # This requires querying the latest event hash for the project
         from sqlalchemy import select  # noqa: PLC0415
         from ..persistence.database import AuditEventRow  # noqa: PLC0415
 
@@ -291,20 +243,18 @@ class AuditService:
                 if latest:
                     event_hash_root = latest.event_hash
         except Exception as e:
-            logger.error("checkpoint_hash_retrieval_failed", extra={"error": str(e)})
+            logger.error(
+                "checkpoint_hash_retrieval_failed",
+                extra={"error": str(e)},
+            )
 
-        # Normalize timestamps to ISO strings
         if isinstance(event_window_start, datetime):
             event_window_start = event_window_start.isoformat()
         if isinstance(event_window_end, datetime):
             event_window_end = event_window_end.isoformat()
 
         now_iso = utc_now().isoformat()
-
-        # Create the checkpoint payload
         checkpoint_payload = f"{now_iso}:{event_count}:{event_hash_root}"
-
-        # Sign the checkpoint
         envelope = sign_bytes(checkpoint_payload.encode(), self._signing_key)
 
         checkpoint = AuditCheckpoint(
@@ -318,11 +268,13 @@ class AuditService:
             signer_key_id="primary",
         )
 
-        # Verify the checkpoint
         if self._trust_registry is not None:
             is_valid = checkpoint.verify(self._trust_registry)
             if not is_valid:
-                logger.error("checkpoint_verification_failed", extra={"checkpoint_id": checkpoint.checkpoint_id})
+                logger.error(
+                    "checkpoint_verification_failed",
+                    extra={"checkpoint_id": checkpoint.checkpoint_id},
+                )
                 return None
 
         logger.info(
@@ -333,22 +285,17 @@ class AuditService:
                 "event_count": event_count,
             },
         )
-
         return checkpoint
 
     def verify_audit_trail(self, project_id: str) -> bool:
-        """Verify the integrity of the audit trail for a project.
-
-        Args:
-            project_id: Project scope to verify
-
-        Returns:
-            True if audit trail is intact, False if tampering detected
-        """
+        """Verify the canonical hash chain for one project."""
         try:
             return self._ledger.verify(project_id)
         except Exception as e:
-            logger.error("audit_verification_failed", extra={"error": str(e), "project_id": project_id})
+            logger.error(
+                "audit_verification_failed",
+                extra={"error": str(e), "project_id": project_id},
+            )
             return False
 
 
@@ -357,16 +304,7 @@ def get_audit_service(
     signing_key: Any | None = None,
     trust_registry: TrustRegistry | None = None,
 ) -> AuditService:
-    """Get or create the global audit service.
-
-    Args:
-        database: Database instance
-        signing_key: Optional Ed25519 private key for checkpoint signing
-        trust_registry: Optional trust registry for key verification
-
-    Returns:
-        AuditService instance
-    """
+    """Create an AuditService over the supplied database and trust material."""
     return AuditService(
         database=database,
         trust_registry=trust_registry,
