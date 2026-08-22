@@ -1,247 +1,225 @@
-# Wilson Eval3ngine Game Day Runbook
+# Wilson Eval3ngine Game-Day Runbook
 
-## Overview
+## Purpose and current maturity
 
-This runbook (T8.1.11 / TODO 61) documents the cross-system game day exercise procedures for validating the complete socio-technical system's ability to detect, contain, recover, reconcile, and re-certify after realistic failures.
+The game-day module is a **controlled scenario and incident-lifecycle simulator**. It provides a common failure taxonomy, authorization/safety-observer checks, an incident timeline, synthetic timing/decision metrics, findings, abort criteria, and a repeatable report shape that can be used to rehearse how WE3 should detect, contain, preserve evidence, restore, reconcile, and re-certify after failures.
 
-## Prerequisites
+It is important to understand that the current `GameDayOrchestrator` does **not** itself stop a real PostgreSQL server, corrupt a real object store, partition a network, disable an IdP, or exercise the newly implemented physical backup/PITR path. Its current phase transitions and timing values are simulated in Python. Therefore a successful game-day report demonstrates orchestration/reporting behavior for the scenario model; it is not runtime evidence that the named infrastructure fault was actually injected or recovered from.
 
-### Authorization Requirements
+For a real PostgreSQL encrypted-backup/PITR exercise, use the dedicated recovery workflow described in [Backup and Recovery Runbook](backup-recovery-runbook.md). A future target-environment game day can compose those real exercises with the scenario/reporting model here.
 
-All game day exercises require **written authorization** before execution:
+## What the source currently defines
 
-```yaml
-authorization_required: true
-approval_authority: "Platform Lead + SRE Lead"
-authorization_format: "gd_auth_{environment}_{timestamp}_{requester}"
-safety_observer_required: true
+`src/wilson_eval3ngine/testing/game_day.py` defines **25 scenarios across 14 fault categories**:
+
+| Category | Scenario IDs | What the scenario model represents |
+|---|---|---|
+| Common flow | `gd_common_001` | A no-fault baseline. |
+| Rare critical | `gd_critical_001`–`002` | Database restart and object-store unavailability. |
+| Hostile input | `gd_hostile_001`–`002` | Prompt injection and report XSS attempts. |
+| Partial failure | `gd_partial_001`–`002` | Outbox-consumer outage/duplicate delivery and partial evidence upload. |
+| Concurrency | `gd_concurrent_001`–`002` | Stale leases and duplicate lease claims. |
+| Replay | `gd_replay_001` | Idempotency replay. |
+| Timeout/retry | `gd_timeout_001`–`002` | Provider/network timeout and retry-bound behavior. |
+| Network partition | `gd_network_001` | PostgreSQL/object-storage partition scenario. |
+| Malformed data | `gd_malformed_001`–`002` | Malformed run state and invalid audit hash. |
+| Large payload | `gd_large_001` | Memory/backpressure scenario. |
+| Version skew | `gd_skew_001`–`002` | Worker/event-schema and grader-version skew. |
+| Dependency outage | `gd_deps_001`–`002` | IdP and provider outage. |
+| Operator error | `gd_operator_001`–`002` | Plausible wrong action and unauthorized override. |
+| Security compromise | `gd_security_001`–`003` | Signing-key compromise, audit tampering, and egress-control violation. |
+
+This table describes **scenario definitions**, not proof that all 25 underlying failure modes have been reproduced against production-like infrastructure.
+
+## Incident lifecycle represented by each scenario
+
+A scenario proceeds through the same conceptual phases:
+
+1. **Preparation** — identify the scenario and ensure authorization/safety conditions exist.
+2. **Detection** — record that the fault was observed.
+3. **Triage** — assign incident-response authority.
+4. **Containment** — record containment/degradation actions.
+5. **Evidence preservation** — retain evidence references and integrity context.
+6. **Restore/repair** — represent service repair/recovery.
+7. **Reconciliation** — represent state/integrity verification.
+8. **Re-certification** — determine whether evidence gaps require a new certification decision.
+9. **Closure** — finish the exercise and preserve findings/timeline.
+
+This common lifecycle is valuable even when the fault itself is simulated. It gives incident and platform teams one vocabulary for asking whether a real exercise detected the event, who became responsible, what evidence was preserved, how recovery was demonstrated, and what release authority should exist afterward.
+
+## Authorization and safety controls
+
+The orchestrator requires an authorization token whose current source-level validation is the prefix `gd_auth_`, and scenario execution requires the safety-observer flag to be set. These checks are **simulation controls**, not production authorization. A real game day must still use written change authorization, named incident authority, a defined blast radius, rollback/abort procedures, and an independent observer according to the organization's operating process.
+
+A useful authorized test token for a disposable exercise is:
+
+```text
+gd_auth_staging_20260822_operator
 ```
 
-### Environment Setup
+Do not interpret acceptance of that string by the simulator as proof that the requester was authenticated or authorized by a real identity system.
 
-Game day exercises MUST use **isolated staging environment** with production-like topology:
+## Current CLI
 
-- PostgreSQL instance with WAL archiving
-- Object storage (S3-compatible) with versioning
-- Outbox/audit stream configured
-- Telemetry collection active
-- Alert system with pages
+The current CLI exposes one `game-day` command with a required `--context`, a required `--authorization`, and an output directory.
 
-### Safety Controls
-
-- Fault allowlists restrict injection to approved targets
-- Abort criteria automatically stop exercise on critical issues
-- Rollback plans must be tested before exercise
-- Independent safety observer present during all exercises
-
-## Failure Matrix
-
-The exhaustive failure matrix covers **14 fault categories** with **19 total scenarios**:
-
-| Category | Scenarios | Description | Typical Metrics Target |
-|----------|-----------|-------------|---------------------|
-| Common Flow | gd_common_001 | Normal operation baseline | RTO: 0min, RPO: 0min |
-| Rare Critical | gd_critical_001-002 | Database restart, object store outage | RTO: 4hr, RPO: 15min |
-| Hostile Input | gd_hostile_001-002 | Prompt injection, XSS | Blocked before execution |
-| Partial Failure | gd_partial_001-002 | Consumer outage, partial upload | Recovery < 30min |
-| Concurrency | gd_concurrent_001-002 | Stale lease, duplicate claims | Violations: 0 |
-| Replay | gd_replay_001 | Idempotency key replay | Replay prevented |
-| Timeout/Retry | gd_timeout_001-002 | Provider timeout, retry storm | Bounds enforced |
-| Network Partition | gd_network_001 | PostgreSQL/object store partition | Handled gracefully |
-| Malformed Data | gd_malformed_001-002 | Bad records, invalid hashes | Schema validation |
-| Large Payload | gd_large_001 | Memory pressure | Backpressure applied |
-| Version Skew | gd_skew_001-002 | Old worker, grader incompatibility | Incompatible blocked |
-| Dependency Outage | gd_deps_001-002 | IdP outage, provider fallback | Fallback activated |
-| Operator Error | gd_operator_001-002 | Wrong action, unauthorized override | Authorization blocked |
-| Security Compromise | gd_security_001-003 | Key compromise, audit tampering, egress | Evidence verified |
-
-## How to Execute
-
-### Basic Game Day
+To print the failure matrix without executing the scenario loop:
 
 ```bash
-# Validate authorization
-python3 -c "
-from wilson_eval3ngine.testing.game_day import GameDayOrchestrator
-orchestrator = GameDayOrchestrator()
-assert orchestrator.validate_authorization('gd_auth_staging_$(date +%s)_operator')
-orchestrator.assert_safety_observer(True)
-"
-
-# Run full failure matrix
-we3 game-day run \
-  --authorization "gd_auth_staging_$(date +%s)_operator" \
-  --output var/game_day_result.json
+we3 game-day \
+  --context matrix \
+  --authorization gd_auth_documentation_matrix
 ```
 
-### Single Scenario Execution
+The CLI checks `context == "matrix"` before validating the token, but Typer still requires the option syntactically. The value above is illustrative only.
+
+To execute the current full simulated failure matrix:
 
 ```bash
-we3 game-day run-scenario \
-  --scenario-id gd_partial_001 \
-  --authorization "gd_auth_staging_$(date +%s)_operator"
+we3 game-day \
+  --context run \
+  --authorization gd_auth_staging_20260822_operator \
+  --output var/game_day
 ```
 
-### With Load Testing
+The report is written to:
 
-```bash
-# Run game day with simulated load
-we3 game-day run \
-  --authorization "gd_auth_staging_$(date +%s)_operator" \
-  --with-load \
-  --concurrent-users 10
+```text
+var/game_day/game_day_result.json
 ```
 
-## Verification Commands
+The current CLI does **not** expose the previously documented `we3 game-day run`, `run-scenario`, `--with-load`, or `--concurrent-users` interfaces. Those examples have been removed because documentation should describe executable commands rather than intended future interfaces.
+
+## Understanding the generated report
+
+A `GameDayReport` contains:
+
+- `exercise_id` and execution timestamp;
+- the scenario IDs executed;
+- the ordered timeline events produced by the phase model;
+- aggregate `GameDayMetrics`;
+- findings created by the simulator;
+- whether the exercise was aborted and the abort reason.
+
+The metric model includes mean-time-to-detect style timing, acknowledgement, containment, recovery, reconciliation, RPO/RTO fields, SLO impact, integrity verification, decision correctness, and communication timing. In the current simulator many of these values are generated deterministically from scenario seed/state rather than observed from external systems. They are useful for testing report logic and rehearsal workflows, but they must not be cited as measured service-level results.
+
+That distinction is especially important for RPO and RTO. The recovery subsystem now records an actual elapsed restore duration during its disposable PostgreSQL exercise. A synthetic `GameDayMetrics.rto_hours` value and a real `RestoreExecutionResult.duration_seconds` are different classes of evidence and should never be merged without preserving their provenance.
+
+## Basic report inspection
+
+You can validate the report structure without pretending its simulated metrics are production measurements:
 
 ```bash
-# Verify game day result structure
-python3 -c "
+python - <<'PY'
 import json
-with open('var/game_day_result.json') as f:
-    result = json.load(f)
-    
-assert 'exercise_id' in result
-assert 'scenarios_executed' in result
-assert 'timeline' in result
-assert 'metrics' in result
-assert len(result['scenarios_executed']) >= 19  # All scenarios
-"
+from pathlib import Path
 
-# Verify metrics meet SLOs
-python3 -c "
-import json
-with open('var/game_day_result.json') as f:
-    result = json.load(f)
-    
-metrics = result['metrics']
-assert metrics['rpo_minutes'] <= 15.0  # Target RPO
-assert metrics['rto_hours'] <= 4.0  # Target RTO
-assert metrics['data_integrity_verified'] is True
-assert metrics['decision_correctness_score'] >= 0.9
-"
+path = Path("var/game_day/game_day_result.json")
+report = json.loads(path.read_text(encoding="utf-8"))
 
-# Verify no unexplained data loss
-python3 -c "
-import json
-with open('var/game_day_result.json') as f:
-    result = json.load(f)
-    
-# All findings should have evidence refs
-for finding in result['findings']:
-    if finding['severity'] in ('critical', 'high'):
-        assert len(finding['evidence_refs']) > 0
-"
+assert report["exercise_id"]
+assert isinstance(report["scenarios_executed"], list)
+assert len(report["scenarios_executed"]) == 25
+assert isinstance(report["timeline"], list)
+assert isinstance(report["metrics"], dict)
+assert isinstance(report["findings"], list)
+assert isinstance(report["aborted"], bool)
+
+print(f"exercise: {report['exercise_id']}")
+print(f"scenarios: {len(report['scenarios_executed'])}")
+print(f"timeline events: {len(report['timeline'])}")
+print(f"aborted: {report['aborted']}")
+PY
 ```
 
-## Debugging Checklist
+This check answers “did the simulator produce the expected report contract?” It does not answer “did the actual organization recover from all 25 faults?”
 
-When investigating game day failures:
+## Abort criteria
 
-1. **Check authorization** - Valid `gd_auth_` prefix required
-2. **Check safety observer** - Must be present during execution
-3. **Check abort criteria** - Look for triggered abort conditions
-4. **Check timeline order** - Events should follow phase sequence
-5. **Check evidence preservation** - All findings have evidence refs
-6. **Check metrics targets** - RPO/RTO compliance verified
-7. **Check fault targeting** - Injection within allowlist only
+Individual scenario definitions include abort criteria such as evidence loss, integrity violations, unsafe/unhandled schema conditions, unauthorized actions, or security-control failure. `check_abort_criteria()` evaluates those criteria against the observed-state dictionary supplied to the simulator.
 
-## Timeline Event Verification
+In a real game day, abort criteria should map to concrete monitoring signals and an accountable person who can stop the exercise. A string such as `data_loss_detected` in source is a useful contract only after the staging/runtime harness defines how that fact is measured.
 
-```bash
-# Reconstruct chronological timeline
-python3 -c "
-import json
-from datetime import datetime
+## Evidence model
 
-with open('var/game_day_result.json') as f:
-    result = json.load(f)
+A useful real game day should preserve three layers of evidence separately:
 
-timeline = sorted(result['timeline'], key=lambda e: e['timestamp'])
-for event in timeline[:10]:
-    print(f\"{event['timestamp']}: {event['phase']}/{event['event_type']}\")
-"
-```
+### 1. Scenario/orchestration evidence
 
-## Integration Points
+The report from `GameDayOrchestrator` shows which scenario model was exercised, the simulated lifecycle transitions, findings, and the common report contract.
 
-| System | Integration Module | Purpose |
-|--------|------------------|---------|
-| Backup/PITR | `src/wilson_eval3ngine/backup/` | Evidence recovery simulation |
-| Certification | `src/wilson_eval3ngine/certification/` | Re-certification validation |
-| Operations | `src/wilson_eval3ngine/operations/` | Cadence integration |
-| Telemetry | `src/wilson_eval3ngine/telemetry.py` | Alert simulation |
-| Signing | `src/wilson_eval3ngine/security/signing.py` | Key compromise simulation |
-| Scheduler | `src/wilson_eval3ngine/persistence/scheduler.py` | Lease/stale job simulation |
-| API | `src/wilson_eval3ngine/api/` | Endpoint failure simulation |
+### 2. Component runtime evidence
 
-## Abort Criteria
+Real component exercises should retain native results. For example, the PostgreSQL recovery exercise should retain encrypted-backup manifest identities, WAL sequence, restore log hash, measured duration, signed recovery baseline, and reconciliation result. Provider, IdP, scheduler, object-store, and network exercises should likewise keep the evidence produced by those systems.
 
-The following conditions will automatically abort the game day:
+### 3. Human/operational evidence
 
-- `data_loss_detected` - Evidence loss detected
-- `integrity_violation` - Data integrity violation
-- `backup_unavailable` - Recovery backup unavailable
-- `evidence_unrecoverable` - Cannot recover evidence
-- `system_compromised` - Security breach detected
-- `data_leak_detected` - Unauthorized data exfiltration
-- `schema_violation_unhandled` - Unhandled schema errors
-- `integrity_violation_unhandled` - Unhandled integrity errors
-- `incompatible_grader_running` - Wrong grader version active
-- `auth_failure_unhandled` - Authentication failure
-- `unauthorized_action_executed` - Unauthorized operation
+A governed exercise also needs written authorization, participant roles, timeline communications, decisions, abort/rollback actions, approvals, and follow-up owners. Source code cannot manufacture those organizational facts.
 
-## Evidence Requirements
+Keeping the three layers separate prevents a simulated timeline event from being mistaken for proof that an infrastructure control executed.
 
-### Evidence During Exercise
+## Composing the real PostgreSQL recovery exercise
 
-- **Before** fault injection: System state snapshot
-- **During** fault: Alert events, state transitions
-- **After** fault: Recovery actions, integrity checks
-- **Post-recovery**: Reconciliation report, re-certification
+For database-recovery game days, treat the `we3-backup` workflow as the component exercise and the game-day report as orchestration context. A practical staging sequence is:
 
-### Evidence Preservation Rules
+1. authorize the exercise and name the safety observer;
+2. capture/verify the pre-exercise recovery baseline;
+3. verify that encrypted full-backup and real WAL coverage exist;
+4. run the chosen database failure scenario in the authorized staging environment;
+5. execute `we3-backup restore` to an isolated loopback recovery instance;
+6. retain `restore_execution.json`, PostgreSQL restore log, plan, backup/WAL identities, and reconciliation output;
+7. record those evidence references in the game-day/incident record;
+8. perform the required re-certification and human approval before restoring release authority.
 
-1. All timeline events are immutable records
-2. Evidence refs use content-addressed SHA-256 hashes
-3. Findings include evidence refs for verification
-4. Timeline includes monotonic and wall-clock timestamps
+The exact commands and trust/KMS configuration are in [Backup and Recovery Runbook](backup-recovery-runbook.md). Do not copy production KMS credentials, database passwords, private storage paths, or raw sensitive logs into a public game-day report.
 
-## RPO/RTO Targets
+## RPO/RTO interpretation
 
-| Scenario Type | RPO Target | RTO Target | Verification |
-|---------------|------------|------------|--------------|
-| Rare Critical | 15 minutes | 4 hours | Backup restore test |
-| Common Flow | N/A | N/A | Baseline metrics |
-| Hostile Input | N/A | < 1 min | Blocked before execution |
-| Partial Failure | 5 minutes | 30 minutes | WAL archive check |
-| Concurrency | N/A | < 1 min | Lease validation |
-| Security Compromise | N/A | < 15 min | Key rotation test |
+The scenario model contains RPO/RTO fields and several scenarios describe target recovery windows. Treat those as **objectives/rehearsal values** until a target-like exercise measures them.
 
-## Security Considerations
+For a real database exercise, calculate RPO from the actual protected recovery point/WAL coverage relative to the failure point and calculate RTO from observed incident/recovery timestamps. Retain the source backup ID, ending LSN, required WAL sequence, target timestamp/LSN, restore start/completion times, and reconciliation result so another reviewer can reconstruct the measurement.
 
-### Key Compromise Simulation
+A configured target such as “15 minutes” is a policy requirement. A measured value such as “this restore completed in 83 seconds and reached LSN X” is evidence. The first should never be presented as though it were the second.
 
-- Only simulates signature verification failure
-- Does NOT expose real keys
-- Verifies trust registry blocks untrusted signatures
-- Tests re-certification blocking
+## Security scenario interpretation
 
-### Audit Tampering Detection
+### Signing-key compromise
 
-- Simulates bad hash in chain
-- Verifies audit validation rejects tampering
-- Tests evidence preservation during audit gap
+The scenario model can represent a compromised-key incident. The real recovery implementation provides a concrete negative test: a forged/untrusted backup-manifest signature fails verification. A target-environment exercise should additionally prove revocation/rotation through the actual key authority and trust distribution process.
 
-### Egress Violation Prevention
+### Audit tampering
 
-- Tests network egress controls
-- Verifies flow isolation between services
-- Confirms no data leakage paths
+Recovery reconciliation recomputes the canonical project audit chain and compares terminal roots with a signed baseline. The unit suite deliberately modifies an audit hash and requires reconciliation to fail. A real game day can build on that behavior using a disposable database rather than corrupting production evidence.
 
-## Runbook References
+### Egress violations
 
-- [SEV Incidents](./sev-incidents.md) - Incident response procedures
-- [Backup/Recovery](./backup-recovery-runbook.md) - Recovery procedures
-- [Performance Qualification](./performance-qualification.md) - Load testing
-- [Certification Runbook](./certification-runbook.md) - Re-certification process
+The game-day model names egress-control failure, but it does not enforce network policy itself. Real validation belongs to the deployment firewall/container/network layer and should produce bounded evidence showing approved destinations were reachable and prohibited destinations were not.
+
+## What should block a real exercise from being called successful
+
+A real staging or production-readiness game day should not be called successful merely because `game_day_result.json` exists. At minimum, fail the exercise when a required real component check was not executed, expected evidence is missing, integrity/reconciliation failed, an abort criterion fired without the prescribed response, or an accountable approver cannot establish what was restored and why release authority should resume.
+
+Findings should have an owner and retest requirement proportional to their certification impact. A critical recovery or integrity finding should remain visible until the failing component has been corrected and the relevant scenario has been executed again with retained evidence.
+
+## Current implementation boundaries
+
+The current simulator does not yet:
+
+- invoke the real `we3-backup` restore automatically;
+- manipulate a real IdP, provider, object store, network partition, or scheduler process;
+- authenticate game-day authorization tokens against an identity/approval service;
+- expose a supported single-scenario CLI command;
+- expose the previously documented load/concurrency flags;
+- convert component evidence automatically into game-day evidence references.
+
+Those are integration opportunities, not facts that should be hidden by runbook language. Keeping them visible makes it easier to decide whether a future change belongs in scenario orchestration, a component-specific runtime harness, or the organization's operating procedure.
+
+## Related implementation and runbooks
+
+- `src/wilson_eval3ngine/testing/game_day.py` — scenario taxonomy, lifecycle simulator, metrics/findings/report model.
+- `src/wilson_eval3ngine/cli.py` — current `we3 game-day --context ...` interface.
+- `src/wilson_eval3ngine/backup/` — real encrypted PostgreSQL backup/PITR component path.
+- [Backup/Recovery](backup-recovery-runbook.md) — real PostgreSQL recovery mechanics and evidence.
+- [SEV Incidents](sev-incidents.md) — incident response procedures.
+- [Performance Qualification](performance-qualification.md) — load/performance qualification.
+- [Certification Runbook](certification-runbook.md) — certification/re-certification process.
