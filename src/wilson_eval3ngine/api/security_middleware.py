@@ -1,10 +1,9 @@
-"""Hardened request-boundary middleware composition.
+"""Hardened request-boundary middleware and identity composition.
 
 Security properties that depend on deployment trust are bound here instead of
-being inferred later inside route code.  The registrar captures secret/trust
-configuration while the application is composed, which is important for the
-external-secret entrypoint because secret leases are deliberately removed from
-the mutable environment before the first request.
+being inferred later inside route code. The registrar captures secret/trust
+configuration while the application is composed, installs one OIDC authenticator
+shared by the API, and then wires request controls around the route layer.
 """
 
 from __future__ import annotations
@@ -19,11 +18,18 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
+from ..persistence.audit import AuditLedger
 from ..security.csrf import CSRFProtection, CSRFValidationError
 from ..security.input_validation import (
     IdempotencyKeyValidator,
     ProjectIdValidator,
     ValidationError,
+)
+from ..security.oidc import (
+    OIDCAuthenticator,
+    OIDCSettings,
+    TokenRevocationError,
+    TokenValidationError,
 )
 from ..security.rate_limit import (
     RateLimitBackendUnavailable,
@@ -42,14 +48,6 @@ _STATE_CHANGING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 def _csv(value: str) -> tuple[str, ...]:
     return tuple(item.strip() for item in value.split(",") if item.strip())
-
-
-def _environment() -> str:
-    return os.environ.get("WE3_ENVIRONMENT", "development").strip().lower()
-
-
-def _is_assurance_environment() -> bool:
-    return _environment() in {"staging", "production"}
 
 
 def _merge_vary(response: Response, token: str) -> None:
@@ -105,7 +103,7 @@ class BoundCSRFProtectionMiddleware(BaseHTTPMiddleware):
     """CSRF validation whose HMAC key is captured during app composition.
 
     Current production authentication is bearer-header OIDC, which is not an
-    ambient browser credential and is therefore exempt.  If a future route uses
+    ambient browser credential and is therefore exempt. If a future route uses
     cookie/session credentials, state-changing requests must present the same
     HMAC token in the cookie and ``X-CSRF-Token`` header.
     """
@@ -160,10 +158,10 @@ class BoundCSRFProtectionMiddleware(BaseHTTPMiddleware):
 class StrictCORSMiddleware(BaseHTTPMiddleware):
     """Enforce an exact browser-origin policy before route side effects.
 
-    CORS is not authentication and is not a substitute for CSRF.  Its job here
-    is to reject an unauthorized browser ``Origin`` before endpoint execution
-    and to validate preflight method/header requests instead of acknowledging
-    every preflight with a generic success response.
+    CORS is not authentication and is not a substitute for CSRF. Its job here is
+    to reject an unauthorized browser ``Origin`` before endpoint execution and
+    to validate preflight method/header requests instead of acknowledging every
+    preflight with a generic success response.
     """
 
     def __init__(
@@ -176,10 +174,7 @@ class StrictCORSMiddleware(BaseHTTPMiddleware):
         max_age: int = legacy.CORS_MAX_AGE,
     ) -> None:
         super().__init__(app)
-        origins = tuple(allowed_origins) if allowed_origins is not None else _csv(
-            os.environ.get("WE3_CORS_ALLOWED_ORIGINS", "")
-        )
-        self._allowed_origins = frozenset(origins)
+        self._allowed_origins = frozenset(allowed_origins or ())
         self._allowed_methods = frozenset(
             method.upper() for method in (allowed_methods or legacy.CORS_ALLOWED_METHODS)
         )
@@ -267,15 +262,10 @@ class AuthoritativeRateLimitMiddleware(BaseHTTPMiddleware):
         default_window: int = 60,
         *,
         trusted_proxy_cidrs: Iterable[str] = (),
-        assurance_environment: bool | None = None,
+        assurance_environment: bool = False,
     ) -> None:
         super().__init__(app)
-        fail_closed = (
-            _is_assurance_environment()
-            if assurance_environment is None
-            else assurance_environment
-        )
-        if fail_closed:
+        if assurance_environment:
             if redis_client is None:
                 raise RateLimitBackendUnavailable(
                     "Redis is required for production rate limiting"
@@ -291,7 +281,7 @@ class AuthoritativeRateLimitMiddleware(BaseHTTPMiddleware):
             redis_client=redis_client,
             default_limit=default_limit,
             default_window=default_window,
-            fail_closed=fail_closed,
+            fail_closed=assurance_environment,
             trusted_proxy_cidrs=trusted_proxy_cidrs,
         )
         self._default_limit = default_limit
@@ -306,8 +296,6 @@ class AuthoritativeRateLimitMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         config = legacy.RATE_LIMIT_RULES.get(path, RateLimitConfig(self._default_limit))
         effective_limit = config.effective_limit()
-        # No project header is included here: tenant identity is not trusted
-        # until authentication has succeeded.
         key = build_rate_limit_key(identity.enforcement_token, path)
 
         try:
@@ -370,6 +358,76 @@ class AuthoritativeRateLimitMiddleware(BaseHTTPMiddleware):
         return response
 
 
+def _install_oidc_authority(app: FastAPI, redis_client: Any | None) -> None:
+    runtime = app.state.settings
+    if runtime.auth_mode != "oidc":
+        return
+
+    authenticator = OIDCAuthenticator(
+        OIDCSettings(
+            issuer=runtime.oidc_issuer,
+            jwks_uri=runtime.oidc_jwks_uri,
+            audience=runtime.oidc_audience,
+        ),
+        redis_client=redis_client,
+    )
+    app.state.oidc_authenticator = authenticator
+    app.state.audit_ledger = AuditLedger(app.state.database)
+
+    @app.post("/v1/auth/revoke", status_code=204, include_in_schema=True)
+    def revoke_current_bearer(request: Request) -> Response:
+        """Revoke the currently presented bearer token for its remaining life.
+
+        This is intentionally self-revocation. Administrative revocation by
+        subject/session belongs to the identity provider or a separately
+        authorized security-administration API.
+        """
+        authorization = request.headers.get("Authorization", "")
+        if not authorization.startswith("Bearer "):
+            return _error(401, "missing_bearer_token", "authorization header required")
+        token = authorization[7:]
+        if not token or len(token) > 16_384:
+            return _error(401, "invalid_token", "token validation failed")
+
+        try:
+            project_id, role, actor_id = authenticator.authenticate_context(token)
+        except TokenRevocationError:
+            # Revocation is idempotent and should not reveal prior revocation
+            # timing/state to a caller that already possesses the token value.
+            return Response(status_code=204, headers={"Cache-Control": "no-store"})
+        except TokenValidationError:
+            return _error(401, "invalid_token", "token validation failed")
+        except Exception as exc:
+            logger.error(
+                "token_revoke_authentication_unavailable",
+                extra={"error_class": type(exc).__name__},
+            )
+            return _error(503, "oidc_unavailable", "authentication service is unavailable")
+
+        if not authenticator.revoke_token(token):
+            return _error(503, "revocation_failed", "token revocation could not be completed")
+
+        try:
+            app.state.audit_ledger.append(
+                project_id=ProjectIdValidator.validate(project_id),
+                event_type="oidc_token_self_revoked",
+                aggregate_type="identity",
+                aggregate_id=actor_id,
+                actor_id=actor_id,
+                payload={"role": role, "auth_method": "oidc"},
+            )
+        except Exception as exc:
+            logger.error(
+                "token_revocation_audit_failed",
+                extra={"error_class": type(exc).__name__},
+            )
+            # The security action already succeeded. Report that evidence
+            # persistence is unavailable without attempting to undo revocation.
+            return _error(503, "audit_unavailable", "security audit persistence is unavailable")
+
+        return Response(status_code=204, headers={"Cache-Control": "no-store"})
+
+
 def add_hardened_production_middleware(
     app: FastAPI,
     database_url: str,
@@ -377,17 +435,18 @@ def add_hardened_production_middleware(
     auth_mode: str,
     redis_client: Any | None = None,
 ) -> None:
-    """Compose the supported request security boundary.
-
-    Values read below are captured while ``create_app`` is executing. This is
-    intentional: the external-secret entrypoint still holds its secret leases at
-    that point, even though Starlette will instantiate middleware later.
-    """
+    """Compose the supported identity and request security boundary."""
     legacy.register_default_health_checks(database_url, artifact_root, auth_mode)
-    assurance = _is_assurance_environment()
-    csrf_secret = os.environ.get("WE3_CSRF_SECRET", "")
-    allowed_origins = _csv(os.environ.get("WE3_CORS_ALLOWED_ORIGINS", ""))
-    trusted_proxy_cidrs = _csv(os.environ.get("WE3_TRUSTED_PROXY_CIDRS", ""))
+    runtime = app.state.settings
+    assurance = bool(runtime.is_assurance_environment)
+
+    # Use captured Settings values rather than re-reading mutable environment
+    # state after the external secret lease has been released.
+    csrf_secret = runtime.csrf_secret
+    allowed_origins = runtime.cors_allowed_origins
+    trusted_proxy_cidrs = runtime.trusted_proxy_cidrs
+
+    _install_oidc_authority(app, redis_client)
 
     app.add_middleware(StreamingBodyLimitMiddleware)
     app.add_middleware(
