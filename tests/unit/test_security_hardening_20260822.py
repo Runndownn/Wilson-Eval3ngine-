@@ -16,7 +16,9 @@ from wilson_eval3ngine.config import Settings
 from wilson_eval3ngine.persistence.audit import AuditLedger
 from wilson_eval3ngine.persistence.database import Database
 from wilson_eval3ngine.security.authorization import (
+    AuthorizationAuditUnavailable,
     AuthorizationError,
+    authorization_audit_scope,
     check_authorization,
 )
 from wilson_eval3ngine.security.csrf import CSRFProtection
@@ -26,6 +28,10 @@ from wilson_eval3ngine.security.rate_limit import (
     RateLimitBackendUnavailable,
     RateLimiter,
     build_rate_limit_key,
+)
+from wilson_eval3ngine.security.redis_authority import (
+    RedisSecurityAuthority,
+    SecurityStateUnavailable,
 )
 
 
@@ -74,6 +80,25 @@ def test_assurance_rate_limiter_requires_distributed_authority() -> None:
         RateLimiter(fail_closed=True)
 
 
+def test_redis_security_authority_normalizes_backend_errors() -> None:
+    redis_client = Mock()
+    redis_client.exists.side_effect = Exception("backend detail must not escape")
+    authority = RedisSecurityAuthority(redis_client)
+    with pytest.raises(SecurityStateUnavailable) as captured:
+        authority.exists("we3:token_revoked:test")
+    assert "backend detail" not in str(captured.value)
+
+
+def test_redis_script_runtime_error_is_normalized() -> None:
+    redis_client = Mock()
+    script = Mock(side_effect=Exception("redis implementation detail"))
+    redis_client.register_script.return_value = script
+    authority = RedisSecurityAuthority(redis_client)
+    wrapped = authority.register_script("return 1")
+    with pytest.raises(SecurityStateUnavailable):
+        wrapped(keys=["bounded"], args=[1])
+
+
 def test_revocation_jti_is_bounded_before_redis_key_use() -> None:
     redis_client = Mock()
     revocations = TokenRevocationList(redis_client=redis_client)
@@ -115,8 +140,7 @@ def test_disallowed_cors_origin_is_rejected_before_route_side_effect() -> None:
         StrictCORSMiddleware,
         allowed_origins=("https://allowed.example",),
     )
-    client = TestClient(app)
-    response = client.post(
+    response = TestClient(app).post(
         "/mutate",
         headers={"Origin": "https://attacker.example"},
     )
@@ -213,6 +237,42 @@ def test_workload_role_prefix_is_part_of_authorization_identity() -> None:
 def test_unlisted_system_admin_role_does_not_gain_implicit_api_authority() -> None:
     with pytest.raises(AuthorizationError):
         check_authorization("system_admin", "experiments", "read")
+
+
+def test_authorization_audit_scope_records_allow_and_deny() -> None:
+    decisions: list[tuple[str, str, str, bool, str | None]] = []
+
+    def record(
+        role: str,
+        resource: str,
+        action: str,
+        allowed: bool,
+        project_id: str | None,
+    ) -> None:
+        decisions.append((role, resource, action, allowed, project_id))
+
+    with authorization_audit_scope(record):
+        assert check_authorization(
+            "viewer", "projects", "read", project_id="proj_a"
+        ) is True
+        with pytest.raises(AuthorizationError):
+            check_authorization(
+                "viewer", "projects", "update", project_id="proj_a"
+            )
+
+    assert decisions == [
+        ("viewer", "projects", "read", True, "proj_a"),
+        ("viewer", "projects", "update", False, "proj_a"),
+    ]
+
+
+def test_authorization_audit_failure_prevents_allow_decision() -> None:
+    def unavailable(*_args) -> None:
+        raise AuthorizationAuditUnavailable("audit unavailable")
+
+    with authorization_audit_scope(unavailable):
+        with pytest.raises(AuthorizationAuditUnavailable):
+            check_authorization("viewer", "projects", "read")
 
 
 def test_sqlite_audit_chain_serializes_concurrent_project_appends(tmp_path) -> None:
