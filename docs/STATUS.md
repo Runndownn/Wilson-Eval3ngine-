@@ -10,7 +10,7 @@ This page is the current status authority for public documentation. It exists so
 
 Names such as `examples/experiments/foundation.yaml`, `we3.foundation_result.v1`, and older comments referring to the foundation runner describe the deterministic local/CI vertical slice that established the first complete measurement path. They are not a current whole-project maturity label.
 
-The broader repository contains real-provider paths, durable PostgreSQL scheduling, human review/adjudication, encrypted evaluation-evidence storage, OIDC/project controls, telemetry, deployment/security controls, GUI/operator workflows, and certification orchestration. Backup/PITR/recovery also has substantial scaffolding, but its real encryption/WAL/restore execution is still provisional and is called out separately below. The package version remains `0.1.0`; semantic version alone neither proves immaturity nor certifies production readiness.
+The broader repository contains real-provider paths, durable PostgreSQL scheduling, human review/adjudication, encrypted evaluation-evidence storage, OIDC/project controls, telemetry, deployment/security controls, GUI/operator workflows, certification orchestration, and an implemented PostgreSQL physical-backup/PITR recovery path. The package version remains `0.1.0`; semantic version alone neither proves immaturity nor certifies production readiness.
 
 ## Status vocabulary
 
@@ -46,11 +46,11 @@ The broader repository contains real-provider paths, durable PostgreSQL scheduli
 | Prompt-family independence accounting | **Provisional in one snapshot path** | `create_metric_snapshot` currently documents `prompt_family_count=len(run_ids)` as an approximation; certification independence claims must use validated evidence. |
 | Release gate engine | **Implemented / local-lane exercised** | Minimum support, pass/warn/indeterminate/block precedence, and critical unsafe-compliance blocking exist. Threshold authority remains program specific. |
 | Canonical report model and CSV export | **Implemented** | Canonical report hashing and formula-injection-aware CSV export exist. Raw prompts/responses are intentionally omitted from this summary export. |
-| Cross-format report-hash reconciliation | **Implemented** | Reconciliation now fails closed unless JSON/CSV/HTML output carries the exact canonical report hash; carrying the hash is a representation-integrity check, not proof that every field was independently recomputed. |
+| Cross-format report-hash reconciliation | **Implemented** | Reconciliation fails closed unless JSON/CSV/HTML output carries the exact canonical report hash; carrying the hash is a representation-integrity check, not proof that every field was independently recomputed. |
 | Parquet report export | **Implemented as optional capability** | Requires `pyarrow`; missing support is an explicit error rather than a zero-byte artifact. `pyarrow` is not a default package dependency. |
 | Content-addressed local evaluation evidence | **Implemented / local-lane exercised** | Strong development/CI traceability; local filesystem storage alone is not managed production immutability. |
-| Encrypted evaluation-evidence store | **Implemented** | AES-256-GCM envelope-encryption/retention interfaces exist; development `LocalKMSClient` is not a production KMS authority. This is distinct from the provisional database-backup encryption path. |
-| Audit chain | **Implemented** | External checkpoint/trust operation depends on deployment configuration/evidence. |
+| Encrypted evaluation-evidence store | **Implemented** | AES-256-GCM envelope-encryption/retention interfaces exist; development `LocalKMSClient` is not a production KMS authority. |
+| Audit chain | **Implemented** | Event hashing and chain verification are shared by normal audit and recovery reconciliation. External checkpoint/trust operation still depends on deployment configuration/evidence. |
 | Ed25519 dossier signing | **Implemented / local-lane exercised** | Development key generation is not managed production signing identity/key custody. |
 | Durable PostgreSQL scheduler | **Implemented** | Fenced leases, heartbeats, retry/dead-letter behavior, and reconciliation code exist; target workload behavior still needs runtime evidence. |
 | OIDC/project authorization | **Implemented** | Real issuer/JWKS, claims, role mapping, RLS/object policy, revocation, and negative authorization results are environment-specific. |
@@ -60,21 +60,23 @@ The broader repository contains real-provider paths, durable PostgreSQL scheduli
 | GUI secret transport | **Implemented in supported POSIX path** | One-shot secret transport avoids the historical regular plaintext temp file; non-POSIX secure transport remains platform specific. |
 | Streaming request-body limit | **Implemented** | Actual ASGI bytes are counted rather than trusting `Content-Length`; deployment testing remains relevant. |
 | Telemetry/tracing | **Implemented** | Production SLOs, alerts, tracing backends, and evidence must be validated in the running environment. |
-| Backup metadata / recovery models / reconciliation scaffold | **Implemented / provisional** | Models, command scaffolding, restore-plan concepts, reconciliation queries, recovery manifests, tests, and runbooks exist. |
-| Encrypted database backup payload | **Not yet established by current backup manager** | `create_full_backup` invokes `pg_basebackup` but does not currently encrypt the resulting payload even though metadata is marked encrypted. Do not claim KMS-encrypted WE3 backups from this path. |
-| Backup content-integrity verification | **Provisional / insufficient for production** | Current checksum logic hashes the backup directory pathname rather than backup bytes/objects; signature verification also contains an unimplemented branch. |
-| WAL archive / PITR coverage | **Provisional scaffold** | Current WAL method creates metadata and restore planning synthesizes placeholder segment names; continuous real WAL coverage is not yet proven. |
-| Isolated restore execution | **Provisional scaffold** | `execute_isolated_restore` currently logs intent and returns success rather than executing a real restore/replay. |
-| Durable CLI backup catalogue | **Not established by current manager** | Backup metadata is held in an in-process mapping, so separate CLI invocations do not constitute a durable catalogue through this class. |
+| Encrypted PostgreSQL physical backup | **Implemented / runtime assurance required** | `pg_basebackup` is streamed directly through AES-256-GCM; the DEK is KMS-wrapped and the signed manifest records PostgreSQL and KMS identity. Production KMS authorization/storage durability still require target-environment evidence. |
+| Backup integrity and trust verification | **Implemented** | Verification checks canonical manifest SHA-256, trusted Ed25519 signer, ciphertext digest/size, KMS unwrap, AES-GCM authentication, and decrypted plaintext digest/size. It fails closed when any layer disagrees. |
+| Durable backup catalogue | **Implemented for filesystem backup root** | `backup_catalog.v2.json` survives process restart and binds backup/WAL records to database identity and ciphertext storage versions. Atomic local persistence is not the same as managed immutable object storage or multi-writer distributed coordination. |
+| Real WAL archive and PITR coverage | **Implemented / runtime assurance required** | WE3 ingests actual 24-hex PostgreSQL WAL files, binds them to system/timeline/segment-size identity, and rejects missing or non-contiguous coverage. The deployment must still operate a reliable WAL archival service and prove its observed RPO. |
+| Signed recovery baseline and reconciliation | **Implemented** | Expected run/classification/metric/gate/provenance/outbox populations and per-project audit roots are signed before recovery. Reconciliation uses the real `outbox_events` and `provenance_edges` schema and recomputes audit chains cryptographically. |
+| Isolated PostgreSQL restore/PITR | **Implemented / runtime assurance required** | The recovery orchestrator decrypts/authenticates selected objects, performs a loopback-only physical restore, waits for recovery target/promotion, requires reconciliation to pass, and retains measured evidence. Production RTO and return-to-service authorization remain deployment facts. |
+| Disposable PostgreSQL recovery exercise in CI | **Configured as runtime validation** | A dedicated workflow creates an actual disposable cluster, encrypts a physical backup, archives real WAL, exercises corruption/signature/missing-WAL negatives, restores to a second loopback cluster, and retains the runtime directory as an artifact. A green run proves that tested commit/environment, not a private production deployment. |
+| Native recovery for user-defined PostgreSQL tablespaces | **Not currently supported** | The streaming physical-backup path deliberately rejects user-defined tablespaces because safe restoration of external tablespace topology requires a deployment-specific storage mapping. Use the platform backup service until native support is added. |
 | Production Compose/Caddy topology | **Implemented templates** | Intended ingress/source config does not prove deployed firewall/network behavior. |
 | Certification requirements/orchestration | **Implemented** | A release only passes when required evidence is actually satisfied. |
-| Production certification of a specific deployment | **Runtime assurance required** | Public source cannot establish private identities, secrets, provider destinations, certificates, network policy, restores, scans, or runtime results by itself. |
+| Production certification of a specific deployment | **Runtime assurance required** | Public source cannot establish private identities, secrets, provider destinations, certificates, network policy, KMS custody, restore duration, storage durability, scans, or runtime results by itself. |
 
 ## What the deterministic local lane proves
 
 The included local example proves that the core measurement contract can be exercised without external credentials: load/validate the manifest and dataset, establish expectations, execute deterministic provider behavior, preserve evidence, grade responses, compute metrics/Wilson intervals, evaluate gates, build reports/dossiers, and verify signatures. It is intentionally small enough for repeatable development and CI use.
 
-It does **not** exercise every provider, production scheduler, external KMS/secret manager, organizational IdP, private egress boundary, multi-user review operation, real encrypted database backup/PITR restore, production certificate, or target deployment.
+It does **not** exercise every provider, production scheduler, external KMS/secret manager, organizational IdP, private egress boundary, multi-user review operation, production recovery deployment, certificate, or target infrastructure. Recovery has its own separate PostgreSQL runtime exercise because physical backup/PITR cannot be meaningfully validated by the SQLite-based deterministic evaluation lane.
 
 ## Known implementation limitations that must stay visible
 
@@ -88,17 +90,19 @@ It does **not** exercise every provider, production scheduler, external KMS/secr
 
 ### Analyst/reviewer scope
 
-The analyst helper now enforces that the canonical report's project matches the authorized project argument and rejects missing project scope. That closes the local view-construction relabelling gap, but authorization must still be enforced at API/service boundaries and backed by real identity/project policy. The reviewer redaction helper is baseline pattern masking, not a production DLP engine.
+The analyst helper enforces that the canonical report's project matches the authorized project argument and rejects missing project scope. That closes the local view-construction relabelling gap, but authorization must still be enforced at API/service boundaries and backed by real identity/project policy. The reviewer redaction helper is baseline pattern masking, not a production DLP engine.
 
 ### Report/export boundaries
 
 Cross-format hash reconciliation checks that JSON, CSV, and HTML representations carry the exact canonical hash instead of returning unconditional success. This verifies a shared representation identifier; it does not independently prove semantic equality of every serialized field. Parquet export requires optional `pyarrow` and fails explicitly if unavailable.
 
-### Backup/PITR/recovery execution
+### Backup/PITR/recovery runtime boundary
 
-The current backup module should be treated as **design/scaffold plus partial reconciliation implementation**, not production recovery protection. In particular, backup payload encryption, content-based integrity, signed verification, real WAL archival/coverage, durable catalogue persistence, and actual isolated restore execution are incomplete in the current manager. The previous runbook wording overstated these controls and has been replaced with explicit completion gates in [Backup and Recovery Runbook](operations/backup-recovery-runbook.md).
+The recovery source implementation now includes real physical backup encryption, signed manifest verification, persistent catalogue state, real WAL-file ingestion and continuity checks, signed recovery baselines, actual isolated PostgreSQL restore/PITR, and schema-aware reconciliation. That removes the earlier source-level scaffold limitation tracked by issue #38.
 
-A CI unit/integration test that simulates backup records is source-level evidence; it is not proof that an authorized PostgreSQL instance was backed up, encrypted, restored to a point in time, reconciled, and returned to service under approval.
+The assurance boundary has therefore moved rather than disappeared. The repository can prove what the implementation does and, when the dedicated recovery workflow is green, that a disposable PostgreSQL environment completed the exercised path for that commit. It cannot prove that a private production deployment has a 15-minute RPO, a four-hour RTO, approved KMS custody, immutable/replicated backup storage, correct tablespace handling, adequate operator staffing, or approved return-to-service authorization. Those claims require retained evidence from that exact environment.
+
+The native streaming path currently rejects PostgreSQL clusters with user-defined tablespaces. The backup-root catalogue is durable across process restarts and written atomically, but it is a filesystem catalogue rather than a distributed multi-writer service. Deployments that require cross-host writers, managed retention/legal hold, object lock, regional replication, or external tablespace recovery should integrate the platform-native storage/database controls and retain those as additional assurance evidence.
 
 ### Calibration and threshold authority
 
@@ -106,7 +110,7 @@ Deterministic grading and gate code do not make every grader or threshold certif
 
 ### Local versus managed evidence controls
 
-Content-addressed local artifacts, local audit data, development signing keys, and the development KMS are appropriate for deterministic development but are not substitutes for managed production storage, key custody, retention/legal hold, secret management, and external audit/checkpoint controls.
+Content-addressed local artifacts, local audit data, development signing keys, and the development KMS are appropriate for deterministic development but are not substitutes for managed production storage, key custody, retention/legal hold, secret management, and external audit/checkpoint controls. The backup CLI likewise requires explicit opt-in before its local KMS can be used, and that mode remains development/test only.
 
 ### GUI bind/identity boundary
 
@@ -114,7 +118,7 @@ The supported GUI is **secure-by-default**, not mathematically incapable of remo
 
 ## Security assessment status
 
-`docs/security/MASTER_SECURITY_ASSESSMENT.md` is a valuable **point-in-time security assessment dated 2026-08-01**. Later code/documentation should not present its runtime-pending statements as if they were freshly re-executed on every commit.
+`docs/security/MASTER_SECURITY_ASSESSMENT.md` is a valuable **point-in-time security assessment dated 2026-08-01**. Later code/documentation should not present its runtime-pending statements as if they were freshly re-executed on every commit. Recovery work added after that assessment must be reviewed against current code and workflow evidence rather than retroactively changing the historical assessment.
 
 `docs/security/PRIVATE_RUNTIME_ASSURANCE.md` remains the enduring contract for what public source can prove versus what must be verified privately. Raw private evidence should stay outside the public repository while bounded outcomes/fingerprints can be published where appropriate.
 
@@ -128,6 +132,6 @@ The original `docs/Plans_/` and `docs/08-planning/Plans_/` material remains in p
 
 ## Current release statement
 
-> **Wilson Eval3ngine `0.1.0` is an active evidence-first LLM evaluation platform in pre-production assurance. The deterministic local evaluation lane and many provider, scheduling, review, security, evidence, reporting, GUI, and certification components are implemented, while explicitly documented statistical, persona-view, backup/PITR, and private-runtime areas remain provisional or evidence-dependent. Production certification must be established for the exact release/deployment being approved.**
+> **Wilson Eval3ngine `0.1.0` is an active evidence-first LLM evaluation platform in pre-production assurance. The deterministic evaluation lane and substantial provider, scheduling, review, security, evidence, reporting, GUI, certification, and PostgreSQL recovery capabilities are implemented. Explicit statistical/persona-view limitations remain provisional, while production recovery, identity, key custody, network, storage, provider, and certification claims remain evidence-dependent for the exact release and deployment being approved.**
 
-See [Architecture](ARCHITECTURE.md) for component relationships, [Getting Started](GETTING_STARTED.md) for the first safe run, [GUI & Evidence Guide](GUI_AND_EVIDENCE_GUIDE.md) for the operator/evidence model, and [Backup and Recovery Runbook](operations/backup-recovery-runbook.md) for the current recovery completion boundary.
+See [Architecture](ARCHITECTURE.md) for component relationships, [Getting Started](GETTING_STARTED.md) for the first safe run, [GUI & Evidence Guide](GUI_AND_EVIDENCE_GUIDE.md) for the operator/evidence model, and [Backup and Recovery Runbook](operations/backup-recovery-runbook.md) for the recovery mechanics and runtime-assurance boundary.
