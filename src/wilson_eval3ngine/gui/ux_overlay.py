@@ -1,9 +1,8 @@
-"""Runtime composition overlays for focused GUI hardening.
+"""Runtime composition for versioned GUI presentation assets.
 
-The repository serves a static index document and retains selected legacy
-helpers while the application boundary is extracted. This module installs
-versioned same-origin assets and replaces the legacy regular-file credential
-handoff before the server begins accepting requests.
+Secret transport selection is deliberately outside this module. The launcher
+installs exactly one reviewed transport before the listener starts; presentation
+composition must never mutate that security boundary.
 """
 
 from __future__ import annotations
@@ -13,9 +12,6 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.routing import APIRoute
-
-from . import server as legacy
-from .secret_transport import store_api_key_pipe
 
 _STYLESHEETS = (
     '<link rel="stylesheet" href="/static/ux4.css?v=20260801-ux9">',
@@ -31,7 +27,6 @@ _SCRIPTS = (
 
 def _render_overlay(index_path: Path) -> str:
     """Return the baseline index with each versioned asset injected once."""
-
     try:
         document = index_path.read_text(encoding="utf-8")
     except OSError as exc:  # pragma: no cover - deployment failure path
@@ -47,15 +42,9 @@ def _render_overlay(index_path: Path) -> str:
 
 
 def install_ux_overlay(app: FastAPI, static_dir: Path) -> None:
-    """Install hardened runtime adapters before the listener starts."""
-
+    """Install the versioned GUI document adapter exactly once."""
     if getattr(app.state, "we3_ux_overlay_installed", False):
         return
-
-    # Application job execution resolves this legacy helper at invocation time.
-    # Preserve the established call contract while replacing the regular-file
-    # implementation with a one-shot FIFO that never stores plaintext at rest.
-    legacy.store_api_key_temp_file = store_api_key_pipe
 
     index_path = static_dir / "index.html"
 
