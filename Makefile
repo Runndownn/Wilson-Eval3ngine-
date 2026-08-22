@@ -25,7 +25,7 @@ coverage:
 	python -m coverage report
 
 security-unit:
-	python -m pytest -q tests/unit/test_oidc_auth.py tests/unit/test_security_enhancements.py tests/unit/test_production_middleware.py tests/unit/test_security_hardening_20260822.py tests/unit/test_api_authorization_contract.py
+	python -m pytest -q tests/unit/test_oidc_auth.py tests/unit/test_security_enhancements.py tests/unit/test_production_middleware.py tests/unit/test_security_hardening_20260822.py tests/unit/test_api_authorization_contract.py tests/unit/test_api_security_composition.py
 
 security-check:
 	python -m compileall -q src tests scripts
