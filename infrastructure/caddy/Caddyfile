@@ -1,9 +1,9 @@
 # Wilson Eval3ngine stock-Caddy reverse proxy
 #
 # API-level rate limiting remains authoritative. This file intentionally uses
-# only directives available in the official caddy:2-alpine image; deployments
-# that require an additional proxy limiter must build and provenance-pin a
-# Caddy image containing that module.
+# only directives available in the official Caddy image. Caddy is the sole
+# public ingress authority: it overwrites forwarding identity and does not expose
+# internal readiness, metrics, or interactive schema surfaces on the API host.
 
 {
     email {$WE3_TLS_EMAIL}
@@ -19,6 +19,9 @@
         Referrer-Policy "strict-origin-when-cross-origin"
         Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=(), usb=()"
         Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+        Cross-Origin-Opener-Policy "same-origin"
+        Cross-Origin-Resource-Policy "same-origin"
+        Cross-Origin-Embedder-Policy "require-corp"
         Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
     }
     encode zstd gzip
@@ -34,7 +37,15 @@
 
 {$WE3_DOMAIN} {
     import security_headers
+
+    @internal_diagnostics path /metrics /ready /openapi.json /docs* /redoc*
+    respond @internal_diagnostics "Not Found" 404
+
     reverse_proxy api:8000 {
+        # Replace inbound forwarding metadata at the public trust boundary.
+        # WE3_TRUSTED_PROXY_CIDRS should contain only the private Caddy->API
+        # network range used by the deployment, never arbitrary client ranges.
+        header_up X-Forwarded-For {remote_host}
         header_up X-Forwarded-Proto {scheme}
         header_up X-Forwarded-Host {host}
     }
