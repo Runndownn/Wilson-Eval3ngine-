@@ -37,9 +37,9 @@ Important remaining boundaries are evidence boundaries rather than hidden defici
 
 ## Architecture: how the pieces relate
 
-The following system view is included first because it establishes the conceptual layers before the more detailed control and evidence flows.
+The following system view establishes the conceptual layers before the more detailed control and evidence flows.
 
-<p align="center"><img src="docs/assets/diagrams/system-architecture.svg" alt="Wilson Eval3ngine system architecture" width="1100"></p>
+<p align="center"><img src="docs/assets/diagrams/system-architecture.svg" alt="Wilson Eval3ngine system architecture" width="1080"></p>
 
 At the top, operators use the loopback GUI, CLI, or REST API. Application/orchestration services validate work and coordinate execution. The lower layer separates the evaluation core, provider boundary, evidence/state services, and governance/operations. The deployment boundary underneath them is intentionally a different concern: Caddy, API, PostgreSQL, Redis, monitoring, and private configuration can compose the software, but a production claim only becomes valid when the deployed environment supplies corresponding runtime evidence.
 
@@ -49,7 +49,7 @@ The architecture is therefore not a chain of interchangeable modules. Provider e
 
 This pipeline shows how a declared experiment becomes a decision-bearing artifact. It is the central measurement contract of the project.
 
-<p align="center"><img src="docs/assets/diagrams/evaluation-pipeline.svg" alt="Wilson Eval3ngine evaluation pipeline" width="1100"></p>
+<p align="center"><img src="docs/assets/diagrams/evaluation-pipeline.svg" alt="Wilson Eval3ngine evaluation pipeline" width="1080"></p>
 
 The key ordering property is that expected treatment is compiled **before** the target response is observed. Provider requests and retries then produce attempt evidence. Valid terminal behavior is graded without turning timeouts, malformed responses, exhausted retries, authentication failures, or other operational problems into behavioral labels. Metric snapshots retain the exact support and population context, and release gates fail closed to an indeterminate state when evidence is insufficient.
 
@@ -57,9 +57,9 @@ Compatible independent-binomial proportions can be compared with the implemented
 
 ## Trust and governance boundaries
 
-The next diagram exists to show where implementation authority stops and runtime assurance begins.
+The next diagram shows where implementation authority stops and runtime assurance begins.
 
-<p align="center"><img src="docs/assets/diagrams/trust-boundaries.svg" alt="Wilson Eval3ngine trust and assurance boundaries" width="1100"></p>
+<p align="center"><img src="docs/assets/diagrams/trust-boundaries.svg" alt="Wilson Eval3ngine trust and assurance boundaries" width="1080"></p>
 
 The supported API has one authoritative implementation for each request-security control. Shared observability and response policy live separately from streaming byte enforcement, strict metadata/CORS/CSRF/rate-limit/revocation logic, and authorization-decision auditing. Staging/production distributed security state is Redis-backed and fails closed when its authority is unavailable. Forwarded client identity is trusted only from configured proxy networks, and real provider/model approval is governance data supplied by explicit reviewed policy rather than permanent source truth.
 
@@ -67,61 +67,69 @@ This boundary matters because source-controlled secure defaults are necessary bu
 
 ## Generate: from operator intent to governed evidence
 
-The Generate workflow is where user selection becomes an explicit workload, so it deserves both an operator screenshot and an architecture-level flow. The screenshot below is the canonical current Generate view already maintained by the repository; restoring it here fixes the root README omission without inventing a replacement interface.
+The Generate workflow is where user selection becomes an explicit workload. The current high-resolution capture is shown here because the former `03-generate.webp` asset was removed from the repository and replaced by the current PNG capture set.
 
-<p align="center"><img src="docs/assets/gui/current/03-generate.webp" alt="Current Wilson Eval3ngine Generate workspace" width="1100"></p>
+<p align="center"><img src="docs/assets/gui/current/generate.png" alt="Current Wilson Eval3ngine Generate workspace" width="1080"></p>
 
-Generate binds exact model selection, prompt package or custom prompts, execution mode, prompt count, and total request volume before a job starts. That review step is operationally important because provider cost/traffic and the population the resulting evidence may describe are defined here. Prompt-package selection belongs inside Generate rather than in a separate sixth workflow stage.
+An operator reaches this page after endpoints and model inventory have been established. Select the exact model or models to evaluate, choose the prompt package or custom prompt set, select the supported execution mode, and inspect the displayed prompt count and total request volume before starting the job. Those controls define both provider traffic/cost and the population the resulting evidence may legitimately describe. If the requested model or prompt population is wrong here, later charts cannot repair that scope error.
 
-The following flowchart shows what happens behind that interface.
+The following flowchart shows what happens behind the interface.
 
-<p align="center"><img src="docs/assets/diagrams/generation-workflow.svg" alt="Wilson Eval3ngine generation workflow" width="1100"></p>
+<p align="center"><img src="docs/assets/diagrams/generation-workflow.svg" alt="Wilson Eval3ngine generation workflow" width="1080"></p>
 
-The control plane fixes workload scope and lineage, then the execution plane compiles expectations and dispatches only through the selected provider boundary. Attempts become immutable evidence before grading and human review. Metric snapshots and gates consume that evidence, while charts and reports remain presentation surfaces rather than sole release authority. The visual is intentionally narrower than the full system architecture so a maintainer can see exactly where generation stops being configuration and becomes evaluation evidence.
+The control plane fixes workload scope and lineage, then the execution plane compiles expectations and dispatches only through the selected provider boundary. Attempts become evidence before grading and human review. Metric snapshots and gates consume that evidence, while charts and reports remain presentation surfaces rather than sole release authority. The visual is intentionally narrower than the full system architecture so a maintainer can see exactly where generation stops being configuration and becomes evaluation evidence.
 
 ## Operator workflow
 
-The current GUI is exactly **Endpoints → Models → Generate → Charts → Reports**. These screenshots are point-in-time views of the operator application, not benchmark evidence; counters, model inventory, provider state, report totals, and demo charts describe the capture state only.
+The current operator flow is **Endpoints → Models → Generate → Charts → Reports**. The PNGs below are the high-resolution current captures in `docs/assets/gui/current/`. They are instructional UI evidence: visible counts, endpoint states, model names, run totals, report totals, and sample chart values describe the captured session and are not release metrics.
 
-### Endpoints
+### 1. Endpoints — connect a provider safely
 
-The first workspace is shown because provider destination identity and connectivity must be understood before model inventory or evaluation results can be interpreted.
+<p align="center"><img src="docs/assets/gui/current/endpoints.png" alt="Current Wilson Eval3ngine Endpoints workspace" width="1080"></p>
 
-<p align="center"><img src="docs/assets/gui/current/01-endpoints.webp" alt="Current Wilson Eval3ngine Endpoints workspace" width="1100"></p>
+The Endpoints page is the starting point for real-provider operation. To configure an endpoint, the operator needs the intended provider adapter, a meaningful display name, the provider base URL, and—when the provider requires one—an API credential supplied through the supported backend-managed credential path. Local or private gateways additionally require the repository’s explicit local-provider policy to permit that destination; application policy is still not a substitute for host/container egress controls.
 
-Endpoints registers and tests approved provider destinations and reconciles their inventory. An `online` state means the configured connectivity check succeeded at that time; it does not mean that any model is safe, capable, or release-ready. Credential handling stays backend-managed, and provider egress is a distinct trust boundary from the GUI listener itself.
+Use the page to register the endpoint, test connectivity, and reconcile provider inventory before moving on. An `online` or successful connectivity state proves only that the configured check succeeded at that moment. It does not certify any discovered model for quality or safety. Authentication failures, DNS/TLS problems, blocked destinations, and provider outages should be resolved here rather than being misclassified later as model refusal behavior.
 
-### Models
+### 2. Models — establish exact model identity
 
-The model inventory view follows endpoints because reproducible runs depend on exact provider/model identity rather than friendly labels.
+<p align="center"><img src="docs/assets/gui/current/models.png" alt="Current Wilson Eval3ngine Models workspace" width="1080"></p>
 
-<p align="center"><img src="docs/assets/gui/current/02-models.webp" alt="Current Wilson Eval3ngine Models workspace" width="1100"></p>
+The Models page is the inventory and selection surface for exact provider model identifiers. After an endpoint is healthy, use discovery or manual registration as supported, confirm which endpoint each model came from, filter or group the inventory, and verify the precise provider/model ID that should enter the evaluation. Friendly family names and recommendation labels are navigation aids; reproducibility depends on the exact provider/model identity and configuration retained in evidence.
 
-Models exposes exact provider model IDs, endpoint lineage, filtering, family grouping, and readiness for selection. Family and “recommended” labels are navigation metadata, not benchmark endorsements. Real provider/model scope must come from explicit governance policy; the deterministic mock lane remains the only source-controlled default approval.
+Before leaving this page, the operator should be able to answer three questions from the visible inventory: **Which endpoint will receive the request? Which exact model identifier will be called? Is that model actually within the reviewed evaluation scope?** Those answers become lineage, not merely UI state.
 
-### Generate
+### 3. Generate — define the workload before execution
 
-Generate is displayed again in workflow order so the five-step interface can be read continuously.
+<p align="center"><img src="docs/assets/gui/current/generate.png" alt="Current Wilson Eval3ngine Generate workspace in operator sequence" width="1080"></p>
 
-<p align="center"><img src="docs/assets/gui/current/03-generate.webp" alt="Current Wilson Eval3ngine Generate workspace in operator sequence" width="1100"></p>
+Generate turns selected inventory into a bounded job. Choose the model set, prompt package or custom prompt population, and execution mode; then review the visible prompt count and calculated request volume. The final review matters because it fixes what will be sent, how much provider traffic will be created, and what population the run can later claim to measure.
 
-The workspace turns inventory into a bounded workload. Model set, prompt population, execution mode, and total request volume are reviewed before dispatch, which is why generation is a control-plane action rather than a result. No quality claim exists until attempts, classifications, metrics, and supporting evidence are produced.
+Start the job only after the model set and prompt population are correct. A successful start is not a result: the evaluation still needs attempts, terminal responses or reliability failures, classifications, metrics, gates, and evidence preservation before any quality statement is justified.
 
-### Charts
+### 4. Charts — inspect evidence without mistaking visualization for authority
 
-Charts are shown next because they help humans spot structure in completed run evidence, but they deliberately sit downstream of structured measurements.
+<p align="center"><img src="docs/assets/gui/current/charts.png" alt="Current Wilson Eval3ngine Charts workspace" width="1080"></p>
 
-<p align="center"><img src="docs/assets/gui/current/04-charts.webp" alt="Current Wilson Eval3ngine Charts workspace" width="1100"></p>
+The Charts workspace organizes analytics around completed run evidence. Use it to identify the run being reviewed, generate or open the associated visualizations, inspect chart metadata, and look for patterns that deserve deeper evidence review. The repository also supports synthetic/demo charts; those are useful for learning the analytics surface but must remain explicitly synthetic.
 
-Charts are grouped by run and can expose associated metadata or be regenerated from evidence. Synthetic demo charts exist only to demonstrate the analytics surface. A visualization never overrides a metric snapshot, population definition, or provenance record; if the picture and structured evidence disagree, the underlying evidence is investigated first.
+When a chart appears surprising, move backward through the evidence chain instead of adjusting the metric to fit the picture: check the run/attempt evidence, expected treatment and classifications, metric snapshot numerator/denominator/exclusions, and gate decision. The visualization is a reading aid, not the canonical value store.
 
-### Reports
+### 5. Reports — read the narrative and follow provenance back to evidence
 
-Reports complete the operator sequence because they are the narrative handoff rather than the beginning of the evidence chain.
+<p align="center"><img src="docs/assets/gui/current/reports.png" alt="Current Wilson Eval3ngine Reports workspace" width="1080"></p>
 
-<p align="center"><img src="docs/assets/gui/current/05-reports.webp" alt="Current Wilson Eval3ngine Reports workspace" width="1100"></p>
+Reports is the narrative handoff surface. Use the visible run/model context to select the artifact, preview the generated PDF, open the full report when more space is needed, and export related artifacts through the supported controls. The report is designed for human review, but exact release-sensitive values should still reconcile to canonical report data, hashes, metric snapshots, attempts, approvals, and signatures.
 
-Reports provide human-readable PDF previews and export actions while preserving run/model context. A legacy report with incomplete lineage is treated as a provenance warning rather than having missing metadata guessed into place. Release-sensitive review therefore follows the chain back through hashes, canonical report data, metric snapshots, attempts, and approvals.
+Legacy reports can carry incomplete lineage. Treat missing model or provenance fields as warnings rather than filling them by inference. If a release decision depends on absent lineage, locate the corresponding structured evidence/sidecar or rerun through the current evidence path.
+
+### PDF reading surface
+
+The repository also retains the dedicated PDF-viewer capture below. It is useful for understanding how report content can be inspected at reading scale even though PDF viewing is now conceptually part of the Reports workflow rather than a separate sixth navigation stage.
+
+<p align="center"><img src="docs/assets/gui/05-pdf-viewer.png" alt="Wilson Eval3ngine PDF report viewer" width="980"></p>
+
+Use the viewer for narrative inspection, page-by-page review, and visual report QA. It does not replace provenance checks: a PDF that looks complete still needs its run/model lineage, canonical report hash, evidence references, and required approval context before it can support a governed release claim.
 
 ## Measurement model
 
@@ -137,35 +145,125 @@ WE3 preserves five behavioral outcomes instead of collapsing behavior and infras
 
 Metric snapshots preserve numerator, denominator, exclusions, method/version, and run population. Wilson score intervals communicate uncertainty for proportions. Critical unsafe-compliance and operational-failure rules can block a release, while insufficient support becomes `indeterminate` instead of being forced into pass/fail. Executive summaries likewise leave support/uncertainty unknown when canonical evidence does not define them; missing information is not converted into optimistic values.
 
-## Visualization posture
+## Current analytics visual atlas
 
-WE3 includes a broad chart catalogue for exploring run behavior. The examples below are included on the main README because they explain what the analytics layer is intended to make visible. They are sample/demo visualization assets, not current production benchmark claims.
+The current GUI asset directory also contains a detailed set of analytics captures uploaded with the present interface. They are displayed here so the README does not discuss analysis surfaces that the reader cannot see. To keep very wide and relatively tall charts visually balanced, every analytics image below is rendered at a common **420-pixel height** while its native aspect ratio is preserved. These are explanatory captures, not current production benchmark claims; the visible axis labels, legends, and run metadata define the exact plotted quantity in each image.
 
-Confidence intervals are shown first because the project treats uncertainty as part of the result rather than decoration.
+### Cross-run comparison
 
-<p align="center"><img src="docs/assets/charts/confidence_intervals.png" alt="Sample Wilson Eval3ngine confidence interval chart" width="900"></p>
+<p align="center"><img src="docs/assets/gui/current/cross-run-comp.png" alt="Current cross-run comparison analytics capture" height="420"></p>
 
-The chart illustrates why a point estimate cannot be read without support. Wide intervals signal limited evidence, while narrower intervals indicate more precise estimation for the same metric definition. Release logic should still use the structured snapshot and configured gate rather than eyeballing a plot.
+This view supports candidate-versus-baseline inspection. Use it only when the populations and metric definitions are compatible. The implemented inferential comparison is scoped to compatible independent-binomial proportions; a screenshot cannot convert paired, clustered, or otherwise dependent observations into a valid independent test.
 
-The stacked outcome example is useful because it preserves the shape of the behavioral population instead of hiding everything behind one success score.
+### Success rate with confidence interval
 
-<p align="center"><img src="docs/assets/charts/stacked_outcomes.png" alt="Sample Wilson Eval3ngine stacked outcomes chart" width="900"></p>
+<p align="center"><img src="docs/assets/gui/current/success-rate-with-confidene-confidance-in.png" alt="Current success-rate and confidence-interval analytics capture" height="420"></p>
 
-A stacked view can reveal whether two models with similar aggregate rates reach them through very different mixtures of appropriate refusal, false refusal, safe compliance, unsafe compliance, or ambiguity. Operational failures remain separate from those behavior categories and should not be visually reclassified to make the chart cleaner.
+The important reading habit is to treat the interval as part of the result. A point estimate without support and uncertainty can look more decisive than the evidence warrants. Release logic should read the underlying metric snapshot and configured gate, not infer a pass from the apparent height of a bar.
 
-The per-prompt heatmap demonstrates the system’s ability to move from aggregate behavior back toward the prompts that drive it.
+### Model/metric comparison heatmap capture (`mch.png`)
 
-<p align="center"><img src="docs/assets/charts/per_prompt_heatmap.png" alt="Sample Wilson Eval3ngine per-prompt heatmap" width="900"></p>
+<p align="center"><img src="docs/assets/gui/current/mch.png" alt="Current model and metric heatmap analytics capture" height="420"></p>
 
-This view is diagnostic: it helps identify concentrated weak or strong areas that an average can conceal. Every cell still requires the same run, prompt, provider/model, grading, and metric lineage as the aggregate from which it was derived.
+Heatmap-style views are useful for locating concentrated differences quickly: scan for cells that diverge from the surrounding pattern, then follow those cells back to the exact metric definition and supporting prompt/run evidence. Color intensity is a navigation aid, not a replacement for the recorded value or threshold.
 
-The cross-run comparison example explains the intended role of candidate-versus-baseline analysis.
+### Model comparison and confidence capture (`mpce.png`)
 
-<p align="center"><img src="docs/assets/charts/cross_run_comparison.png" alt="Sample Wilson Eval3ngine cross-run comparison chart" width="900"></p>
+<p align="center"><img src="docs/assets/gui/current/mpce.png" alt="Current model comparison and confidence analytics capture" height="420"></p>
 
-Cross-run visualization is meaningful only when the compared populations and metric definitions are compatible. The implemented statistical comparison is explicitly scoped to independent-binomial proportions; a plot cannot turn paired, clustered, or otherwise dependent observations into a valid independent test.
+Use this comparison-oriented view to examine model differences together with the uncertainty/support context shown in the visualization. Before treating a separation as meaningful, verify that both sides use the same metric definition, comparable populations, and sufficient support.
 
-The complete sample chart catalogue and its cautions are documented in [GUI & Evidence Guide](docs/GUI_AND_EVIDENCE_GUIDE.md).
+### Model profile / radar capture (`mpr.png`)
+
+<p align="center"><img src="docs/assets/gui/current/mpr.png" alt="Current model profile radar analytics capture" height="420"></p>
+
+A radar or profile view is best for trade-off recognition across normalized dimensions. Read each spoke independently; polygon area can visually exaggerate small changes and must never override a critical raw safety gate or an indeterminate support decision.
+
+### Outcome distribution capture (`odm.png`)
+
+<p align="center"><img src="docs/assets/gui/current/odm.png" alt="Current model outcome-distribution analytics capture" height="420"></p>
+
+Distribution views preserve the mixture of outcomes that an aggregate score can hide. Look for whether similar headline performance is produced by different combinations of safe compliance, refusal, ambiguity, or unsafe behavior. Reliability failures remain a separate population and should not be folded into behavioral categories for visual convenience.
+
+### Category / safety analysis capture (`csa.png`)
+
+<p align="center"><img src="docs/assets/gui/current/csa.png" alt="Current category and safety analysis capture" height="420"></p>
+
+Use this view to compare the categories visible in the chart and identify where behavior differs enough to warrant prompt-level inspection. The category names and plotted values visible in the capture are the authority for what is represented; the README intentionally does not manufacture a benchmark claim from the screenshot.
+
+### Category / safety profile capture (`csp.png`)
+
+<p align="center"><img src="docs/assets/gui/current/csp.png" alt="Current category and safety profile capture" height="420"></p>
+
+This companion profile is useful for understanding shape across the displayed categories rather than reducing the run to one scalar. A visually strong profile still has to satisfy the underlying support, critical-event, and provenance rules.
+
+### Prompt success-rate capture (`psr.png`)
+
+<p align="center"><img src="docs/assets/gui/current/psr.png" alt="Current prompt success-rate analytics capture" height="420"></p>
+
+Prompt-oriented success views help identify whether aggregate performance is broad or concentrated in a subset of prompts. Inspect low-performing or unusually strong prompts against their exact expected treatment and grading evidence before generalizing from the aggregate.
+
+### Per-prompt response-time heatmap (`pprth.png`)
+
+<p align="center"><img src="docs/assets/gui/current/pprth.png" alt="Current per-prompt response-time heatmap capture" height="420"></p>
+
+Timing heatmaps help locate prompts or models associated with latency spikes. They are operational evidence: a slow cell may reflect provider load, network behavior, retry policy, or model generation characteristics and should not be interpreted as a behavioral safety label.
+
+### Per-prompt success heatmap (`ppsh.png`)
+
+<p align="center"><img src="docs/assets/gui/current/ppsh.png" alt="Current per-prompt success heatmap capture" height="420"></p>
+
+This capture is deliberately constrained to the same rendered height as the surrounding landscape charts, so its native dimensions no longer make it visually dominate the README. Use the heatmap to find success/failure concentration, then inspect the underlying prompt and classification evidence rather than treating color alone as the result.
+
+### Per-prompt token-count heatmap (`pptch.png`)
+
+<p align="center"><img src="docs/assets/gui/current/pptch.png" alt="Current per-prompt token-count heatmap capture" height="420"></p>
+
+Token-count heatmaps expose where output volume is concentrated. They are useful for cost and efficiency investigation, but token volume has no inherent quality direction: short output can be incomplete and long output can be wasteful, so correlate the pattern with behavioral evidence instead of scoring it in isolation.
+
+### Response-efficiency trend (`ret.png`)
+
+<p align="center"><img src="docs/assets/gui/current/ret.png" alt="Current response-efficiency trend analytics capture" height="420"></p>
+
+Efficiency-oriented views help compare resource use and response behavior over the dimensions visible in the chart. Treat them as optimization diagnostics after safety and evidence gates have been satisfied; lower cost or latency does not compensate for unsafe compliance or insufficient support.
+
+### Response-length distribution (`rld.png`)
+
+<p align="center"><img src="docs/assets/gui/current/rld.png" alt="Current response-length distribution capture" height="420"></p>
+
+The distribution shows whether output length is tight, skewed, multimodal, or highly variable. That is useful for diagnosing verbosity and truncation behavior, but length is not a direct proxy for usefulness or correctness.
+
+### Response-time distribution (`rtd.png`)
+
+<p align="center"><img src="docs/assets/gui/current/rtd.png" alt="Current response-time distribution capture" height="420"></p>
+
+A latency distribution preserves tail behavior that a single average can conceal. Use it to identify long-tail execution and then correlate those observations with attempt evidence, retries, provider state, and workload conditions.
+
+### Response time by model / prompt (`rtmp.png`)
+
+<p align="center"><img src="docs/assets/gui/current/rtmp.png" alt="Current response-time by model and prompt capture" height="420"></p>
+
+This view is useful for locating which model/prompt combinations drive latency rather than assuming the same performance across a run. Differences should be investigated as execution evidence and kept separate from behavioral classification.
+
+### Response-time trend across prompts (`rttap.png`)
+
+<p align="center"><img src="docs/assets/gui/current/rttap.png" alt="Current response-time trend across prompts capture" height="420"></p>
+
+Sequential timing views can reveal bursts, warm-up effects, provider throttling, or changing workload conditions. Prompt order is therefore context for diagnosis, not proof that the prompt content itself caused the timing change.
+
+### Response-time / token correlation (`rttc.png`)
+
+<p align="center"><img src="docs/assets/gui/current/rttc.png" alt="Current response-time and token-correlation capture" height="420"></p>
+
+Correlation views help test whether larger outputs tend to coincide with longer latency in the captured run. Association is descriptive, not causal proof; provider/network effects and model-specific generation behavior remain alternative explanations.
+
+### Token-usage by model (`tum.png`)
+
+<p align="center"><img src="docs/assets/gui/current/tum.png" alt="Current token-usage by model analytics capture" height="420"></p>
+
+Token usage supports cost and efficiency review across the models visible in the chart. Use it alongside outcome quality and safety evidence rather than rewarding the lowest token count independently.
+
+The lower-resolution WebP workspace captures still present in the directory are retained compatibility/history assets. `Generate.png` and `generate.png` have identical repository content, so the README intentionally renders the lowercase canonical path once rather than duplicating the same screenshot.
 
 ## Engineering and design principles
 
@@ -213,11 +311,11 @@ August 9 added governance/community infrastructure and dependency hardening. Aug
 
 ## Complete build timeline
 
-The Gantt chart below is intentionally date-bounded by repository evidence. Multi-day bars represent periods with commit-supported work; single-day bars represent concentrated implementation bursts rather than invented durations.
+The redesigned Gantt is intentionally optimized for README reading rather than wall-chart density. Each row has a large workstream label, the actual commit-supported implementation window, and a plain-language explanation of what changed. Short bars mean concentrated implementation bursts; they are not guessed durations.
 
-<p align="center"><img src="docs/assets/diagrams/development-gantt.svg" alt="Wilson Eval3ngine development Gantt from July 14 through August 22 2026" width="1200"></p>
+<p align="center"><img src="docs/assets/diagrams/development-gantt.svg" alt="Wilson Eval3ngine development Gantt from July 14 through August 22 2026" width="1180"></p>
 
-The timeline shows three important transitions. First, the repository moved from a deterministic foundation into a broader evaluation platform within its first several days. Second, late July and early August shifted the center of gravity toward operator experience, security boundaries, private assurance, and deployability. Third, August 22 closed a previously distinct recovery workstream while simultaneously consolidating fail-closed security and measurement semantics. The development pattern is therefore not a simple linear feature sequence: evaluation, governance, UI, security, and operations evolved as overlapping workstreams that were repeatedly reconciled back into one supported architecture.
+The timeline shows three important transitions at a glance. First, the repository moved from a deterministic foundation into a broader evaluation platform within its first several days. Second, late July and early August shifted the center of gravity toward operator experience, security boundaries, private assurance, and deployability. Third, August 22 closed a previously distinct recovery workstream while simultaneously consolidating fail-closed security and measurement semantics. Evaluation, governance, UI, security, and operations therefore evolved as overlapping workstreams that were repeatedly reconciled back into one supported architecture.
 
 ## Practical usage
 
