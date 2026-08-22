@@ -31,12 +31,28 @@ def _remote_bind_allowed() -> bool:
     return os.environ.get(_REMOTE_BIND_ENV, "").strip().lower() in {"1", "true", "yes"}
 
 
+def _is_loopback_bind(host: str) -> bool:
+    """Return whether a resolved launcher host is strictly loopback."""
+    normalized = host.strip().lower().rstrip(".")
+    if normalized in _LOOPBACK_NAMES:
+        return True
+    if normalized in _LEGACY_WILDCARD_HOSTS:
+        return False
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        # A hostname may resolve differently over time. Non-literal hostnames are
+        # therefore never treated as loopback for the access-control contract.
+        return False
+
+
 def validate_bind_host(host: str) -> str:
     """Return a canonical bind host or reject remote exposure when not permitted.
 
     By default only loopback addresses are accepted. When the operator sets
     ``WE3_GUI_ALLOW_REMOTE_BIND=1`` the check is relaxed so a specific LAN IP
-    or a valid hostname may be used.
+    or a valid hostname may be used. Remote reachability is only one half of the
+    contract: :func:`validate_exposure_contract` separately requires OIDC.
     """
     normalized = host.strip().lower().rstrip(".")
     if normalized in _LOOPBACK_NAMES:
@@ -44,8 +60,9 @@ def validate_bind_host(host: str) -> str:
     try:
         address = ipaddress.ip_address(normalized)
     except ValueError:
-        # Not an IP — could be a hostname. Allow if remote bind is enabled.
-        if _remote_bind_allowed():
+        # Not an IP — could be a hostname. Allow only after explicit remote-bind
+        # opt-in; the exposure contract will then require OIDC authentication.
+        if normalized and _remote_bind_allowed():
             return normalized
         raise ValueError(
             "The operator GUI bind host must be a valid IP address or hostname."
@@ -62,8 +79,9 @@ def validate_bind_host(host: str) -> str:
 def resolve_launcher_host(host: str) -> tuple[str, bool]:
     """Translate only historical wildcard defaults to the secure loopback bind.
 
-    When ``WE3_GUI_ALLOW_REMOTE_BIND=1`` is set, ``0.0.0.0`` is preserved so the
-    server binds all interfaces as the operator explicitly requested.
+    When ``WE3_GUI_ALLOW_REMOTE_BIND=1`` is set, wildcard hosts are preserved so
+    the server can bind all interfaces only after the separate OIDC exposure
+    contract has also been satisfied.
     """
     normalized = host.strip().lower().rstrip(".")
     if normalized in _LEGACY_WILDCARD_HOSTS:
@@ -73,6 +91,26 @@ def resolve_launcher_host(host: str) -> tuple[str, bool]:
     return validate_bind_host(host), False
 
 
+def validate_exposure_contract(bind_host: str, access: GUIAccessSettings) -> None:
+    """Couple network exposure to an authenticated GUI identity boundary.
+
+    Local access mode deliberately grants the loopback operator a synthetic
+    ``project_admin`` identity. That mode is safe only while the listener is
+    loopback-only. A remote bind without OIDC would turn network reachability
+    into administrative authority, so non-loopback/wildcard listeners fail
+    closed unless the OIDC access profile is fully configured.
+    """
+    if _is_loopback_bind(bind_host):
+        return
+    if access.mode != "oidc":
+        raise ValueError(
+            "Non-loopback GUI binding requires WE3_GUI_ACCESS_MODE=oidc with "
+            "a valid issuer, JWKS URI, audience, and approved role set. "
+            "WE3_GUI_ALLOW_REMOTE_BIND only permits the socket bind; it never "
+            "disables authentication."
+        )
+
+
 def main() -> int:
     import argparse
 
@@ -80,7 +118,7 @@ def main() -> int:
     parser.add_argument(
         "--host",
         default="127.0.0.1",
-        help="Loopback bind address only. Use an authenticated TLS reverse proxy for remote access.",
+        help="Loopback by default; non-loopback additionally requires explicit OIDC access mode.",
     )
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--stay", action="store_true", help="Run in persistent background mode")
@@ -90,24 +128,27 @@ def main() -> int:
         bind_host, repaired_legacy_default = resolve_launcher_host(args.host)
         access = GUIAccessSettings.from_env()
         access.validate()
+        validate_exposure_contract(bind_host, access)
         transport = install_secret_transport(legacy)
     except (ValueError, SecretTransportConfigurationError) as exc:
         parser.error(str(exc))
 
     if repaired_legacy_default:
-        if bind_host == "0.0.0.0":
+        if bind_host in _LEGACY_WILDCARD_HOSTS:
             logger.warning(
-                "Legacy wildcard GUI host %s was requested; binding to all "
-                "interfaces http://0.0.0.0:%d because %s=1 is set. "
-                "Ensure this listener is behind a trusted firewall or "
-                "authenticated TLS reverse proxy.",
-                args.host, args.port, _REMOTE_BIND_ENV,
+                "Legacy wildcard GUI host %s was explicitly requested; binding "
+                "to all interfaces because %s=1 and authenticated OIDC access "
+                "mode are both configured. Keep this listener behind the "
+                "deployment's TLS/firewall boundary.",
+                args.host,
+                _REMOTE_BIND_ENV,
             )
         else:
             logger.warning(
                 "Legacy wildcard GUI host %s was requested; binding securely "
                 "to http://127.0.0.1:%d instead.",
-                args.host, args.port,
+                args.host,
+                args.port,
             )
 
     install_gui_access_control(app, access)
