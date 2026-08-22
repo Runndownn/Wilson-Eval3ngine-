@@ -15,6 +15,7 @@ from typing import Any
 from fastapi import FastAPI
 
 from ..security.log_redaction import install_sensitive_log_filter
+from ..security.rate_limit import RateLimitConfig
 from ..security.redis_authority import RedisSecurityAuthority
 from . import middleware as _middleware
 from .authorization_audit import AuthorizationAuditMiddleware
@@ -33,6 +34,15 @@ if "If-Match" not in _middleware.CORS_ALLOWED_HEADERS:
         *_middleware.CORS_ALLOWED_HEADERS,
         "If-Match",
     ]
+
+# Authentication/security-state endpoints receive a deliberately lower bound
+# than normal API work. Readiness remains bounded as an internal operational
+# endpoint even though Caddy does not publish it on the public API hostname.
+_middleware.RATE_LIMIT_RULES["/v1/auth/revoke"] = RateLimitConfig(
+    _middleware.RATE_LIMIT_AUTH,
+    burst=0,
+)
+_middleware.RATE_LIMIT_RULES["/ready"] = RateLimitConfig(60, burst=0)
 
 
 def _add_supported_security_middleware(
