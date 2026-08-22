@@ -5,9 +5,17 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
+from wilson_eval3ngine.api.security_middleware import (
+    RequestMetadataValidationMiddleware,
+    StrictCORSMiddleware,
+)
+from wilson_eval3ngine.config import Settings
 from wilson_eval3ngine.persistence.audit import AuditLedger
 from wilson_eval3ngine.persistence.database import Database
+from wilson_eval3ngine.security.csrf import CSRFProtection
 from wilson_eval3ngine.security.oidc import TokenRevocationList, TokenValidationError
 from wilson_eval3ngine.security.rate_limit import (
     ClientIdentityResolver,
@@ -76,6 +84,91 @@ def test_revocation_preserves_requested_remaining_lifetime() -> None:
     redis_client.setex.assert_called_once_with(
         "we3:token_revoked:token-123", 7200, "1"
     )
+
+
+def test_csrf_tokens_are_unique_even_when_issued_close_together() -> None:
+    protection = CSRFProtection(secret="unit-test-secret-with-sufficient-length")
+    first = protection.generate_token()
+    second = protection.generate_token()
+    assert first != second
+    assert len(first.split(".")) == 3
+    assert protection.validate_token(first, first) is True
+
+
+def test_disallowed_cors_origin_is_rejected_before_route_side_effect() -> None:
+    app = FastAPI()
+    mutations: list[str] = []
+
+    @app.post("/mutate")
+    def mutate() -> dict[str, bool]:
+        mutations.append("executed")
+        return {"ok": True}
+
+    app.add_middleware(
+        StrictCORSMiddleware,
+        allowed_origins=("https://allowed.example",),
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/mutate",
+        headers={"Origin": "https://attacker.example"},
+    )
+    assert response.status_code == 403
+    assert mutations == []
+
+
+def test_allowed_cors_origin_receives_exact_origin_not_wildcard() -> None:
+    app = FastAPI()
+
+    @app.get("/read")
+    def read() -> dict[str, bool]:
+        return {"ok": True}
+
+    app.add_middleware(
+        StrictCORSMiddleware,
+        allowed_origins=("https://allowed.example",),
+    )
+    response = TestClient(app).get(
+        "/read",
+        headers={"Origin": "https://allowed.example"},
+    )
+    assert response.status_code == 200
+    assert response.headers["Access-Control-Allow-Origin"] == "https://allowed.example"
+    assert response.headers["Access-Control-Allow-Origin"] != "*"
+
+
+def test_bad_idempotency_header_is_rejected_before_route_side_effect() -> None:
+    app = FastAPI()
+    mutations: list[str] = []
+
+    @app.post("/mutate")
+    def mutate() -> dict[str, bool]:
+        mutations.append("executed")
+        return {"ok": True}
+
+    app.add_middleware(RequestMetadataValidationMiddleware)
+    response = TestClient(app).post(
+        "/mutate",
+        headers={"Idempotency-Key": "not valid because spaces"},
+    )
+    assert response.status_code == 400
+    assert mutations == []
+
+
+def test_production_settings_require_distributed_security_state() -> None:
+    settings = Settings(
+        database_url="postgresql://we3@database.invalid/we3",
+        artifact_root=__import__("pathlib").Path("/var/lib/we3/artifacts"),
+        auth_mode="oidc",
+        environment="production",
+        oidc_issuer="https://issuer.example",
+        oidc_jwks_uri="https://issuer.example/jwks.json",
+        oidc_audience="wilson-eval3ngine-api",
+        encryption_key="x" * 32,
+        csrf_secret="y" * 32,
+    )
+    with pytest.raises(ValueError, match="WE3_REDIS_URL"):
+        settings.validate_for_production()
 
 
 def test_sqlite_audit_chain_serializes_concurrent_project_appends(tmp_path) -> None:
