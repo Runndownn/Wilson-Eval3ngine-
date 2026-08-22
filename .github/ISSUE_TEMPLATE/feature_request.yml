@@ -1,0 +1,85 @@
+---
+name: "✨ Feature request"
+description: "Propose a new capability or improvement"
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before submitting a feature request, please check the
+        [existing issues](https://github.com/Runndownn/Wilson-Eval3ngine-/issues)
+        and the [requirements catalog](docs/requirements_catalog.csv) to see if
+        your idea is already tracked.
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Problem"
+      description: "What problem does this feature solve or what capability is missing?"
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: "Proposed solution"
+      description: |
+        Describe the approach you would like to see implemented. Include
+        any architectural considerations.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "Alternatives considered"
+      description: "What else did you consider? Why is this approach better?"
+    validations:
+      required: false
+  - type: dropdown
+    id: priority
+    attributes:
+      label: "Priority"
+      description: "How important is this feature to you?"
+      options:
+        - "Critical — blocks my use case"
+        - "High — significant improvement"
+        - "Medium — nice to have"
+        - "Low — minor improvement"
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: "Component"
+      description: "Which part of the system would this touch?"
+      options:
+        - "Grading pipeline"
+        - "Metrics and statistics"
+        - "Release gates"
+        - "Provider adapters"
+        - "API / auth"
+        - "GUI"
+        - "Evidence store"
+        - "Persistence / migrations"
+        - "Observability"
+        - "Supply chain / security"
+        - "Documentation"
+        - "Other"
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: "Checks"
+      options:
+        - label: "I have searched the existing issues and this is not a duplicate."
+          required: true
+        - label: "I have read CONTRIBUTING.md and agree to follow the proposed workflow."
+          required: true
+  - type: textarea
+    id: additional
+    attributes:
+      label: "Additional context"
+      description: "Screenshots, mockups, or related issues."
+      render: "text"
+    validations:
+      required: false
+---

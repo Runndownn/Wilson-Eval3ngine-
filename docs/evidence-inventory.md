@@ -93,7 +93,7 @@ Evidence: `docs/test_report.md` lines 8-21
 | SQLAlchemy | `>=2.0.50,<2.1` | `pyproject.toml` |
 | Typer | `>=0.26,<0.27` | `pyproject.toml` |
 | PyYAML | `>=6.0.3,<7` | `pyproject.toml` |
-| Cryptography | `>=46,<47` | `pyproject.toml` |
+| Cryptography | `>=50,<51` | `pyproject.toml` |
 
 ---
 
@@ -112,9 +112,19 @@ Evidence: `docs/test_report.md` lines 8-21
 
 | Discrepancy ID | Description | Severity | Status |
 |---|---|---|---|
-| D-001 | No `CONTRIBUTING.md` | Medium | Governance documentation absent |
+| D-001 | No `CONTRIBUTING.md` | Medium | Governance documentation absent | **Resolved** — `CONTRIBUTING.md` added; also resolved by D-010 |
 | D-002 | No operational playbook | Medium | Separate ops/fleet documentation not present |
 | D-003 | Foundation cannot certify production (intentional) | N/A | Per ADR-005 acceptance |
+
+## Security Dependency Remediation
+
+| Advisory | CVE | Severity | Affected Range | Fixed In | Evidence |
+|---|---|---|---|---|---|
+| GHSA-g6cj-pr64-35w5 | CVE-2026-69247 | High | `>=44.0.0,<50.0.0` | 50.0.0 | PKCS#7 EnvelopedData Bleichenbacher oracle via distinguishable errors and timing |
+| GHSA-jwv3-5hgf-82ww | CVE-2026-69249 | High | `<49.0.0` | 49.0.0 | Duplicate self-signed intermediates cause exponential path-building (DoS) |
+| GHSA-m2h6-j472-rp4c | CVE-2026-69248 | Moderate | `<49.0.0` | 49.0.0 | Wildcard DNS names escape `permittedSubtrees` name constraints |
+
+**Remediation:** `pyproject.toml` cryptography constraint updated from `>=46.0.0,<47.0.0` to `>=50.0.0,<51.0.0`. Version 50.0.0 is the minimum release that patches all three advisories. See `CHANGELOG.md` [Unreleased] → Fixed.
 
 ---
 

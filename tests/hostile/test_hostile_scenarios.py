@@ -21,7 +21,7 @@ import pytest
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
-from tests.hostile.scenarios import (
+from .scenarios import (
     HostileScenario,
     make_malformed_experiment_manifest,
     make_active_content_payload,
