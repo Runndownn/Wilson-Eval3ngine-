@@ -1,20 +1,21 @@
-"""Secrets management and key rotation for Wilson Eval3ngine.
+"""Development Fernet compatibility utilities.
 
-T6.1.5 - Implement secrets management with key rotation support.
-
-Security:
-- Fernet key management with rotation support
-- Environment variable-based secret loading
-- Key versioning with metadata
-- Graceful key rotation without downtime
-- Secret validation and health checks
+This module predates the production secret-authority contract in
+``security.secrets_backend``.  It remains useful for deterministic local tests
+and migration of older encrypted local state, but it is deliberately rejected
+in staging/production.  Production code must obtain secret material from an
+external authority/KMS boundary rather than generate, persist, or replicate raw
+keys through this helper.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
+import stat
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,29 +27,21 @@ logger = logging.getLogger("wilson.security.secrets")
 
 
 class SecretValidationError(Exception):
-    """Raised when a secret fails validation."""
-    pass
+    """Raised when local development key material fails validation."""
 
 
 @dataclass(frozen=True, slots=True)
 class SecretMetadata:
-    """Metadata for a secret/key.
-
-    Tracks key version, creation time, and rotation policy.
-    """
-
     key_id: str
     algorithm: str
     created_at: float
     expires_at: float | None = None
-    rotation_interval_seconds: int = 86400 * 30  # 30 days default
+    rotation_interval_seconds: int = 86400 * 30
     description: str = ""
 
 
 @dataclass
 class KeyRotationResult:
-    """Result of a key rotation operation."""
-
     old_key_id: str
     new_key_id: str
     rotated_at: float
@@ -57,20 +50,11 @@ class KeyRotationResult:
 
 
 class SecretsManager:
-    """Secrets manager with key rotation support.
+    """Local Fernet keyring for development/test compatibility only.
 
-    Manages Fernet encryption keys with:
-    - Key versioning
-    - Automatic key rotation
-    - Multi-key support for zero-downtime rotation
-    - Environment variable and file-based key loading
-    - Health checks for key validity
-
-    Security:
-    - Keys are never logged
-    - Key files have restrictive permissions (0600)
-    - Rotation preserves data encrypted with old keys
-    - Key metadata is tracked for audit purposes
+    Raw keys stay in process memory and, when explicitly requested for a local
+    development key file, in that mode-0600 file. Redis receives metadata only;
+    it is never used as a plaintext key-distribution channel.
     """
 
     def __init__(
@@ -78,341 +62,268 @@ class SecretsManager:
         key_file_path: str | None = None,
         env_var_name: str = "WE3_ENCRYPTION_KEY",
         redis_client: Any | None = None,
-    ):
+        *,
+        environment: str | None = None,
+        allow_generate_dev_key: bool = True,
+    ) -> None:
+        self._environment = (
+            environment or os.environ.get("WE3_ENVIRONMENT", "development")
+        ).strip().lower()
+        if self._environment in {"staging", "production"}:
+            raise SecretValidationError(
+                "SecretsManager is development-only; use the external secret/KMS authority"
+            )
+
         self._env_var_name = env_var_name
         self._key_file_path = key_file_path
         self._redis = redis_client
+        self._allow_generate_dev_key = allow_generate_dev_key
         self._keyring: dict[str, Fernet] = {}
+        self._raw_keys: dict[str, str] = {}
         self._metadata: dict[str, SecretMetadata] = {}
         self._current_key_id: str | None = None
-
         self._load_keys()
 
-    def _load_keys(self) -> None:
-        """Load keys from environment and file sources.
+    @staticmethod
+    def _validate_fernet_key(key: str) -> Fernet:
+        try:
+            return Fernet(key.encode("ascii"))
+        except Exception as exc:
+            raise SecretValidationError("invalid Fernet key material") from exc
 
-        Priority:
-        1. Environment variable (primary)
-        2. Key file (fallback for development)
-        """
-        # Try environment variable first
+    def _register_key(self, key: str, *, description: str) -> str:
+        fernet = self._validate_fernet_key(key)
+        key_id = self._derive_key_id(key)
+        if key_id not in self._keyring:
+            self._keyring[key_id] = fernet
+            self._raw_keys[key_id] = key
+            self._metadata[key_id] = SecretMetadata(
+                key_id=key_id,
+                algorithm="fernet",
+                created_at=time.time(),
+                description=description,
+            )
+        if self._current_key_id is None:
+            self._current_key_id = key_id
+        return key_id
+
+    def _load_keys(self) -> None:
         env_key = os.environ.get(self._env_var_name)
         if env_key:
-            key_id = self._derive_key_id(env_key)
-            try:
-                fernet = Fernet(env_key.encode())
-                self._keyring[key_id] = fernet
-                self._metadata[key_id] = SecretMetadata(
-                    key_id=key_id,
-                    algorithm="fernet",
-                    created_at=time.time(),
-                    description="environment-provided key",
-                )
-                if self._current_key_id is None:
-                    self._current_key_id = key_id
-                logger.info("secret_loaded_from_env", extra={"key_id": key_id})
-            except Exception as e:
-                logger.error("secret_env_key_invalid", extra={"error": str(e)})
+            key_id = self._register_key(
+                env_key.strip(),
+                description="environment-provided development key",
+            )
+            logger.info("local_secret_key_loaded", extra={"key_id": key_id})
 
-        # Try key file
         if self._key_file_path:
             key_path = Path(self._key_file_path)
             if key_path.exists():
+                metadata = key_path.lstat()
+                if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+                    raise SecretValidationError(
+                        "development key file must be a regular non-symlink file"
+                    )
+                if stat.S_IMODE(metadata.st_mode) & 0o077:
+                    raise SecretValidationError(
+                        "development key file permissions are too broad"
+                    )
+                if metadata.st_size <= 0 or metadata.st_size > 64 * 1024:
+                    raise SecretValidationError(
+                        "development key file size is invalid"
+                    )
                 try:
-                    key_data = key_path.read_bytes().strip()
-                    # File may contain multiple keys (one per line for rotation)
-                    for i, line in enumerate(key_data.decode().splitlines()):
-                        line = line.strip()
-                        if not line:
-                            continue
-                        key_id = self._derive_key_id(line)
-                        if key_id in self._keyring:
-                            continue  # Already loaded
-                        try:
-                            fernet = Fernet(line.encode())
-                            self._keyring[key_id] = fernet
-                            self._metadata[key_id] = SecretMetadata(
-                                key_id=key_id,
-                                algorithm="fernet",
-                                created_at=time.time(),
-                                description=f"key file (line {i + 1})",
-                            )
-                            if self._current_key_id is None:
-                                self._current_key_id = key_id
-                            logger.info("secret_loaded_from_file", extra={"key_id": key_id})
-                        except Exception as e:
-                            logger.error("secret_file_key_invalid", extra={"error": str(e)})
-                except Exception as e:
-                    logger.error("secret_file_read_failed", extra={"error": str(e)})
+                    lines = key_path.read_text(encoding="ascii").splitlines()
+                except OSError as exc:
+                    raise SecretValidationError(
+                        "development key file could not be read"
+                    ) from exc
+                for index, line in enumerate(lines, start=1):
+                    value = line.strip()
+                    if value:
+                        self._register_key(
+                            value,
+                            description=f"development key file line {index}",
+                        )
 
-        # Generate dev key if none found
         if not self._keyring:
+            if not self._allow_generate_dev_key:
+                raise SecretValidationError("no local development key is configured")
             self._generate_dev_key()
 
         if self._current_key_id is None:
-            # Set first key as current
             self._current_key_id = next(iter(self._keyring))
 
     def _generate_dev_key(self) -> str:
-        """Generate a development key (not for production use)."""
-        logger.warning("no_secrets_configured_generating_dev_key")
-        key = Fernet.generate_key().decode()
-        key_id = self._derive_key_id(key)
-        self._keyring[key_id] = Fernet(key.encode())
-        self._metadata[key_id] = SecretMetadata(
-            key_id=key_id,
-            algorithm="fernet",
-            created_at=time.time(),
-            description="auto-generated dev key",
-        )
+        logger.warning("no_local_key_configured_generating_development_key")
+        key = Fernet.generate_key().decode("ascii")
+        key_id = self._register_key(key, description="auto-generated development key")
         self._current_key_id = key_id
-
-        # Write to file for persistence across restarts (dev only)
         if self._key_file_path:
-            key_path = Path(self._key_file_path)
-            key_path.parent.mkdir(parents=True, exist_ok=True)
-            # Set restrictive permissions
-            key_path.write_text(key)
-            key_path.chmod(0o600)
-
+            self._write_key_file()
         return key_id
 
     @staticmethod
     def _derive_key_id(key: str) -> str:
-        """Derive a key ID from a Fernet key (first 16 hex chars of SHA-256)."""
-        return hashlib.sha256(key.encode()).hexdigest()[:16]
+        return hashlib.sha256(key.encode("ascii")).hexdigest()[:16]
 
     def get_current_key_id(self) -> str | None:
-        """Get the current key ID."""
         return self._current_key_id
 
     def get_fernet(self, key_id: str | None = None) -> Fernet:
-        """Get a Fernet instance for the given key ID.
+        selected = key_id or self._current_key_id
+        if selected is None or selected not in self._keyring:
+            raise SecretValidationError("requested key is unavailable")
+        return self._keyring[selected]
 
-        Args:
-            key_id: Key ID to use. If None, uses the current key.
-
-        Returns:
-            Fernet instance
-
-        Raises:
-            SecretValidationError: If key not found
-        """
-        if key_id is None:
-            key_id = self._current_key_id
-
-        if key_id is None or key_id not in self._keyring:
-            raise SecretValidationError(f"Key not found: {key_id}")
-
-        return self._keyring[key_id]
-
-    def encrypt(self, plaintext: bytes, key_id: str | None = None) -> tuple[bytes, str]:
-        """Encrypt data with the specified or current key.
-
-        Args:
-            plaintext: Data to encrypt
-            key_id: Key ID to use (None for current key)
-
-        Returns:
-            Tuple of (encrypted_data, key_id_used)
-        """
-        if key_id is None:
-            key_id = self._current_key_id
-
-        fernet = self.get_fernet(key_id)
-        encrypted = fernet.encrypt(plaintext)
-        return encrypted, key_id
+    def encrypt(
+        self,
+        plaintext: bytes,
+        key_id: str | None = None,
+    ) -> tuple[bytes, str]:
+        selected = key_id or self._current_key_id
+        if selected is None:
+            raise SecretValidationError("no current key is available")
+        return self.get_fernet(selected).encrypt(plaintext), selected
 
     def decrypt(self, encrypted_data: bytes, key_id: str | None = None) -> bytes:
-        """Decrypt data, trying all available keys if key_id is not specified.
-
-        Args:
-            encrypted_data: Data to decrypt
-            key_id: Key ID to use (None to try all keys)
-
-        Returns:
-            Decrypted plaintext
-
-        Raises:
-            SecretValidationError: If decryption fails with all keys
-        """
         if key_id is not None:
-            fernet = self.get_fernet(key_id)
+            try:
+                return self.get_fernet(key_id).decrypt(encrypted_data)
+            except InvalidToken as exc:
+                raise SecretValidationError("decryption failed with selected key") from exc
+
+        for fernet in self._keyring.values():
             try:
                 return fernet.decrypt(encrypted_data)
             except InvalidToken:
-                raise SecretValidationError(f"Decryption failed with key: {key_id}")
-
-        # Try all keys (for key rotation compatibility)
-        errors = []
-        for kid, fernet in self._keyring.items():
-            try:
-                return fernet.decrypt(encrypted_data)
-            except InvalidToken:
-                errors.append(kid)
-
-        raise SecretValidationError(
-            f"Decryption failed with all {len(errors)} keys"
-        )
+                continue
+        raise SecretValidationError("decryption failed with available keys")
 
     def rotate_key(self, new_key: str | None = None) -> KeyRotationResult:
-        """Rotate to a new encryption key.
-
-        Old keys are retained for decryption of existing data.
-        New data is encrypted with the new key.
-
-        Args:
-            new_key: Optional new Fernet key. If None, generates one.
-
-        Returns:
-            KeyRotationResult with migration details
-        """
         old_key_id = self._current_key_id
-
-        if new_key is None:
-            new_key = Fernet.generate_key().decode()
-
-        new_key_id = self._derive_key_id(new_key)
-
-        # Check if key already exists
+        value = new_key or Fernet.generate_key().decode("ascii")
+        new_key_id = self._derive_key_id(value)
         if new_key_id in self._keyring:
-            logger.warning("key_rotation_duplicate_key", extra={"key_id": new_key_id})
+            raise SecretValidationError("rotation key is already present")
 
-        # Add new key
-        try:
-            fernet = Fernet(new_key.encode())
-            self._keyring[new_key_id] = fernet
-            self._metadata[new_key_id] = SecretMetadata(
-                key_id=new_key_id,
-                algorithm="fernet",
-                created_at=time.time(),
-                description="rotated key",
-            )
-            self._current_key_id = new_key_id
-        except Exception as e:
-            raise SecretValidationError(f"Failed to create new key: {e}")
-
-        # Write updated keyring to file if configured
+        self._register_key(value, description="rotated development key")
+        self._current_key_id = new_key_id
         if self._key_file_path:
             self._write_key_file()
+        self._publish_metadata(new_key_id)
 
-        # Store in Redis for distributed deployments
-        if self._redis is not None:
-            self._store_key_in_redis(new_key, new_key_id)
-
-        logger.info("key_rotated", extra={"old_key_id": old_key_id, "new_key_id": new_key_id})
-
+        logger.info(
+            "local_key_rotated",
+            extra={"old_key_id": old_key_id, "new_key_id": new_key_id},
+        )
         return KeyRotationResult(
             old_key_id=old_key_id or "none",
             new_key_id=new_key_id,
             rotated_at=time.time(),
-            entries_migrated=0,  # Migration happens lazily on re-encryption
+            entries_migrated=0,
             errors=[],
         )
 
     def _write_key_file(self) -> None:
-        """Write all keys to the key file (for persistence)."""
+        """Atomically persist the explicit local development keyring."""
         if not self._key_file_path:
             return
-
         key_path = Path(self._key_file_path)
-        key_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Write all keys, current key first
-        lines = []
+        key_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        ordered_ids = []
         if self._current_key_id:
-            # Find the key for current_key_id
-            for kid, fernet in self._keyring.items():
-                if kid == self._current_key_id:
-                    # Extract the key from Fernet instance
-                    # Fernet stores the key internally; we need to get it
-                    # Since we can't extract from Fernet, we store from metadata
-                    pass
+            ordered_ids.append(self._current_key_id)
+        ordered_ids.extend(
+            key_id for key_id in self._raw_keys if key_id != self._current_key_id
+        )
+        payload = "\n".join(self._raw_keys[key_id] for key_id in ordered_ids) + "\n"
 
-        # This is a limitation - we can't extract the key from a Fernet instance
-        # In production, keys should be managed by a KMS or secrets manager
-        logger.warning("key_file_write_requires_kms_integration")
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{key_path.name}.",
+            dir=key_path.parent,
+            text=True,
+        )
+        try:
+            os.fchmod(descriptor, 0o600)
+            with os.fdopen(descriptor, "w", encoding="ascii", closefd=True) as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary_name, key_path)
+            key_path.chmod(0o600)
+        except Exception:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+            try:
+                os.unlink(temporary_name)
+            except OSError:
+                pass
+            raise
 
-    def _store_key_in_redis(self, key: str, key_id: str) -> None:
-        """Store key in Redis for distributed access."""
+    def _publish_metadata(self, key_id: str) -> None:
+        """Publish non-secret rotation metadata only; never raw key bytes."""
         if self._redis is None:
             return
-        redis_key = f"we3:secret:{key_id}"
-        self._redis.set(redis_key, key, ex=self._metadata[key_id].rotation_interval_seconds * 2)
+        metadata = self._metadata[key_id]
+        payload = json.dumps(
+            {
+                "key_id": metadata.key_id,
+                "algorithm": metadata.algorithm,
+                "created_at": metadata.created_at,
+                "rotation_interval_seconds": metadata.rotation_interval_seconds,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        try:
+            self._redis.set(
+                f"we3:secret-metadata:{key_id}",
+                payload,
+                ex=metadata.rotation_interval_seconds * 2,
+            )
+        except Exception as exc:
+            logger.warning(
+                "local_key_metadata_publish_failed",
+                extra={"error_class": type(exc).__name__},
+            )
 
     def get_key_metadata(self, key_id: str) -> SecretMetadata | None:
-        """Get metadata for a specific key."""
         return self._metadata.get(key_id)
 
     def list_keys(self) -> list[SecretMetadata]:
-        """List all key metadata (without exposing keys)."""
         return list(self._metadata.values())
 
     def needs_rotation(self, key_id: str | None = None) -> bool:
-        """Check if a key needs rotation based on its age.
-
-        Args:
-            key_id: Key to check (None for current key)
-
-        Returns:
-            True if the key should be rotated
-        """
-        if key_id is None:
-            key_id = self._current_key_id
-
-        if key_id is None or key_id not in self._metadata:
+        selected = key_id or self._current_key_id
+        if selected is None or selected not in self._metadata:
             return True
-
-        metadata = self._metadata[key_id]
+        metadata = self._metadata[selected]
         if metadata.expires_at is not None:
             return time.time() > metadata.expires_at
-
-        age = time.time() - metadata.created_at
-        return age > metadata.rotation_interval_seconds
+        return time.time() - metadata.created_at > metadata.rotation_interval_seconds
 
     def health_check(self) -> dict[str, Any]:
-        """Run health check on secrets manager.
-
-        Returns:
-            Dict with health status and details
-        """
-        result = {
-            "status": "ok",
+        keys_needing_rotation = [
+            key_id for key_id in self._metadata if self.needs_rotation(key_id)
+        ]
+        return {
+            "status": "ok" if self._keyring else "error",
             "key_count": len(self._keyring),
             "current_key_id": self._current_key_id,
-            "keys_needing_rotation": [],
-            "errors": [],
+            "keys_needing_rotation": keys_needing_rotation,
+            "errors": [] if self._keyring else ["No keys loaded"],
+            "scope": "development_only",
         }
 
-        for key_id, metadata in self._metadata.items():
-            if self.needs_rotation(key_id):
-                result["keys_needing_rotation"].append(key_id)
-
-        if not self._keyring:
-            result["status"] = "error"
-            result["errors"].append("No keys loaded")
-
-        return result
-
     def validate_key(self, key: str) -> bool:
-        """Validate that a Fernet key is well-formed.
-
-        Args:
-            key: The key string to validate
-
-        Returns:
-            True if valid
-        """
         try:
-            Fernet(key.encode())
+            Fernet(key.encode("ascii"))
             return True
         except Exception:
             return False
-
-
-# ============================================================================
-# Secret Loading Utilities
-# ============================================================================
 
 
 def load_secret_from_env(
@@ -420,61 +331,22 @@ def load_secret_from_env(
     required: bool = False,
     default: str | None = None,
 ) -> str | None:
-    """Load a secret from an environment variable.
-
-    Security:
-    - Never logs the secret value
-    - Validates that the value is non-empty
-    - Supports required flag for production validation
-
-    Args:
-        env_var: Environment variable name
-        required: If True, raises error if not set
-        default: Default value if not set (ignored if required=True)
-
-    Returns:
-        The secret value or None
-
-    Raises:
-        SecretValidationError: If required but not set
-    """
+    """Load a development secret without logging its value."""
     value = os.environ.get(env_var)
-
     if not value:
         if required:
-            raise SecretValidationError(f"Required secret not set: {env_var}")
+            raise SecretValidationError("required development secret is not configured")
         return default
-
     if len(value) < 8:
-        logger.warning("secret_too_short", extra={"env_var": env_var, "length": len(value)})
-
+        logger.warning("development_secret_short", extra={"env_var": env_var})
     return value
 
 
 def validate_for_production(secrets_manager: SecretsManager) -> list[str]:
-    """Validate secrets configuration for production readiness.
-
-    Returns:
-        List of validation errors (empty if all checks pass)
-    """
-    errors = []
-
-    # Check that no dev keys are in use
-    for key_id, metadata in secrets_manager._metadata.items():
-        if "dev" in metadata.description.lower():
-            errors.append(f"Key {key_id} appears to be a development key")
-
-    # Check that keys need rotation
-    for key_id in secrets_manager._metadata:
-        if secrets_manager.needs_rotation(key_id):
-            errors.append(f"Key {key_id} needs rotation")
-
-    # Check that env var is set
-    env_key = os.environ.get("WE3_ENCRYPTION_KEY")
-    if not env_key:
-        errors.append("WE3_ENCRYPTION_KEY environment variable not set")
-
-    return errors
+    del secrets_manager
+    return [
+        "SecretsManager is development-only; production must use SecretBackend/KMS custody"
+    ]
 
 
 __all__ = [
