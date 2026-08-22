@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -98,7 +99,7 @@ def test_experiment_execution_actions_have_explicit_matrix_grants() -> None:
     assert check_authorization(
         "project_admin", "experiments", "start", project_id="proj_test"
     ) is True
-    with __import__("pytest").raises(AuthorizationError):
+    with pytest.raises(AuthorizationError):
         check_authorization(
             "viewer", "experiments", "start", project_id="proj_test"
         )
