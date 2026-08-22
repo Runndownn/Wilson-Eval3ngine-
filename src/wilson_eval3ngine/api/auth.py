@@ -40,16 +40,9 @@ def _audit_authenticated_request(
     request: Request,
     context: RequestContext,
 ) -> None:
-    """Persist authenticated request intent before endpoint side effects.
-
-    This event proves that the request crossed the authentication boundary; it
-    does not claim route-specific authorization succeeded.  If the configured
-    authoritative ledger cannot be written, the request is rejected before the
-    endpoint runs instead of silently falling back to ordinary logs.
-    """
+    """Persist authenticated request intent before endpoint side effects."""
     if audit_ledger is None:
         return
-
     actor_id = context.actor_id or f"{context.auth_method}:{context.role}"
     try:
         audit_ledger.append(
@@ -86,19 +79,22 @@ def make_context_dependency(
     oidc_authenticator: OIDCAuthenticator | None = None,
     audit_ledger: AuditLedger | None = None,
 ):
-    """Create a request-context dependency with application-lifetime state.
+    """Create a request-context dependency using application-lifetime authority.
 
-    A previous implementation constructed ``OIDCAuthenticator`` for every
-    request. That also recreated its in-memory revocation state and omitted the
-    configured Redis authority, so revocation could not be relied on through the
-    actual API path. This dependency resolves OIDC and audit authorities once
-    per FastAPI application/dependency closure and then reuses them.
+    The composed FastAPI app may install OIDC/audit objects after this closure is
+    created. Each request therefore prefers ``app.state`` and caches that object
+    locally. This prevents per-request authenticator/revocation-list creation
+    while preserving direct unit construction for isolated tests.
     """
     resolved_oidc = oidc_authenticator
     resolved_audit = audit_ledger
 
     def resolve_audit(request: Request) -> AuditLedger | None:
         nonlocal resolved_audit
+        state_ledger = getattr(request.app.state, "audit_ledger", None)
+        if state_ledger is not None:
+            resolved_audit = state_ledger
+            return resolved_audit
         if resolved_audit is not None:
             return resolved_audit
         database = getattr(request.app.state, "database", None)
@@ -110,8 +106,12 @@ def make_context_dependency(
         request.app.state.audit_ledger = resolved_audit
         return resolved_audit
 
-    def resolve_oidc() -> OIDCAuthenticator:
+    def resolve_oidc(request: Request) -> OIDCAuthenticator:
         nonlocal resolved_oidc
+        state_authenticator = getattr(request.app.state, "oidc_authenticator", None)
+        if state_authenticator is not None:
+            resolved_oidc = state_authenticator
+            return resolved_oidc
         if resolved_oidc is not None:
             return resolved_oidc
 
@@ -136,9 +136,7 @@ def make_context_dependency(
                     ) from exc
                 redis_client = None
         elif settings.is_assurance_environment:
-            raise RuntimeError(
-                "distributed OIDC revocation authority is required"
-            )
+            raise RuntimeError("distributed OIDC revocation authority is required")
 
         resolved_oidc = OIDCAuthenticator(
             OIDCSettings(
@@ -148,6 +146,7 @@ def make_context_dependency(
             ),
             redis_client=redis_client,
         )
+        request.app.state.oidc_authenticator = resolved_oidc
         return resolved_oidc
 
     def get_context(
@@ -224,23 +223,16 @@ def make_context_dependency(
 
             try:
                 from ..security.oidc import (
+                    OIDCConfigurationError,
                     TokenRevocationError,
                     TokenValidationError,
                 )
 
-                authenticator = resolve_oidc()
-                project_id, role = authenticator.authenticate(token)
-                # This is the same immutable token that just passed signature,
-                # issuer, audience, time, MFA, role/project and revocation
-                # validation above.  No caller-controlled replacement occurs
-                # between validation and subject extraction.
-                actor_id = authenticator.get_token_subject(token)
+                authenticator = resolve_oidc(request)
+                project_id, role, actor_id = authenticator.authenticate_context(token)
                 project_id = ProjectIdValidator.validate(project_id)
             except ImportError as exc:
-                logger.error(
-                    "oidc_dependency_missing",
-                    extra={"error_class": type(exc).__name__},
-                )
+                logger.error("oidc_dependency_missing")
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     detail={
@@ -275,7 +267,7 @@ def make_context_dependency(
                         "schema_version": "we3.error.v1",
                     },
                 ) from exc
-            except RuntimeError as exc:
+            except (OIDCConfigurationError, RuntimeError) as exc:
                 logger.error(
                     "oidc_security_authority_unavailable",
                     extra={"error_class": type(exc).__name__},
