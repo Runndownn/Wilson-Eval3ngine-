@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timezone
+from datetime import datetime, timezone
 from typing import Any, Iterable, Protocol
 
 from sqlalchemy import select
@@ -9,7 +9,10 @@ from .database import AuditEventRow, Database
 from ..util import new_id, sha256_hex, utc_now
 
 
-def _timestamp_token(value):
+def _timestamp_token(value: datetime | str) -> str:
+    """Normalize database/native timestamps to the ledger's canonical token."""
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if value.tzinfo is not None:
         value = value.astimezone(timezone.utc).replace(tzinfo=None)
     return value.isoformat(timespec="microseconds")
@@ -38,7 +41,7 @@ def compute_audit_event_hash(
     actor_id: str,
     payload: dict[str, Any],
     previous_hash: str | None,
-    occurred_at,
+    occurred_at: datetime | str,
 ) -> str:
     """Compute the canonical hash used by both write and verification paths."""
     return sha256_hex(
