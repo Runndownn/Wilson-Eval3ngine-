@@ -3,7 +3,7 @@
 # API-level rate limiting remains authoritative. This file intentionally uses
 # only directives available in the official Caddy image. Caddy is the sole
 # public ingress authority: it overwrites forwarding identity and does not expose
-# internal readiness, metrics, or interactive schema surfaces on the API host.
+# readiness, Prometheus, or interactive API schema surfaces publicly.
 
 {
     email {$WE3_TLS_EMAIL}
@@ -51,15 +51,10 @@
     }
 }
 
-metrics.{$WE3_DOMAIN} {
-    import security_headers
-
-    @private_clients remote_ip 127.0.0.0/8 ::1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
-    handle @private_clients {
-        reverse_proxy prometheus:9090
-    }
-    respond "Forbidden" 403
-}
+# Prometheus intentionally has no Caddy site. It remains available only on the
+# internal observability network to approved monitoring consumers. Deployments
+# needing remote metrics must add a separately authenticated private gateway
+# rather than widening this public ingress template.
 
 grafana.{$WE3_DOMAIN} {
     import security_headers
