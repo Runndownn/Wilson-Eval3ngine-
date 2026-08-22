@@ -17,13 +17,12 @@ logger = logging.getLogger("wilson.security.authorization")
 
 class AuthorizationError(Exception):
     """Raised when authorization is denied."""
-    pass
 
 
-# Role × Resource × Action matrix
-# This defines what each role can do with each resource type
+# Role × Resource × Action matrix. Role names are canonical identities; in
+# particular, workload prefixes are security-significant and must not be
+# stripped before lookup.
 AUTHORIZATION_MATRIX: dict[str, dict[str, set[str]]] = {
-    # Human roles
     "viewer": {
         "projects": {"read"},
         "experiments": {"read"},
@@ -87,7 +86,8 @@ AUTHORIZATION_MATRIX: dict[str, dict[str, set[str]]] = {
         "metrics": {"read"},
         "exports": {"create:dossier", "sign"},
     },
-    # Workload roles (narrower scopes)
+    # Workload roles are intentionally narrower and retain their workload:
+    # namespace to prevent accidental equivalence with a human role.
     "workload:api": {
         "jobs": {"create", "read:own", "update:own"},
         "projects": {"read"},
@@ -130,49 +130,19 @@ def check_authorization(
     project_id: str | None = None,
     resource_id: str | None = None,
 ) -> bool:
-    """Check if a role has authorization for a resource action.
-    
-    Args:
-        role: The role to check (e.g., "viewer", "project_admin")
-        resource: The resource type (e.g., "projects", "runs")
-        action: The action to authorize (e.g., "read", "create")
-        project_id: Optional project scope for validation
-        resource_id: Optional resource identifier for ownership check
-        
-    Returns:
-        True if authorized
-        
-    Raises:
-        AuthorizationError: If not authorized
+    """Check whether the exact canonical role grants a resource action.
+
+    Workload role prefixes are part of the authorization identity. Unknown roles,
+    including identities that merely share a suffix with a known workload role,
+    fail closed.
     """
-    # Normalize role (handle workload: prefix)
-    normalized_role = role.split(":")[-1] if ":" in role else role
-    
-    # Check matrix
-    role_perms = AUTHORIZATION_MATRIX.get(normalized_role, {})
+    del resource_id
+    role_perms = AUTHORIZATION_MATRIX.get(role, {})
     resource_actions = role_perms.get(resource, set())
-    
-    # Check if action is directly allowed
+
     if action in resource_actions:
         return True
-    
-    # For scoped actions (update:own, read:safe), check scoped variants
-    # These are encoded in the matrix as specific strings
-    if ":" in action:
-        scoped_action = action  # e.g., "update:own"
-        
-        # Check if any scoped variant matches
-        for perm_action in resource_actions:
-            if perm_action == scoped_action:
-                return True
-    
-    # For ownership checks: if they can update, they can update:own
-    if action == "update:own" and "update:own" in resource_actions:
-        return True
-    if action == "delete:own" and "delete:own" in resource_actions:
-        return True
-    
-    # Audit denial
+
     logger.warning(
         "authorization_denied",
         extra={
@@ -182,9 +152,7 @@ def check_authorization(
             "project_id": project_id,
         },
     )
-    raise AuthorizationError(
-        f"role '{role}' not authorized for '{action}' on '{resource}'"
-    )
+    raise AuthorizationError("authorization denied")
 
 
 def validate_project_scope(
@@ -194,24 +162,12 @@ def validate_project_scope(
     resource_type: str,
 ) -> bool:
     """Validate that a resource belongs to the specified project.
-    
-    Used for confused-deputy prevention in background workers.
-    
-    Args:
-        session: Database session
-        project_id: Expected project ID
-        resource_id: Resource identifier to check
-        resource_type: Type of resource (runs, experiments, etc.)
-        
-    Returns:
-        True if resource belongs to project
-        
-    Raises:
-        AuthorizationError: If resource doesn't belong to project
+
+    The table identifier is selected exclusively from a closed mapping before it
+    is interpolated into SQL; all data values remain bound parameters.
     """
     from sqlalchemy import text as sql_text
-    
-    # Map resource type to table
+
     table_map = {
         "experiments": "experiments",
         "runs": "runs",
@@ -220,32 +176,28 @@ def validate_project_scope(
         "gate_decisions": "gate_decisions",
         "review_tasks": "review_tasks",
     }
-    
+
     table = table_map.get(resource_type)
     if not table:
-        raise AuthorizationError(f"unknown resource type: {resource_type}")
-    
-    # Query with project scope
+        raise AuthorizationError("unknown resource type")
+
     query = sql_text(f"SELECT project_id FROM {table} WHERE id = :id")
     result = session.execute(query, {"id": resource_id}).scalar()
-    
+
     if result is None:
-        raise AuthorizationError(f"resource {resource_id} not found")
-    
+        raise AuthorizationError("resource not found")
+
     if result != project_id:
         logger.warning(
             "project_scope_violation",
             extra={
                 "requested_project": project_id,
                 "actual_project": result,
-                "resource": resource_id,
                 "resource_type": resource_type,
             },
         )
-        raise AuthorizationError(
-            f"resource {resource_id} does not belong to project {project_id}"
-        )
-    
+        raise AuthorizationError("resource is outside the authorized project")
+
     return True
 
 
@@ -255,19 +207,7 @@ def build_scope_aware_cache_key(
     resource_id: str,
     cache_type: str,
 ) -> str:
-    """Build a cache key that includes project scope.
-    
-    Prevents cache key collision between projects.
-    
-    Args:
-        project_id: Project identifier
-        resource_type: Type of resource
-        resource_id: Resource identifier
-        cache_type: Type of cache (metrics, counts, etc.)
-        
-    Returns:
-        Scoped cache key
-    """
+    """Build a project-scoped cache key for validated internal identifiers."""
     return f"we3:{cache_type}:{project_id}:{resource_type}:{resource_id}"
 
 
@@ -276,28 +216,17 @@ def check_export_authorization(
     export_type: str,
     project_id: str,
 ) -> bool:
-    """Special authorization check for export operations.
-    
-    Exports require explicit authorization and produce scoped, expiring artifacts.
-    
-    Args:
-        role: Caller's role
-        export_type: Type of export (dossier, report, raw_evidence)
-        project_id: Source project
-        
-    Returns:
-        True if authorized for export
-    """
+    """Apply the dedicated export authorization mapping."""
     export_actions = {
         "dossier": "create:dossier",
         "report": "create",
         "raw_evidence": "read:all",
     }
-    
+
     action = export_actions.get(export_type)
     if not action:
-        raise AuthorizationError(f"unknown export type: {export_type}")
-    
+        raise AuthorizationError("unknown export type")
+
     return check_authorization(role, "exports", action, project_id=project_id)
 
 
@@ -305,10 +234,7 @@ def check_raw_evidence_authorization(
     role: str,
     project_id: str,
 ) -> bool:
-    """Special authorization check for raw evidence access.
-    
-    Raw evidence access requires explicit approval above viewer level.
-    """
+    """Require an explicit raw-evidence permission."""
     return check_authorization(role, "evidence", "read:all", project_id=project_id)
 
 
