@@ -16,10 +16,11 @@ from ..config import Settings
 from ..domain.contracts import ExperimentManifest, Operation
 from ..domain.enums import OperationState
 from ..domain.io import load_experiment
+from ..observability import get_trace_id
 from ..persistence.database import Database, Repository
+from ..security.authorization import AuthorizationError, check_authorization
 from ..security.error_handling import ErrorSanitizer
 from ..security.input_validation import IdempotencyKeyValidator, ValidationError
-from ..observability import get_trace_id
 from ..util import new_id, sha256_hex, utc_now
 from .auth import RequestContext, make_context_dependency
 from .middleware import add_production_middleware, get_health_registry
@@ -144,9 +145,6 @@ def create_app(
         database.initialize()
     repository = Repository(database)
 
-    # Build shared security authorities from the same Settings instance before
-    # routes are registered. A production app therefore cannot inherit a
-    # development singleton from an earlier app created in the same process.
     redis_client = _build_redis_client(runtime)
     idempotency_store = IdempotencyStore(
         redis_client=redis_client,
@@ -182,6 +180,10 @@ def create_app(
             extra={"structured": {"event": "shutdown_complete"}},
         )
 
+    # Interactive schemas are useful in local development but expand public
+    # production reconnaissance surface. Operators can export the versioned
+    # OpenAPI contract offline with the repository's export command instead.
+    assurance = runtime.is_assurance_environment
     app = FastAPI(
         title="Wilson Eval3ngine API",
         version="0.1.0",
@@ -190,6 +192,9 @@ def create_app(
             "bounded execution, and explicit security/assurance boundaries."
         ),
         lifespan=lifespan,
+        docs_url=None if assurance else "/docs",
+        redoc_url=None if assurance else "/redoc",
+        openapi_url=None if assurance else "/openapi.json",
     )
     app.state.settings = runtime
     app.state.operations = operations
@@ -243,13 +248,11 @@ def create_app(
         lines.append(
             f'we3_info{{environment="{runtime.environment}",version="0.1.0"}} 1'
         )
-
         lines.append("# HELP we3_uptime_seconds Process uptime in seconds")
         lines.append("# TYPE we3_uptime_seconds gauge")
         lines.append(
             f"we3_uptime_seconds {round(time.monotonic() - app.state.start_time, 2)}"
         )
-
         lines.append("# HELP we3_health_check Health check status (1=pass, 0=fail)")
         lines.append("# TYPE we3_health_check gauge")
         for name, check in health_results["checks"].items():
@@ -275,8 +278,6 @@ def create_app(
             lines.append("# TYPE we3_db_pool_overflow gauge")
             lines.append(f"we3_db_pool_overflow {pool.overflow()}")
         except Exception:
-            # SQLite/static pools do not expose the same counters. Metrics
-            # absence is preferable to emitting backend implementation detail.
             pass
 
         return Response(
@@ -289,6 +290,27 @@ def create_app(
         manifest: ExperimentManifest,
         context: RequestContext = Depends(context_dependency),
     ) -> dict[str, Any]:
+        # Validation accepts caller-supplied data without mutating project state,
+        # but it still requires a role that can read the target project model.
+        try:
+            check_authorization(
+                context.role,
+                "experiments",
+                "read",
+                project_id=context.project_id,
+            )
+        except AuthorizationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "insufficient_role",
+                    "retryable": False,
+                    "safe_detail": "experiment validation is not permitted",
+                    "schema_version": "we3.error.v1",
+                    "trace_id": get_trace_id(),
+                },
+            ) from exc
+
         if manifest.project != context.project_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -351,17 +373,24 @@ def create_app(
         background_tasks: BackgroundTasks,
         context: RequestContext = Depends(context_dependency),
     ) -> dict[str, Any]:
-        if context.role not in {"evaluation_engineer", "project_admin"}:
+        try:
+            check_authorization(
+                context.role,
+                "runs",
+                "create",
+                project_id=context.project_id,
+            )
+        except AuthorizationError as exc:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail={
                     "code": "insufficient_role",
                     "retryable": False,
-                    "safe_detail": "evaluation_engineer or project_admin is required",
+                    "safe_detail": "experiment execution is not permitted",
                     "schema_version": "we3.error.v1",
                     "trace_id": get_trace_id(),
                 },
-            )
+            ) from exc
 
         try:
             manifest = load_experiment(run_request.manifest_path)
@@ -544,6 +573,25 @@ def create_app(
         operation_id: str,
         context: RequestContext = Depends(context_dependency),
     ) -> dict[str, Any]:
+        try:
+            check_authorization(
+                context.role,
+                "runs",
+                "read",
+                project_id=context.project_id,
+            )
+        except AuthorizationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "insufficient_role",
+                    "retryable": False,
+                    "safe_detail": "operation access is not permitted",
+                    "schema_version": "we3.error.v1",
+                    "trace_id": get_trace_id(),
+                },
+            ) from exc
+
         operation = operations.get(operation_id, project_id=context.project_id)
         if operation is None:
             raise HTTPException(
@@ -575,6 +623,25 @@ def create_app(
         experiment_id: str,
         context: RequestContext = Depends(context_dependency),
     ) -> dict[str, Any]:
+        try:
+            check_authorization(
+                context.role,
+                "experiments",
+                "read",
+                project_id=context.project_id,
+            )
+        except AuthorizationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "insufficient_role",
+                    "retryable": False,
+                    "safe_detail": "experiment access is not permitted",
+                    "schema_version": "we3.error.v1",
+                    "trace_id": get_trace_id(),
+                },
+            ) from exc
+
         experiment = repository.get_experiment(context.project_id, experiment_id)
         if experiment is None:
             raise HTTPException(
