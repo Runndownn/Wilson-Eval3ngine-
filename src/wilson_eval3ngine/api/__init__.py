@@ -24,6 +24,15 @@ from .security_middleware import (
 install_sensitive_log_filter(logging.getLogger())
 install_sensitive_log_filter(logging.getLogger("wilson"))
 
+# Conditional state changes use If-Match/ETag. Keep that header inside the same
+# explicit browser preflight allowlist rather than forcing browser clients to
+# bypass the optimistic-concurrency control.
+if "If-Match" not in _middleware.CORS_ALLOWED_HEADERS:
+    _middleware.CORS_ALLOWED_HEADERS = [
+        *_middleware.CORS_ALLOWED_HEADERS,
+        "If-Match",
+    ]
+
 _middleware.BodySizeLimitMiddleware = StreamingBodyLimitMiddleware
 _middleware.CORSMiddleware = StrictCORSMiddleware
 _middleware.RateLimitMiddleware = AuthoritativeRateLimitMiddleware
