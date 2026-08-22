@@ -1,4 +1,4 @@
-.PHONY: install install-security lint docs-check test coverage security-check security-unit validate demo critical verify schemas openapi api clean backup backup-create backup-list backup-verify backup-restore-plan
+.PHONY: install install-security lint docs-check test coverage security-check security-unit validate demo critical verify schemas openapi api clean backup backup-create backup-list backup-verify backup-baseline backup-restore-plan backup-restore
 
 install:
 	python -m pip install -e ".[dev]"
@@ -59,21 +59,25 @@ clean:
 	rm -rf .pytest_cache .coverage htmlcov var build dist *.egg-info src/*.egg-info
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
 
-# ============================================================================
-# Backup Commands (legacy compatibility surface; see recovery documentation)
-# ============================================================================
-
+# Recovery operations intentionally use the dedicated PostgreSQL/KMS-aware CLI.
+# Install optional dependencies first with: python -m pip install -e ".[dev,backup]"
 backup:
-	we3 backup --help
+	we3-backup --help
 
 backup-create:
-	we3 backup-create --key-id we3-db-key-$$(date +%Y%m%d)
+	we3-backup create --key-id "$(KEY_ID)" --signing-key "$(SIGNING_KEY)"
 
 backup-list:
-	we3 backup-list --limit 20
+	we3-backup list --limit 20
 
 backup-verify:
-	we3 backup-verify $(BACKUP_ID)
+	we3-backup verify "$(BACKUP_ID)"
+
+backup-baseline:
+	we3-backup capture-baseline --output "$(BASELINE)" --signing-key "$(SIGNING_KEY)"
 
 backup-restore-plan:
-	we3 backup-restore-plan --timestamp "$$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+	we3-backup plan --timestamp "$(TIMESTAMP)" --baseline "$(BASELINE)" $(if $(TARGET_LSN),--target-lsn "$(TARGET_LSN)",)
+
+backup-restore:
+	we3-backup restore --timestamp "$(TIMESTAMP)" --baseline "$(BASELINE)" --isolated-database-url "$(ISOLATED_DATABASE_URL)" --data-directory "$(RESTORE_DATA_DIR)" $(if $(TARGET_LSN),--target-lsn "$(TARGET_LSN)",)

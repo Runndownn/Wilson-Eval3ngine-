@@ -9,7 +9,8 @@ import pytest
 from pathlib import Path
 
 
-TRIGGERS_PATH = Path("/home/geezeradmin/work/Wilson-Eval3ngine/governance/compliance/modular_split_triggers.json")
+REPO_ROOT = Path(__file__).resolve().parents[2]
+TRIGGERS_PATH = REPO_ROOT / "governance/compliance/modular_split_triggers.json"
 
 
 @pytest.fixture

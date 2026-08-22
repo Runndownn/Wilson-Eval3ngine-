@@ -1,550 +1,415 @@
-"""Unit tests for backup and recovery system (TODO 55).
-
-Tests cover:
-- Backup metadata management
-- PITR restore plan generation
-- Reconciliation logic
-- Key backup preservation
-- Integrity verification
-"""
+"""Unit tests for encrypted backup identity, trust, catalogue, and WAL planning."""
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+import json
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import pytest
 
 from wilson_eval3ngine.backup.backup_manager import (
     BackupManager,
     BackupMetadata,
+    BackupStatus,
     BackupType,
-    KeyBackupManager,
-    ReconciliationReport,
-    RestorePlan,
+    RecoveryBaseline,
     create_recovery_verification_manifest,
+    verify_recovery_baseline,
 )
-from wilson_eval3ngine.security.signing import KeyPurpose, KeyRecord, TrustRegistry
-from wilson_eval3ngine.util import sha256_hex, utc_now
+from wilson_eval3ngine.backup.crypto import (
+    BackupEncryptionError,
+    decrypt_file,
+    encrypt_file,
+)
+from wilson_eval3ngine.backup.kms import AWSKMSClient, kms_identity
+from wilson_eval3ngine.backup.postgres import (
+    PostgreSQLBackupError,
+    parse_postgresql_url,
+    wal_segment_for_lsn,
+    wal_segment_index,
+    wal_segments_are_contiguous,
+)
+from wilson_eval3ngine.security.signing import (
+    TrustRegistry,
+    generate_private_key,
+    load_private_key,
+    sign_bytes,
+)
+from wilson_eval3ngine.storage.encrypted_store import LocalKMSClient
+from wilson_eval3ngine.util import canonical_json, sha256_hex
 
 
-class TestBackupMetadata:
-    """Tests for BackupMetadata dataclass."""
+TEST_MASTER_KEY = b"K" * 32
+SEGMENT_SIZE = 1024 * 1024
+BASE_SEGMENT = "000000010000000000000001"
 
-    def test_backup_metadata_creation(self) -> None:
-        """BackupMetadata can be created with all fields."""
-        metadata = BackupMetadata(
-            backup_id="backup_test123",
+
+class FakeAWSKMS:
+    def generate_data_key(self, **kwargs):
+        assert kwargs == {"KeyId": "alias/we3-backup", "KeySpec": "AES_256"}
+        return {"Plaintext": b"D" * 32, "CiphertextBlob": b"wrapped"}
+
+    def encrypt(self, **kwargs):
+        return {"CiphertextBlob": b"cipher:" + kwargs["Plaintext"]}
+
+    def decrypt(self, **kwargs):
+        if kwargs["CiphertextBlob"] == b"wrapped":
+            return {"Plaintext": b"D" * 32}
+        return {"Plaintext": kwargs["CiphertextBlob"].removeprefix(b"cipher:")}
+
+    def describe_key(self, **kwargs):
+        assert kwargs["KeyId"] == "alias/we3-backup"
+        return {
+            "KeyMetadata": {
+                "KeyId": "1234abcd",
+                "Arn": "arn:aws:kms:us-east-1:111122223333:key/1234abcd",
+                "KeyManager": "CUSTOMER",
+                "Origin": "AWS_KMS",
+                "MultiRegion": False,
+            }
+        }
+
+
+def _signed_baseline(key_path: Path, registry: TrustRegistry) -> RecoveryBaseline:
+    payload = {
+        "schema_version": "we3.recovery_baseline.v1",
+        "captured_at": "2026-08-22T00:00:00+00:00",
+        "total_runs": 1,
+        "total_classifications": 1,
+        "metric_snapshots": 1,
+        "gate_decisions": 1,
+        "provenance_edges": 1,
+        "outbox_pending": 0,
+        "audit_roots": {},
+    }
+    envelope = sign_bytes(canonical_json(payload), load_private_key(key_path))
+    registry.trust_key(envelope.public_key_fingerprint_sha256)
+    return RecoveryBaseline(
+        captured_at=payload["captured_at"],
+        total_runs=1,
+        total_classifications=1,
+        metric_snapshots=1,
+        gate_decisions=1,
+        provenance_edges=1,
+        outbox_pending=0,
+        audit_roots={},
+        payload_sha256=sha256_hex(canonical_json(payload)),
+        signature=envelope.to_dict(),
+    )
+
+
+def _catalogued_full_backup(
+    manager: BackupManager,
+    key_path: Path,
+    registry: TrustRegistry,
+    *,
+    timestamp: datetime,
+) -> BackupMetadata:
+    backup_id = "backup_full_test"
+    backup_dir = manager.backup_root / backup_id
+    backup_dir.mkdir()
+    plaintext = backup_dir / "plain.tar"
+    plaintext.write_bytes(b"physical-backup-payload")
+    ciphertext = backup_dir / "base.tar.we3enc"
+    assert manager.kms_client is not None
+    envelope = encrypt_file(
+        plaintext,
+        ciphertext,
+        kms_client=manager.kms_client,
+        key_id="test-kms-key",
+        kms_identity=kms_identity(manager.kms_client, "test-kms-key"),
+    )
+    plaintext.unlink()
+    storage_location = ciphertext.relative_to(manager.backup_root).as_posix()
+    manifest = {
+        "schema_version": "we3.backup_manifest.v2",
+        "backup_id": backup_id,
+        "backup_type": "full",
+        "created_at": timestamp.isoformat(),
+        "database": {
+            "name": "we3",
+            "system_identifier": "system-123",
+            "timeline_id": 1,
+            "wal_segment_size_bytes": SEGMENT_SIZE,
+            "wal_start_lsn": "0/100000",
+            "wal_end_lsn": "0/180000",
+            "wal_end_segment": BASE_SEGMENT,
+            "server_version": "16.4",
+        },
+        "object": {
+            "logical_name": "base.tar",
+            "storage_location": storage_location,
+            "storage_version": envelope.ciphertext_sha256,
+            "encryption": envelope.to_dict(),
+        },
+        "tools": {"pg_basebackup": "pg_basebackup (PostgreSQL) 16.4"},
+    }
+    manifest_sha, fingerprint = manager._write_manifest(
+        backup_dir, manifest, key_path
+    )
+    registry.trust_key(fingerprint)
+    return manager._catalogue(
+        BackupMetadata(
+            backup_id=backup_id,
             backup_type=BackupType.FULL,
-            source_timestamp=utc_now(),
-            backup_timestamp=utc_now(),
-            size_bytes=1024000,
-            object_count=42,
-            wal_start_lsn="0/16B0",
-            wal_end_lsn="0/1700",
+            backup_timestamp=timestamp,
+            database_name="we3",
+            database_system_identifier="system-123",
+            timeline_id=1,
+            wal_segment_size_bytes=SEGMENT_SIZE,
+            wal_start_lsn="0/100000",
+            wal_end_lsn="0/180000",
+            wal_segment_name=BASE_SEGMENT,
+            database_size_bytes=envelope.plaintext_size_bytes,
+            backup_duration_seconds=1.2,
             encrypted=True,
-            key_id="key_abc123",
-            checksum_sha256=sha256_hex(b"test"),
-            manifest_ref="backups/backup_test123/manifest.json",
+            key_id="test-kms-key",
+            checksum_sha256=envelope.plaintext_sha256,
+            ciphertext_sha256=envelope.ciphertext_sha256,
+            manifest_sha256=manifest_sha,
+            signer_fingerprint_sha256=fingerprint,
+            storage_location=storage_location,
+            storage_version=envelope.ciphertext_sha256,
+            status=BackupStatus.COMPLETED,
+        )
+    )
+
+
+def test_streaming_encryption_round_trip_and_tamper_detection(tmp_path: Path) -> None:
+    kms = LocalKMSClient(master_key=TEST_MASTER_KEY)
+    source = tmp_path / "source"
+    encrypted = tmp_path / "encrypted"
+    restored = tmp_path / "restored"
+    source.write_bytes((b"backup-data-" * 200_000) + b"end")
+
+    envelope = encrypt_file(
+        source,
+        encrypted,
+        kms_client=kms,
+        key_id="local-test-key",
+        kms_identity={"provider": "local-test"},
+    )
+    assert envelope.algorithm == "AES-256-GCM"
+    assert envelope.plaintext_sha256 == sha256_hex(source.read_bytes())
+
+    decrypt_file(encrypted, restored, kms_client=kms, envelope=envelope)
+    assert restored.read_bytes() == source.read_bytes()
+
+    payload = bytearray(encrypted.read_bytes())
+    payload[len(payload) // 2] ^= 1
+    encrypted.write_bytes(payload)
+    with pytest.raises(BackupEncryptionError):
+        decrypt_file(encrypted, tmp_path / "tampered", kms_client=kms, envelope=envelope)
+
+
+def test_aws_kms_adapter_records_resolved_non_secret_identity() -> None:
+    kms = AWSKMSClient(client=FakeAWSKMS())
+    plain, wrapped = kms.generate_data_key("alias/we3-backup")
+    assert plain == b"D" * 32
+    assert wrapped == b"wrapped"
+    assert kms.decrypt("alias/we3-backup", wrapped) == plain
+    identity = kms.key_metadata("alias/we3-backup")
+    assert identity["requested_key_id"] == "alias/we3-backup"
+    assert identity["resolved_key_id"] == "1234abcd"
+    assert "Plaintext" not in identity
+
+
+def test_postgresql_url_validation_rejects_sqlite() -> None:
+    with pytest.raises(PostgreSQLBackupError, match="PostgreSQL"):
+        parse_postgresql_url("sqlite:///var/we3.db")
+    parsed = parse_postgresql_url(
+        "postgresql://we3:secret@127.0.0.1:55432/wilson_eval3ngine"
+    )
+    assert parsed.host == "127.0.0.1"
+    assert parsed.port == 55432
+    assert parsed.database == "wilson_eval3ngine"
+    assert parsed.subprocess_env()["PGPASSWORD"] == "secret"
+
+
+def test_wal_sequence_helpers_detect_gaps_and_target_segment() -> None:
+    first = "000000010000000000000001"
+    second = "000000010000000000000002"
+    fourth = "000000010000000000000004"
+    assert wal_segment_index(second, SEGMENT_SIZE)[1] == (
+        wal_segment_index(first, SEGMENT_SIZE)[1] + 1
+    )
+    assert wal_segments_are_contiguous([first, second], SEGMENT_SIZE)
+    assert not wal_segments_are_contiguous([first, fourth], SEGMENT_SIZE)
+    assert wal_segment_for_lsn("0/180000", 1, SEGMENT_SIZE) == first
+
+
+def test_signed_baseline_requires_hash_signature_and_trust(tmp_path: Path) -> None:
+    key = generate_private_key(tmp_path / "signing.pem")
+    registry = TrustRegistry()
+    baseline = _signed_baseline(key, registry)
+    assert verify_recovery_baseline(baseline, registry)
+
+    untrusted = TrustRegistry()
+    assert not verify_recovery_baseline(baseline, untrusted)
+
+    changed = replace(baseline, total_runs=baseline.total_runs + 1)
+    assert not verify_recovery_baseline(changed, registry)
+
+
+def test_catalogue_survives_restart_and_deep_verification(tmp_path: Path) -> None:
+    key = generate_private_key(tmp_path / "signing.pem")
+    registry = TrustRegistry()
+    kms = LocalKMSClient(master_key=TEST_MASTER_KEY)
+    manager = BackupManager(
+        "postgresql://localhost/we3",
+        tmp_path / "backups",
+        kms_client=kms,
+        trust_registry=registry,
+    )
+    metadata = _catalogued_full_backup(
+        manager,
+        key,
+        registry,
+        timestamp=datetime(2026, 8, 22, tzinfo=timezone.utc),
+    )
+    assert manager.verify_backup_integrity(metadata.backup_id)
+
+    reloaded = BackupManager(
+        "postgresql://localhost/we3",
+        tmp_path / "backups",
+        kms_client=kms,
+        trust_registry=registry,
+    )
+    assert [item.backup_id for item in reloaded.list_backups()] == [
+        metadata.backup_id
+    ]
+    assert reloaded.verify_backup_integrity(metadata.backup_id)
+
+
+def test_manifest_or_ciphertext_mutation_is_rejected(tmp_path: Path) -> None:
+    key = generate_private_key(tmp_path / "signing.pem")
+    registry = TrustRegistry()
+    manager = BackupManager(
+        "postgresql://localhost/we3",
+        tmp_path / "backups",
+        kms_client=LocalKMSClient(master_key=TEST_MASTER_KEY),
+        trust_registry=registry,
+    )
+    metadata = _catalogued_full_backup(
+        manager,
+        key,
+        registry,
+        timestamp=datetime(2026, 8, 22, tzinfo=timezone.utc),
+    )
+    manifest, _, ciphertext = manager._manifest_paths(metadata)
+
+    original_manifest = manifest.read_text(encoding="utf-8")
+    parsed = json.loads(original_manifest)
+    parsed["database"]["name"] = "tampered"
+    manifest.write_text(json.dumps(parsed), encoding="utf-8")
+    assert not manager.verify_backup_integrity(metadata.backup_id)
+
+    manifest.write_text(original_manifest, encoding="utf-8")
+    raw = bytearray(ciphertext.read_bytes())
+    raw[0] ^= 1
+    ciphertext.write_bytes(raw)
+    assert not manager.verify_backup_integrity(metadata.backup_id)
+
+
+def test_restore_plan_uses_real_contiguous_wal_and_signed_baseline(
+    tmp_path: Path,
+) -> None:
+    key = generate_private_key(tmp_path / "signing.pem")
+    registry = TrustRegistry()
+    kms = LocalKMSClient(master_key=TEST_MASTER_KEY)
+    manager = BackupManager(
+        "postgresql://localhost/we3",
+        tmp_path / "backups",
+        kms_client=kms,
+        trust_registry=registry,
+    )
+    base_time = datetime(2026, 8, 22, 0, 0, tzinfo=timezone.utc)
+    base = _catalogued_full_backup(manager, key, registry, timestamp=base_time)
+    baseline = _signed_baseline(key, registry)
+
+    wal1 = tmp_path / BASE_SEGMENT
+    wal1.write_bytes(b"A" * SEGMENT_SIZE)
+    first = manager.create_wal_archive(
+        wal1,
+        "test-kms-key",
+        key,
+        base_backup_id=base.backup_id,
+        archived_at=base_time + timedelta(minutes=5),
+    )
+    wal2_name = "000000010000000000000002"
+    wal2 = tmp_path / wal2_name
+    wal2.write_bytes(b"B" * SEGMENT_SIZE)
+    second = manager.create_wal_archive(
+        wal2,
+        "test-kms-key",
+        key,
+        base_backup_id=base.backup_id,
+        archived_at=base_time + timedelta(minutes=10),
+    )
+
+    plan = manager.generate_restore_plan(
+        base_time + timedelta(minutes=7),
+        recovery_baseline=baseline,
+    )
+    assert plan.backup_sequence == [base.backup_id, first.backup_id, second.backup_id]
+    assert plan.wal_segments_needed == [BASE_SEGMENT, wal2_name]
+    assert not any(name.startswith("segment_") for name in plan.wal_segments_needed)
+
+
+def test_restore_plan_rejects_missing_base_segment(tmp_path: Path) -> None:
+    key = generate_private_key(tmp_path / "signing.pem")
+    registry = TrustRegistry()
+    manager = BackupManager(
+        "postgresql://localhost/we3",
+        tmp_path / "backups",
+        kms_client=LocalKMSClient(master_key=TEST_MASTER_KEY),
+        trust_registry=registry,
+    )
+    base_time = datetime(2026, 8, 22, 0, 0, tzinfo=timezone.utc)
+    base = _catalogued_full_backup(manager, key, registry, timestamp=base_time)
+    baseline = _signed_baseline(key, registry)
+
+    later = tmp_path / "000000010000000000000002"
+    later.write_bytes(b"B" * SEGMENT_SIZE)
+    manager.create_wal_archive(
+        later,
+        "test-kms-key",
+        key,
+        base_backup_id=base.backup_id,
+        archived_at=base_time + timedelta(minutes=10),
+    )
+    with pytest.raises(ValueError, match="begins after"):
+        manager.generate_restore_plan(
+            base_time + timedelta(minutes=7),
+            recovery_baseline=baseline,
         )
 
-        assert metadata.backup_id == "backup_test123"
-        assert metadata.backup_type == BackupType.FULL
-        assert metadata.size_bytes == 1024000
-        assert metadata.encrypted is True
 
-    def test_backup_metadata_serialization(self) -> None:
-        """BackupMetadata serializes to dict correctly."""
-        metadata = BackupMetadata(
-            backup_id="backup_test",
-            backup_type=BackupType.WAL,
-            source_timestamp=utc_now(),
-            backup_timestamp=utc_now(),
-            size_bytes=5000,
-            object_count=1,
-            wal_start_lsn="0/1000",
-            wal_end_lsn="0/1000",
-            encrypted=True,
-            key_id="kms-key",
-            checksum_sha256="abc123",
-            manifest_ref="backups/backup_test/manifest.json",
-        )
-
-        d = metadata.to_dict()
-
-        assert d["backup_id"] == "backup_test"
-        assert d["backup_type"] == "wal"
-        assert isinstance(d["source_timestamp"], str)
-        assert d["encrypted"] is True
-
-
-class TestRestorePlan:
-    """Tests for RestorePlan dataclass."""
-
-    def test_restore_plan_creation(self) -> None:
-        """RestorePlan can be created with all fields."""
-        plan = RestorePlan(
-            plan_id="restore_test",
-            target_timestamp=utc_now(),
-            backup_sequence=["backup_1", "backup_2"],
-            wal_segments_needed=["00000001", "00000002"],
-            estimated_restore_time_minutes=60,
-            isolated_environment="restore-test",
-        )
-
-        assert plan.plan_id == "restore_test"
-        assert len(plan.backup_sequence) == 2
-        assert plan.isolated_environment == "restore-test"
-
-    def test_restore_plan_serialization(self) -> None:
-        """RestorePlan serializes to dict correctly."""
-        plan = RestorePlan(
-            plan_id="plan_456",
-            target_timestamp=datetime(2026, 7, 15, 12, 0, 0),
-            backup_sequence=["backup_a"],
-            wal_segments_needed=["seg_1"],
-            estimated_restore_time_minutes=30,
-            isolated_environment="restore-456",
-        )
-
-        d = plan.to_dict()
-
-        assert d["plan_id"] == "plan_456"
-        assert d["backup_sequence"] == ["backup_a"]
-        assert d["estimated_restore_time_minutes"] == 30
-
-
-class TestReconciliationReport:
-    """Tests for ReconciliationReport dataclass."""
-
-    def test_reconciliation_report_pass_status(self) -> None:
-        """ReconciliationReport shows pass when all checks pass."""
-        report = ReconciliationReport(
-            report_id="recon_test",
-            restored_timestamp=utc_now(),
-            verified_timestamp=utc_now(),
-            total_runs=100,
-            runs_matched=100,
-            runs_missing=0,
-            total_classifications=250,
-            classifications_matched=250,
-            audit_chain_valid=True,
-            outbox_events_pending=0,
-            metric_snapshots_matched=50,
-            gate_decisions_matched=25,
-            provenance_edges_matched=200,
-        )
-
-        assert report.to_dict()["status"] == "pass"
-
-    def test_reconciliation_report_fail_status(self) -> None:
-        """ReconciliationReport shows fail on missing data or broken audit chain."""
-        report = ReconciliationReport(
-            report_id="recon_fail",
-            restored_timestamp=utc_now(),
-            verified_timestamp=utc_now(),
-            total_runs=100,
-            runs_matched=95,
-            runs_missing=5,  # Missing runs
-            total_classifications=250,
-            classifications_matched=240,
-            audit_chain_valid=False,  # Broken audit chain
-            outbox_events_pending=10,  # Pending events
-            metric_snapshots_matched=50,
-            gate_decisions_matched=25,
-            provenance_edges_matched=200,
-        )
-
-        assert report.to_dict()["status"] == "fail"
-
-    def test_reconciliation_report_serialization(self) -> None:
-        """ReconciliationReport serializes all counts correctly."""
-        report = ReconciliationReport(
-            report_id="recon_789",
-            restored_timestamp=utc_now(),
-            verified_timestamp=utc_now(),
-            total_runs=50,
-            runs_matched=50,
-            runs_missing=0,
-            total_classifications=100,
-            classifications_matched=100,
-            audit_chain_valid=True,
-            outbox_events_pending=0,
-            metric_snapshots_matched=25,
-            gate_decisions_matched=10,
-            provenance_edges_matched=50,
-        )
-
-        d = report.to_dict()
-
-        assert d["totals"]["runs"] == 50
-        assert d["totals"]["classifications"] == 100
-        assert d["totals"]["audit_chain_valid"] is True
-        assert d["matched"]["runs"] == 50
-
-
-class TestBackupManager:
-    """Tests for BackupManager class."""
-
-    def test_backup_manager_initialization(self, tmp_path) -> None:
-        """BackupManager initializes with backup root."""
-        manager = BackupManager(
-            database_url="postgresql://localhost/test",
-            backup_root=tmp_path,
-        )
-
-        assert manager.backup_root == tmp_path
-        assert manager.RPO_MINUTES == 15
-        assert manager.RETENTION_DAYS == 30
-
-    def test_generate_restore_plan_no_backups(self, tmp_path) -> None:
-        """Generate restore plan fails without backups."""
-        manager = BackupManager(
-            database_url="postgresql://localhost/test",
-            backup_root=tmp_path,
-        )
-
-        try:
-            manager.generate_restore_plan(target_timestamp=utc_now())
-            assert False, "Should have raised ValueError"
-        except ValueError as e:
-            assert "No suitable backup" in str(e)
-
-    def test_list_backups_empty(self, tmp_path) -> None:
-        """BackupManager returns empty list when no backups exist."""
-        manager = BackupManager(
-            database_url="postgresql://localhost/test",
-            backup_root=tmp_path,
-        )
-
-        backups = manager.list_backups()
-        assert backups == []
-
-    def test_verify_backup_integrity_missing(self, tmp_path) -> None:
-        """Verify backup integrity returns False for missing backup."""
-        manager = BackupManager(
-            database_url="postgresql://localhost/test",
-            backup_root=tmp_path,
-        )
-
-        result = manager.verify_backup_integrity("nonexistent")
-        assert result is False
-
-
-class TestKeyBackupManager:
-    """Tests for KeyBackupManager class."""
-
-    def test_export_key_metadata(self, tmp_path) -> None:
-        """KeyBackupManager exports key metadata correctly."""
-        manager = KeyBackupManager(backup_root=tmp_path)
-
-        key_record = KeyRecord(
-            key_id="key_123",
-            purpose=KeyPurpose.SIGNING,
-            owner="security-team",
-            created_at="2026-07-17T00:00:00Z",
-            active=True,
-        )
-
-        metadata = manager.export_key_metadata(key_record, KeyPurpose.SIGNING)
-
-        assert metadata["key_id"] == "key_123"
-        assert metadata["purpose"] == "signing"
-        assert metadata["backup_purpose"] == "signing"
-        assert "active" in metadata
-
-    def test_preserve_trust_registry(self, tmp_path) -> None:
-        """KeyBackupManager preserves trust registry state."""
-        manager = KeyBackupManager(backup_root=tmp_path)
-
-        registry = TrustRegistry()
-        registry.trust_key("fingerprint_abc")
-        registry.trust_key("fingerprint_def")
-
-        preserved = manager.preserve_trust_registry(registry, KeyPurpose.AUDIT)
-
-        assert "fingerprint_abc" in preserved["trusted_fingerprints"]
-        assert "fingerprint_def" in preserved["trusted_fingerprints"]
-        assert preserved["backup_purpose"] == "audit"
-
-
-class TestRecoveryVerificationManifest:
-    """Tests for recovery verification manifest creation."""
-
-    def test_create_manifest_requires_approvals(self) -> None:
-        """Recovery manifest tracks approvers correctly."""
-        report = ReconciliationReport(
-            report_id="recon_test",
-            restored_timestamp=utc_now(),
-            verified_timestamp=utc_now(),
-            total_runs=10,
-            runs_matched=10,
-            runs_missing=0,
-            total_classifications=20,
-            classifications_matched=20,
-            audit_chain_valid=True,
-            outbox_events_pending=0,
-            metric_snapshots_matched=5,
-            gate_decisions_matched=2,
-            provenance_edges_matched=10,
-        )
-
-        manifest = create_recovery_verification_manifest(
-            backup_ids=["backup_1", "backup_2"],
-            restore_timestamp=utc_now(),
-            reconciliation_report=report,
-            approvers=["user_a", "user_b"],
-        )
-
-        assert manifest["schema_version"] == "we3.recovery_manifest.v1"
-        assert manifest["approvals"]["required"] == 2
-        assert manifest["approvals"]["received"] == 2
-        assert manifest["approvals"]["approvers"] == ["user_a", "user_b"]
-        assert manifest["reconciliation_status"] == "pass"
-
-    def test_manifest_requires_recertification(self) -> None:
-        """Manifest indicates re-certification when issues found."""
-        report = ReconciliationReport(
-            report_id="recon_issues",
-            restored_timestamp=utc_now(),
-            verified_timestamp=utc_now(),
-            total_runs=10,
-            runs_matched=8,
-            runs_missing=2,  # Missing runs trigger recertification
-            total_classifications=20,
-            classifications_matched=20,
-            audit_chain_valid=True,
-            outbox_events_pending=0,
-            metric_snapshots_matched=5,
-            gate_decisions_matched=2,
-            provenance_edges_matched=10,
-        )
-
-        manifest = create_recovery_verification_manifest(
-            backup_ids=["backup_1"],
-            restore_timestamp=utc_now(),
-            reconciliation_report=report,
-            approvers=["user_a"],
-        )
-
-        assert manifest["re_certification_required"] is True
-
-
-class TestBackupRPOCompliance:
-    """Tests for RPO compliance."""
-
-    def test_rpo_minutes_defined(self) -> None:
-        """RPO is set to 15 minutes."""
-        assert BackupManager.RPO_MINUTES == 15
-
-    def test_retention_days_defined(self) -> None:
-        """Retention is set to 30 days."""
-        assert BackupManager.RETENTION_DAYS == 30
-
-
-class TestBackupIntegrityVerification:
-    """Tests for backup integrity verification."""
-
-    def test_checksum_covers_all_fields(self) -> None:
-        """Backup checksum covers critical metadata."""
-        metadata = BackupMetadata(
-            backup_id="backup_1",
-            backup_type=BackupType.FULL,
-            source_timestamp=utc_now(),
-            backup_timestamp=utc_now(),
-            size_bytes=1000,
-            object_count=10,
-            wal_start_lsn="0/1000",
-            wal_end_lsn="0/2000",
-            encrypted=True,
-            key_id="key_1",
-            checksum_sha256="abc123",
-            manifest_ref="backups/backup_1/manifest.json",
-        )
-
-        # Checksum is stored and verifiable
-        assert metadata.checksum_sha256 == "abc123"
-
-    def test_encrypted_flag_required_for_production(self) -> None:
-        """Backups for production must be encrypted."""
-        # In production, encryption is mandatory
-        metadata = BackupMetadata(
-            backup_id="backup_prod",
-            backup_type=BackupType.FULL,
-            source_timestamp=utc_now(),
-            backup_timestamp=utc_now(),
-            size_bytes=1000,
-            object_count=10,
-            wal_start_lsn=None,
-            wal_end_lsn=None,
-            encrypted=True,  # Must be True for production
-            key_id="kms-prod-key",
-            checksum_sha256="def456",
-            manifest_ref="backups/backup_prod/manifest.json",
-        )
-
-        assert metadata.encrypted is True
-        assert metadata.key_id.startswith("kms-")
-
-
-class TestBackupNegativeSecurityScenarios:
-    """Negative and security tests for backup system (TODO 55)."""
-
-    def test_corrupted_backup_detected(self, tmp_path) -> None:
-        """Checksum mismatch detected during verification."""
-        manager = BackupManager(
-            database_url="postgresql://localhost/test",
-            backup_root=tmp_path,
-        )
-
-        # Create a backup directory
-        backup_dir = tmp_path / "backup_corrupted"
-        backup_dir.mkdir()
-
-        # Add metadata with wrong checksum
-        metadata = BackupMetadata(
-            backup_id="backup_corrupted",
-            backup_type=BackupType.FULL,
-            source_timestamp=utc_now(),
-            backup_timestamp=utc_now(),
-            size_bytes=1000,
-            object_count=10,
-            wal_start_lsn="0/1000",
-            wal_end_lsn="0/2000",
-            encrypted=True,
-            key_id="kms-key",
-            checksum_sha256="wrong_checksum_value",  # Intentionally wrong
-            manifest_ref="backups/backup_corrupted/manifest.json",
-        )
-        manager._backups["backup_corrupted"] = metadata
-
-        # Verification should fail due to checksum mismatch
-        result = manager.verify_backup_integrity("backup_corrupted")
-        assert result is False
-
-    def test_missing_encryption_key_on_backup(self, tmp_path) -> None:
-        """Backup without key_id is invalid for production."""
-        metadata = BackupMetadata(
-            backup_id="backup_no_key",
-            backup_type=BackupType.FULL,
-            source_timestamp=utc_now(),
-            backup_timestamp=utc_now(),
-            size_bytes=1000,
-            object_count=10,
-            wal_start_lsn=None,
-            wal_end_lsn=None,
-            encrypted=False,  # Not encrypted
-            key_id="",  # No key
-            checksum_sha256=sha256_hex(b"test"),
-            manifest_ref="backups/backup_no_key/manifest.json",
-        )
-
-        # Production backups must be encrypted with a key
-        assert metadata.encrypted is False
-        assert metadata.key_id == ""
-
-    def test_unauthorized_restore_blocked_by_signature(self, tmp_path) -> None:
-        """Restore without valid signature fails in production."""
-        manager = BackupManager(
-            database_url="postgresql://localhost/test",
-            backup_root=tmp_path,
-        )
-
-        # Create backup directory with matching checksum
-        backup_dir = tmp_path / "backup_unsigned"
-        backup_dir.mkdir(parents=True, exist_ok=True)
-
-        # Create backup without signature
-        metadata = BackupMetadata(
-            backup_id="backup_unsigned",
-            backup_type=BackupType.FULL,
-            source_timestamp=utc_now(),
-            backup_timestamp=utc_now(),
-            size_bytes=1000,
-            object_count=10,
-            wal_start_lsn="0/1000",
-            wal_end_lsn=None,
-            encrypted=True,
-            key_id="kms-key",
-            checksum_sha256=sha256_hex(str(backup_dir).encode()),  # Correct checksum for directory
-            manifest_ref="backups/backup_unsigned/manifest.json",
-        )
-        manager._backups["backup_unsigned"] = metadata
-
-        # Without trust registry, signature verification cannot proceed
-        # This tests the security boundary
-        manager.trust_registry = None
-
-        # Verify that without trust registry, checksum verification still works
-        result = manager.verify_backup_integrity("backup_unsigned")
-        # Returns True because checksum matches and signature check is skipped without trust registry
-        assert result is True
-
-    def test_expired_key_not_used_for_verification(self, tmp_path) -> None:
-        """Expired keys are rejected during verification."""
-        manager = KeyBackupManager(backup_root=tmp_path)
-
-        now = utc_now()
-        expired_key = KeyRecord(
-            key_id="key_expired",
-            purpose=KeyPurpose.SIGNING,
-            owner="security-team",
-            created_at=(now - timedelta(days=60)).isoformat(),
-            active=False,  # Not active
-            expires_at=(now - timedelta(days=30)).isoformat(),  # Already expired
-        )
-
-        # Expired key should not be valid
-        assert expired_key.is_valid() is False
-
-
-class TestBackupPITRBoundaryConditions:
-    """Tests for PITR boundary conditions (TODO 55 edge cases)."""
-
-    def test_pitr_during_inflight_commit(self, tmp_path) -> None:
-        """PITR boundary handling during in-flight object commit."""
-        manager = BackupManager(
-            database_url="postgresql://localhost/test",
-            backup_root=tmp_path,
-        )
-
-        # Add backup at time T1
-        manager._backups["backup_t1"] = type(
-            "BackupMetadata",
-            (),
-            {
-                "backup_id": "backup_t1",
-                "backup_type": BackupType.FULL,
-                "backup_timestamp": datetime(2026, 7, 17, 11, 0, 0),
-                "to_dict": lambda: {"backup_id": "backup_t1"},
-            },
-        )()
-
-        # Add WAL archive after T1
-        manager._backups["wal_t1"] = type(
-            "BackupMetadata",
-            (),
-            {
-                "backup_id": "wal_t1",
-                "backup_type": BackupType.WAL,
-                "backup_timestamp": datetime(2026, 7, 17, 11, 15, 0),
-                "to_dict": lambda: {"backup_id": "wal_t1"},
-            },
-        )()
-
-        # Request restore at time between T1 and WAL
-        plan = manager.generate_restore_plan(
-            target_timestamp=datetime(2026, 7, 17, 11, 7, 0)
-        )
-
-        # Should use base backup only
-        assert "backup_t1" in plan.backup_sequence
-
-    def test_legal_hold_prevents_destruction(self, tmp_path) -> None:
-        """Backups under legal hold cannot be destroyed."""
-        manager = BackupManager(
-            database_url="postgresql://localhost/test",
-            backup_root=tmp_path,
-        )
-
-        # Add backup marked as under legal hold
-        # (In production, this would be tracked in metadata)
-        # For now, test the retention configuration
-        assert manager.RETENTION_DAYS == 30  # Standard retention
+def test_recovery_manifest_requires_two_distinct_approvers() -> None:
+    from wilson_eval3ngine.backup.backup_manager import ReconciliationReport
+
+    report = ReconciliationReport(
+        report_id="r",
+        restored_timestamp=datetime.now(timezone.utc),
+        verified_timestamp=datetime.now(timezone.utc),
+        total_runs=1,
+        runs_matched=1,
+        runs_missing=0,
+        total_classifications=1,
+        classifications_matched=1,
+        audit_chain_valid=True,
+        outbox_events_pending=0,
+        metric_snapshots_matched=1,
+        gate_decisions_matched=1,
+        provenance_edges_matched=1,
+    )
+    manifest = create_recovery_verification_manifest(
+        ["backup"],
+        datetime.now(timezone.utc),
+        report,
+        ["alice", "alice"],
+    )
+    assert manifest["approvals"]["received"] == 1
+    assert manifest["re_certification_required"] is True

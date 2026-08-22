@@ -10,7 +10,8 @@ import pytest
 from pathlib import Path
 
 
-POLICY_PATH = Path("/home/geezeradmin/work/Wilson-Eval3ngine/governance/compliance/data_classification_policy_matrix.json")
+REPO_ROOT = Path(__file__).resolve().parents[3]
+POLICY_PATH = REPO_ROOT / "governance/compliance/data_classification_policy_matrix.json"
 
 
 @pytest.fixture
@@ -23,7 +24,7 @@ def policy_matrix():
 @pytest.fixture
 def split_triggers():
     """Load the modular split triggers."""
-    triggers_path = Path("/home/geezeradmin/work/Wilson-Eval3ngine/governance/compliance/modular_split_triggers.json")
+    triggers_path = REPO_ROOT / "governance/compliance/modular_split_triggers.json"
     with open(triggers_path) as f:
         return json.load(f)
 
