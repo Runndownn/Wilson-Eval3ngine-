@@ -72,13 +72,29 @@ def _error(status_code: int, code: str, detail: str) -> JSONResponse:
 
 
 class RequestMetadataValidationMiddleware(BaseHTTPMiddleware):
-    """Reject malformed security metadata before route-side effects."""
+    """Reject unsafe request modes and malformed metadata before route side effects."""
 
     async def dispatch(
         self,
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
+        runtime = getattr(request.app.state, "settings", None)
+        if (
+            request.url.path == "/v1/experiments:run"
+            and bool(getattr(runtime, "is_assurance_environment", False))
+        ):
+            # The synchronous foundation lane accepts filesystem paths by design
+            # and is retained for local development, deterministic CI, and
+            # recovery diagnostics. Production execution belongs to the durable
+            # scheduler; exposing this lane remotely would turn authenticated
+            # request data into host filesystem read/write/key-path authority.
+            return _error(
+                403,
+                "synchronous_execution_disabled",
+                "the synchronous filesystem execution lane is disabled in staging/production",
+            )
+
         correlation_id = request.headers.get("X-Correlation-ID")
         if correlation_id is not None and not _CORRELATION_ID.fullmatch(correlation_id):
             return _error(400, "invalid_correlation_id", "correlation identifier is invalid")
