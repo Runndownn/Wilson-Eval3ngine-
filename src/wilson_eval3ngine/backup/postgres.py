@@ -1,9 +1,10 @@
 """PostgreSQL-specific primitives for backup and PITR.
 
-This module keeps shell/process details out of the higher-level recovery
-orchestrator. It performs strict PostgreSQL URL validation, captures stable
-cluster identity, runs pg_basebackup without embedding credentials in command
-arguments, and provides WAL filename/LSN helpers used to prove continuity.
+The recovery path treats the database URL as a security boundary. Connection
+options that affect TLS/authentication are either preserved for libpq or rejected;
+they are never silently dropped when invoking PostgreSQL command-line tools.
+Secrets are transported through the child environment rather than command-line
+arguments, and physical backup refuses ambiguous/non-PostgreSQL targets.
 """
 
 from __future__ import annotations
@@ -12,15 +13,36 @@ import os
 import re
 import shutil
 import subprocess
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qsl, unquote, urlparse
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 
 
 _WAL_NAME = re.compile(r"^[0-9A-F]{24}$")
+
+# Only options with a direct, documented libpq environment equivalent are
+# accepted by the command-line backup path. Rejecting unknown parameters is
+# preferable to silently weakening a connection policy present in the URL.
+_LIBPQ_QUERY_ENV = {
+    "application_name": "PGAPPNAME",
+    "channel_binding": "PGCHANNELBINDING",
+    "connect_timeout": "PGCONNECT_TIMEOUT",
+    "gssencmode": "PGGSSENCMODE",
+    "krbsrvname": "PGKRBSRVNAME",
+    "options": "PGOPTIONS",
+    "passfile": "PGPASSFILE",
+    "sslcert": "PGSSLCERT",
+    "sslcrl": "PGSSLCRL",
+    "sslcrldir": "PGSSLCRLDIR",
+    "sslkey": "PGSSLKEY",
+    "sslmode": "PGSSLMODE",
+    "sslpassword": "PGSSLPASSWORD",
+    "sslrootcert": "PGSSLROOTCERT",
+    "target_session_attrs": "PGTARGETSESSIONATTRS",
+}
 
 
 class PostgreSQLBackupError(RuntimeError):
@@ -34,11 +56,26 @@ class PostgreSQLConnection:
     database: str
     user: str
     password: str
+    query_parameters: dict[str, str] = field(default_factory=dict)
 
     def subprocess_env(self) -> dict[str, str]:
+        """Return libpq environment preserving the validated connection policy."""
         env = os.environ.copy()
+        env.update(
+            {
+                "PGHOST": self.host,
+                "PGPORT": str(self.port),
+                "PGDATABASE": self.database,
+                "PGUSER": self.user,
+            }
+        )
         if self.password:
             env["PGPASSWORD"] = self.password
+        else:
+            # Do not accidentally inherit a credential for a different target.
+            env.pop("PGPASSWORD", None)
+        for name, value in self.query_parameters.items():
+            env[_LIBPQ_QUERY_ENV[name]] = value
         return env
 
 
@@ -57,23 +94,51 @@ class PostgreSQLIdentity:
 
 
 def parse_postgresql_url(database_url: str) -> PostgreSQLConnection:
+    """Parse a PostgreSQL URL without discarding security-relevant options."""
     parsed = urlparse(database_url)
     if parsed.scheme not in {"postgresql", "postgres", "postgresql+psycopg"}:
         raise PostgreSQLBackupError(
             "Physical backup/PITR requires a PostgreSQL URL; SQLite and other "
             "database URLs are not supported by this recovery path."
         )
+    if parsed.fragment:
+        raise PostgreSQLBackupError("PostgreSQL backup URL must not contain a fragment")
     if not parsed.hostname:
         raise PostgreSQLBackupError("PostgreSQL backup URL must include a host")
-    database = parsed.path.lstrip("/")
-    if not database:
-        raise PostgreSQLBackupError("PostgreSQL backup URL must include a database name")
+    if parsed.username is None or not unquote(parsed.username).strip():
+        raise PostgreSQLBackupError(
+            "PostgreSQL backup URL must include an explicit least-privilege user"
+        )
+    database = unquote(parsed.path.lstrip("/"))
+    if not database or "/" in database:
+        raise PostgreSQLBackupError(
+            "PostgreSQL backup URL must include exactly one database name"
+        )
+
+    query_parameters: dict[str, str] = {}
+    for name, value in parse_qsl(parsed.query, keep_blank_values=True):
+        normalized = name.strip().lower()
+        if normalized not in _LIBPQ_QUERY_ENV:
+            raise PostgreSQLBackupError(
+                f"Unsupported PostgreSQL backup connection parameter: {name!r}"
+            )
+        if normalized in query_parameters:
+            raise PostgreSQLBackupError(
+                f"Duplicate PostgreSQL backup connection parameter: {name!r}"
+            )
+        if "\x00" in value:
+            raise PostgreSQLBackupError(
+                f"Invalid NUL byte in PostgreSQL connection parameter: {name!r}"
+            )
+        query_parameters[normalized] = value
+
     return PostgreSQLConnection(
         host=parsed.hostname,
         port=parsed.port or 5432,
-        database=unquote(database),
-        user=unquote(parsed.username or "postgres"),
+        database=database,
+        user=unquote(parsed.username),
         password=unquote(parsed.password or ""),
+        query_parameters=query_parameters,
     )
 
 
@@ -105,6 +170,8 @@ def _parse_pg_size(value: str) -> int:
 
 def capture_postgresql_identity(database_url: str) -> PostgreSQLIdentity:
     """Capture the database/system/WAL identity required for recovery lineage."""
+    # Parse first so the CLI and SQL paths share the same validation contract.
+    parse_postgresql_url(database_url)
     engine = create_engine(
         sqlalchemy_postgresql_url(database_url),
         poolclass=NullPool,
@@ -186,16 +253,14 @@ def tool_version(name: str) -> str:
 
 
 def basebackup_command(database_url: str) -> tuple[list[str], dict[str, str]]:
-    """Build a credential-safe pg_basebackup command that streams tar to stdout."""
+    """Build a credential-safe pg_basebackup command streaming tar to stdout.
+
+    Host/user/password/TLS policy travel through libpq environment variables so
+    credentials never appear in argv and URL query security options are not lost.
+    """
     connection = parse_postgresql_url(database_url)
     command = [
         require_pg_tool("pg_basebackup"),
-        "--host",
-        connection.host,
-        "--port",
-        str(connection.port),
-        "--username",
-        connection.user,
         "--pgdata",
         "-",
         "--format",
