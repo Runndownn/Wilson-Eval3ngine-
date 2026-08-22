@@ -8,23 +8,19 @@
 
 [Getting Started](docs/GETTING_STARTED.md) · [Features](docs/FEATURES.md) · [Architecture](docs/ARCHITECTURE.md) · [Current Status](docs/STATUS.md) · [GUI & Evidence Guide](docs/GUI_AND_EVIDENCE_GUIDE.md) · [Security](SECURITY.md) · [Documentation Index](docs/README.md)
 
-Wilson Eval3ngine (WE3) turns a versioned experiment and dataset into traceable model runs, keeps provider/reliability failures separate from model behavior, computes uncertainty-aware metrics, applies explicit gates, and preserves the evidence needed to reconstruct a decision later.
+Wilson Eval3ngine (WE3) turns versioned experiments and datasets into traceable provider attempts, behavior classifications, uncertainty-aware metrics, explicit release decisions, and reviewable evidence. The repository distinguishes **implemented source**, **supported composition**, **observed automated assurance**, and **production runtime evidence**; none of those terms is used as a substitute for another.
 
-The governing question is not merely *“what score did the model get?”* It is **“what population was evaluated, what exactly happened, how much support exists, what rule produced the decision, and can another reviewer verify the lineage?”**
-
-## Current project position
+## Project position
 
 **Package version:** `0.1.0`  
-**Project stage:** **active evaluation platform / pre-production assurance**  
-**Production certification:** **not established by source code alone**
+**Stage:** active evaluation platform / pre-production assurance  
+**Production certification:** not established by source code alone
 
-`foundation` remains in historical identifiers and the deterministic local lane because that lane was the first complete vertical slice. It is not the maturity label for the whole repository. Real-provider paths, durable scheduling, review/adjudication, evidence protection, identity/security controls, GUI/operator workflows, observability, deployment material, and certification orchestration extend beyond it.
+The deterministic local lane remains the fastest way to inspect the complete measurement contract. The repository also includes real-provider adapters, durable PostgreSQL scheduling, human review/adjudication, encrypted evidence storage, OIDC/project controls, distributed rate limiting, deployment hardening, GUI/operator workflows, backup/WAL/PITR recovery, telemetry, and certification orchestration. [Current Status](docs/STATUS.md) is the authority for implementation and assurance boundaries.
 
-Some important areas remain explicitly provisional. In particular, one cross-run statistical p-value path and one prompt-family support path are incomplete; executive persona support/uncertainty aggregates remain placeholders; and the native database backup/PITR/restore subsystem is currently scaffolding rather than demonstrated production protection. [Current Status](docs/STATUS.md) is the authority for these boundaries.
+## Measurement contract
 
-## Behavioral outcomes
-
-WE3 preserves five behavior families instead of collapsing everything into one pass/fail result:
+WE3 preserves five behavioral outcomes rather than collapsing behavior and infrastructure into a single pass/fail result:
 
 | Outcome | Meaning |
 |---|---|
@@ -34,23 +30,26 @@ WE3 preserves five behavior families instead of collapsing everything into one p
 | **Unsafe compliance** | A response crossed the defined safety boundary. |
 | **Ambiguous / partial** | The response cannot be classified confidently or completely. |
 
-Timeouts, malformed responses, exhausted retries, authentication failures, and other provider/reliability problems remain separate from those behavior labels.
-
-## Evidence path
+Timeouts, malformed responses, exhausted retries, authentication failures, and other provider/reliability failures remain separate from behavioral labels. Operational-failure subtypes are diagnostic subsets and are not double-counted in the aggregate failure metric.
 
 <p align="center"><img src="docs/assets/diagrams/evaluation-pipeline.svg" alt="Wilson Eval3ngine evaluation pipeline" width="1100"></p>
 
-1. Validate the experiment, dataset identity/version/hash, and execution configuration.
-2. Compile expected treatment **before** seeing the target model response.
-3. Render a deterministic provider request and preserve provider attempts/retries.
-4. Grade valid terminal behavior while keeping reliability failures separate.
-5. Build metric snapshots with numerator, denominator, exclusions, version, population, and Wilson confidence intervals.
-6. Apply explicit gate/support rules; insufficient evidence becomes indeterminate rather than an artificial pass.
-7. Preserve reports, hashes, classifications, metrics, audit data, and signed dossier/result artifacts.
+The core path is:
+
+1. Validate experiment, dataset identity/version/hash, and execution configuration.
+2. Compile expected treatment **before** observing the target response.
+3. Render a deterministic provider request and preserve attempts/retries.
+4. Grade valid terminal behavior while retaining reliability failures separately.
+5. Build metric snapshots with numerator, denominator, exclusions, population lineage, version, and Wilson intervals.
+6. Compare compatible independent-binomial proportions with an explicit two-sided statistical test; incompatible or indeterminate populations fail closed.
+7. Apply explicit gate/support rules; insufficient evidence is indeterminate, never an artificial pass.
+8. Preserve reports, hashes, classifications, metrics, audit data, and signed dossier/result artifacts.
+
+The generic snapshot helper does **not** infer prompt-family independence from run count. Callers that have prompt-family lineage provide it explicitly; otherwise the independent-family count is zero so downstream support checks can fail closed.
 
 ## Five-minute deterministic start
 
-Requires Python `3.12–3.14` and Git; no provider credential is required.
+Requires Python `3.12–3.14` and Git. No provider credential is required.
 
 ### Linux or macOS
 
@@ -80,111 +79,59 @@ we3 run examples/experiments/foundation.yaml --output var/foundation --database-
 we3 verify-dossier var/foundation/release_dossier.json
 ```
 
-The deterministic lane proves the local measurement path for the checked-out code/configuration. It does **not** certify a real provider or private deployment.
+The deterministic lane proves the local measurement path for the checked-out revision. It does not certify a provider, identity system, production network, KMS, backup schedule, or private deployment.
 
-## Current operator GUI
+## Security architecture
 
-Start with the secure-default loopback listener:
+<p align="center"><img src="docs/assets/diagrams/trust-boundaries.svg" alt="Wilson Eval3ngine trust and assurance boundaries" width="1100"></p>
+
+The supported API has one authoritative implementation for each request-security control. Shared logging, tracing, response headers, content-type validation, and readiness behavior live in `api/middleware.py`; streaming byte limits live in `api/body_limit.py`; strict metadata/CORS/CSRF/rate-limit/OIDC-revocation controls live in `api/security_middleware.py`; authorization decision evidence lives in `api/authorization_audit.py`. Production composition does not depend on import-time replacement of weaker classes.
+
+Staging/production rate limiting uses the configured Redis authority and fails closed if shared rate state is unavailable. Forwarded client identity is trusted only from configured proxy networks. Browser origins/methods/headers are exact allowlists. Bearer-header OIDC is non-ambient authentication, so credentialed CORS is not advertised by default. Security-relevant unexpected responses are bounded; detailed diagnostics remain server-side.
+
+Production templates keep databases, Redis, monitoring, and the API off direct public host ports and use Caddy as the ingress boundary. Source configuration still requires target-environment evidence for TLS, firewalling, proxy CIDRs, direct-port denial, egress controls, and secret custody.
+
+## Operator GUI
+
+Start the supported loopback launcher:
 
 ```bash
 we3-gui-start --host 127.0.0.1 --port 8080
 ```
 
-The supported launcher repairs legacy wildcard defaults to loopback unless the operator deliberately sets `WE3_GUI_ALLOW_REMOTE_BIND=1`. That override changes only bind policy; it does not add authentication, authorization, TLS, firewalling, or multi-user isolation. Intentionally remote operation must supply and validate those controls independently.
+The launcher defaults to loopback and installs exactly one reviewed API-key transport before serving. The UX overlay is presentation-only and cannot replace that transport. POSIX uses a one-shot FIFO implementation; unsupported platforms fail closed unless an explicitly configured private transport plugin satisfies the factory contract.
 
-The current workflow is exactly five workspaces:
+The current five workspaces are **Endpoints → Models → Generate → Charts → Reports**. Current captures live under `docs/assets/gui/current/`; screenshot counts, provider state, model inventory, report totals, and demo charts are point-in-time presentation evidence, not release metrics. See [GUI & Evidence Guide](docs/GUI_AND_EVIDENCE_GUIDE.md).
 
-**Endpoints → Models → Generate → Charts → Reports**
+## Backup, WAL, and point-in-time recovery
 
-### 1. Endpoints
+The native recovery subsystem in `src/wilson_eval3ngine/backup/` is real implementation, not metadata-only scaffolding. It includes PostgreSQL cluster identity capture, credential-safe physical backup invocation, encrypted payloads, signed manifests, trusted-key verification, WAL continuity checks, recovery baselines, isolated restore execution, reconciliation, and recovery evidence.
 
-<p align="center"><img src="docs/assets/gui/current/01-endpoints.webp" alt="Current Wilson Eval3ngine Endpoints workspace" width="1100"></p>
+That source does not establish an RPO/RTO. Operators must execute and retain target-environment evidence for backup cadence, WAL retention/continuity, restore reachability, reconciliation, and measured recovery objectives. Current engineering constraints such as timeline transitions, crash-safe publication/locking, and time-target semantics are tracked transparently in [Current Status](docs/STATUS.md) and the [Backup and Recovery Runbook](docs/operations/backup-recovery-runbook.md).
 
-Register/test an approved provider destination and reconcile its discovered model inventory. `online`/`offline` is connectivity evidence, not a model-quality or safety judgment.
+## Persona and report boundaries
 
-### 2. Models
+Analyst views reject missing or cross-project canonical scope before copying metric/artifact lineage. Executive support/uncertainty fields are `None` until the canonical report defines authoritative aggregate semantics; missing evidence is never presented as `100%` support or `0%` uncertainty. Reviewer redaction is bounded pattern masking, not a complete production DLP authority.
 
-<p align="center"><img src="docs/assets/gui/current/02-models.webp" alt="Current Wilson Eval3ngine Models workspace" width="1100"></p>
-
-Inspect exact provider model IDs, endpoint lineage, inferred families, and selection readiness. Family/recommended labels are navigation aids, not benchmark endorsements.
-
-### 3. Generate
-
-<p align="center"><img src="docs/assets/gui/current/03-generate.webp" alt="Current Wilson Eval3ngine Generate workspace" width="1100"></p>
-
-Choose models, prompt package/custom prompts, execution mode, and review total request volume before starting. Prompt-package selection belongs here rather than in a separate workflow stage.
-
-### 4. Charts
-
-<p align="center"><img src="docs/assets/gui/current/04-charts.webp" alt="Current Wilson Eval3ngine Charts workspace" width="1100"></p>
-
-Inspect run-scoped visualizations and associated metadata. **Demo charts are synthetic** and must never be cited as real model-run evidence; use structured sidecars/metric snapshots for exact values.
-
-### 5. Reports
-
-<p align="center"><img src="docs/assets/gui/current/05-reports.webp" alt="Current Wilson Eval3ngine Reports workspace" width="1100"></p>
-
-Read two-column PDF previews and open/export full reports. A PDF is a presentation layer, not the sole authority for release claims. Missing lineage on a legacy report is a provenance warning that should be preserved rather than guessed away.
-
-Visible screenshot counts, provider states, model names, run totals, report totals, and chart values are **point-in-time capture state**, not current release metrics. See [GUI & Evidence Guide](docs/GUI_AND_EVIDENCE_GUIDE.md).
-
-## Architecture and trust boundary
-
-<p align="center"><img src="docs/assets/diagrams/system-architecture.svg" alt="Wilson Eval3ngine system architecture" width="1100"></p>
-
-The Python platform separates contracts/orchestration, provider execution, grading/review, metrics/gates, persistence/evidence, security/identity, certification, GUI, and operational/deployment concerns. The supported browser path is also composed in layers: baseline `index.html`/`enhanced.js` plus runtime-injected `ux4`, `ux5`, and `ux6` overlays.
-
-<p align="center"><img src="docs/assets/diagrams/trust-boundaries.svg" alt="Wilson Eval3ngine trust and assurance boundaries" width="1100"></p>
-
-**Implemented source can support an implementation claim. Supported composition can support a supported-path claim. Only executed and retained evidence can support a runtime/certification claim.**
-
-That distinction matters for OIDC, KMS, networking, provider credentials, production certificates, human review, and especially backup/PITR/recovery.
-
-## Important current limitations
-
-### Statistics
-
-`src/wilson_eval3ngine/metrics/engine.py` still exposes a placeholder `p_value=0.5` in one comparison path, and one snapshot helper approximates `prompt_family_count` with run count. Do not make certification-grade significance/independence claims from those paths.
-
-### Persona views
-
-Analyst-view construction now rejects unscoped or cross-project reports before copying metrics/artifact lineage. Executive support/uncertainty aggregate fields are still provisional constants, and the reviewer regex redactor is baseline masking rather than a complete production DLP policy.
-
-### Report serialization
-
-Cross-format report reconciliation now fails closed unless JSON/CSV/HTML carries the exact canonical report hash. Optional Parquet export now fails explicitly when `pyarrow` is unavailable rather than returning a zero-byte artifact. Hash carriage is an integrity/linkage check, not independent semantic proof of every rendered field.
-
-### Backup / PITR / recovery
-
-The native backup subsystem currently contains models, command scaffolding, reconciliation logic, tests, CLI entry points, and runbooks, but it does **not yet establish**:
-
-- encryption of the actual `pg_basebackup` payload;
-- content-based backup integrity/signature verification;
-- durable backup-catalogue persistence across CLI processes;
-- real WAL archival/continuous PITR coverage;
-- actual isolated restore/replay execution.
-
-Do not treat its current metadata or simulated tests as production backup protection. See [Backup and Recovery Runbook](docs/operations/backup-recovery-runbook.md) and GitHub issue #38 for the completion gates.
+Cross-format report reconciliation requires the canonical report hash to survive JSON/CSV/HTML representation. Optional Parquet export fails explicitly when `pyarrow` is unavailable. Hash carriage is a representation-integrity control, not independent semantic proof of every rendered field.
 
 ## Repository map
 
 | Path | Purpose |
 |---|---|
-| `src/wilson_eval3ngine/` | Main package and platform modules. |
-| `src/wilson_eval3ngine/providers/` | Provider abstractions/adapters/destination policy. |
-| `src/wilson_eval3ngine/grading/`, `metrics/`, `statistics/`, `gates/` | Behavior, metrics, uncertainty, comparison, decisions. |
-| `src/wilson_eval3ngine/evidence/`, `storage/`, `reports/`, `security/` | Evidence, rendering, signing, storage/security controls. |
-| `src/wilson_eval3ngine/review/`, `ui/` | Human-review and persona/operator view models. |
-| `src/wilson_eval3ngine/persistence/`, `execution/` | Database state, durable scheduling, execution support. |
-| `src/wilson_eval3ngine/backup/` | **Provisional** database backup/PITR/recovery scaffold. |
-| `src/wilson_eval3ngine/certification/` | Certification requirements/orchestration. |
-| `src/wilson_eval3ngine/gui/`, `gui/static/` | GUI server/composition/browser assets. |
-| `tests/` | Unit, integration, hostile/adversarial, governance, browser, and other checks. |
-| `infrastructure/`, `docker-compose*.yml`, `Dockerfile*` | Deployment/ingress/observability/container material. |
-| `docs/` | Current documentation plus historical design/planning material. |
-| `.archive/` | Superseded/unused artifacts retained for provenance. |
+| `src/wilson_eval3ngine/` | Main application package. |
+| `providers/`, `grading/`, `metrics/`, `statistics/`, `gates/` | Provider execution, behavior, measurement, comparison, and decisions. |
+| `evidence/`, `storage/`, `reports/`, `security/` | Evidence, rendering, signing, storage, and security controls. |
+| `review/`, `ui/`, `gui/` | Human review, persona views, and operator interface. |
+| `persistence/`, `execution/` | Database state and durable execution support. |
+| `backup/` | Encrypted physical backup, WAL archive, PITR planning/execution, and recovery evidence. |
+| `certification/` | Certification requirements and orchestration. |
+| `tests/` | Unit, integration, hostile/adversarial, governance, browser, and runtime-contract checks. |
+| `infrastructure/`, `docker-compose*.yml`, `Dockerfile*` | Deployment, ingress, observability, and container material. |
+| `docs/` | Current documentation plus deliberately preserved historical planning/provenance. |
+| `.archive/` | Superseded/unused artifacts retained outside the live implementation surface. |
 
-## Development and verification
+## Verification
 
 ```bash
 make install
@@ -193,19 +140,17 @@ make test
 make coverage
 ```
 
-`make lint` compiles Python source/tests/scripts, validates active documentation assets (including WebP signatures), and syntax-checks active browser JavaScript layers: `enhanced.js`, `ux4.js`, `ux5.js`, and `ux6.js`. The project configures an 80% overall coverage threshold.
+The normal `CI` workflow is configured for `main` pushes and pull requests. The `Security and quality assurance` workflow is also configured for `main` and adds focused security contracts, privacy-safe repository inventory, full non-runtime/non-browser tests with coverage, distribution inspection, hermetic browser checks, and secure-Compose topology validation.
 
-The GitHub workflow also defines build, supply-chain/security, deterministic-foundation, and scheduled backup-related source checks. A workflow definition is not proof that a particular commit passed it; check the actual run for the exact commit. Backup unit/integration checks are not equivalent to a real encrypted backup/restore exercise.
+A workflow definition is not evidence that a particular revision passed. Use the actual run for the exact commit before making a CI-assured claim.
 
-## Agentic Engineering Origin
+## Documentation and provenance
 
-Wilson Eval3ngine originated from a July 2026 operator-led agentic engineering effort in which **Runndownn / The Repo Operator Arty** used the Geezer Mekanix platform, BinReaper-family agents, Kilo, and free-model coding lanes to demonstrate that bounded agentic workflows can produce rigorous engineering when paired with human architecture, threat modeling, validation gates, evidence preservation, and accountable review. The human operator remained the principal architect and decision authority; agent output was treated as implementation material to inspect, test, constrain, and integrate rather than autonomous release authority.
-
-The original engineering record—including the broader origin narrative, plans, prompts, TODO progression, and historical assessments—remains preserved in the repository documentation/archive. Current product claims should still be made from current source, status documentation, and executed evidence rather than origin/history alone.
+Current product claims belong in current source, [Current Status](docs/STATUS.md), supported operator documentation, and executed evidence. The original plans, prompts, TODO progression, security assessments, and agentic-engineering history remain preserved as provenance and are not rewritten to make earlier forecasts appear current.
 
 ## Contributing and security
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md). Keep credentials, private topology, provider allowlists, raw runtime assurance material, real KMS/backup metadata, and identity details out of public issues, PR text, screenshots, and examples.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md). Keep credentials, private topology, provider allowlists, raw private assurance material, real KMS/backup metadata, and identity details out of public issues, pull-request text, screenshots, and examples.
 
 ## License
 
