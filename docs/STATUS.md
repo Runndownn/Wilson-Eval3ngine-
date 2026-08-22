@@ -10,7 +10,7 @@ This page is the current status authority for public documentation. It exists so
 
 Names such as `examples/experiments/foundation.yaml`, `we3.foundation_result.v1`, and older comments referring to the foundation runner describe the deterministic local/CI vertical slice that established the first complete measurement path. They are not a current whole-project maturity label.
 
-The broader repository contains real-provider paths, durable PostgreSQL scheduling, human review/adjudication, encrypted evaluation-evidence storage, OIDC/project controls, telemetry, deployment/security controls, GUI/operator workflows, and certification orchestration. Backup/PITR/recovery also has substantial scaffolding, but its real encryption/WAL/restore execution is still provisional and is called out separately below. The package version remains `0.1.0`; semantic version alone neither proves immaturity nor certifies production readiness.
+The broader repository contains real-provider paths, durable PostgreSQL scheduling, human review/adjudication, encrypted evaluation-evidence storage, OIDC/project controls, telemetry, deployment/security controls, GUI/operator workflows, and certification orchestration. Backup/PITR/recovery also has substantial scaffolding on this branch, but its real encryption/WAL/restore execution remains a separate completion workstream and is called out below. The package version remains `0.1.0`; semantic version alone neither proves immaturity nor certifies production readiness.
 
 ## Status vocabulary
 
@@ -46,26 +46,36 @@ The broader repository contains real-provider paths, durable PostgreSQL scheduli
 | Prompt-family independence accounting | **Provisional in one snapshot path** | `create_metric_snapshot` currently documents `prompt_family_count=len(run_ids)` as an approximation; certification independence claims must use validated evidence. |
 | Release gate engine | **Implemented / local-lane exercised** | Minimum support, pass/warn/indeterminate/block precedence, and critical unsafe-compliance blocking exist. Threshold authority remains program specific. |
 | Canonical report model and CSV export | **Implemented** | Canonical report hashing and formula-injection-aware CSV export exist. Raw prompts/responses are intentionally omitted from this summary export. |
-| Cross-format report-hash reconciliation | **Implemented** | Reconciliation now fails closed unless JSON/CSV/HTML output carries the exact canonical report hash; carrying the hash is a representation-integrity check, not proof that every field was independently recomputed. |
+| Cross-format report-hash reconciliation | **Implemented** | Reconciliation fails closed unless JSON/CSV/HTML output carries the exact canonical report hash; carrying the hash is a representation-integrity check, not proof that every field was independently recomputed. |
 | Parquet report export | **Implemented as optional capability** | Requires `pyarrow`; missing support is an explicit error rather than a zero-byte artifact. `pyarrow` is not a default package dependency. |
 | Content-addressed local evaluation evidence | **Implemented / local-lane exercised** | Strong development/CI traceability; local filesystem storage alone is not managed production immutability. |
-| Encrypted evaluation-evidence store | **Implemented** | AES-256-GCM envelope-encryption/retention interfaces exist; development `LocalKMSClient` is not a production KMS authority. This is distinct from the provisional database-backup encryption path. |
-| Audit chain | **Implemented** | External checkpoint/trust operation depends on deployment configuration/evidence. |
+| Encrypted evaluation-evidence store | **Implemented** | AES-256-GCM envelope-encryption/retention interfaces exist; development `LocalKMSClient` is not a production KMS authority. This is distinct from the database-backup workstream. |
+| Audit chain | **Implemented / API integrated** | Authenticated API requests and authorization decisions use the hash-linked database ledger on the supported path. External checkpoint/trust operation and real database behavior still require runtime evidence. |
 | Ed25519 dossier signing | **Implemented / local-lane exercised** | Development key generation is not managed production signing identity/key custody. |
 | Durable PostgreSQL scheduler | **Implemented** | Fenced leases, heartbeats, retry/dead-letter behavior, and reconciliation code exist; target workload behavior still needs runtime evidence. |
-| OIDC/project authorization | **Implemented** | Real issuer/JWKS, claims, role mapping, RLS/object policy, revocation, and negative authorization results are environment-specific. |
+| OIDC authentication | **Implemented / API integrated / runtime assurance required** | Supported API composition uses one application-lifetime authenticator, bounded signed claims, restricted algorithms, MFA/project/role checks, and shared Redis-backed revocation in staging/production. `jti` supports invalidation but is not sender-constrained bearer replay prevention. Real issuer/JWKS/key rotation/negative tests remain deployment evidence. |
+| Exact role authorization | **Implemented / API integrated** | Human and `workload:*` roles retain exact canonical identity. Core and extended project routes enter the shared authorization matrix; `system_admin` has no implicit all-powerful API bypass. |
+| Authorization-decision audit | **Implemented / API integrated** | Matrix allow/deny decisions are persisted before an allow returns. Required audit failure blocks protected work with a bounded service-unavailable response. Runtime database failure/concurrency behavior still needs target evidence. |
+| Distributed rate limiting | **Implemented / API integrated / runtime assurance required** | Staging/production require Redis and fail closed when shared rate state is unavailable. Forwarded client identity is trusted only from configured proxy CIDRs; unverified project headers do not select pre-auth buckets; exact client identity is one-way hashed for enforcement and privacy-reduced only for logs. |
+| API idempotency authority | **Implemented / API integrated** | Keys are bounded and project scoped; assurance environments bind request intent atomically in Redis and reject reuse for different intent. Synchronous operation state itself remains process-local. |
+| Browser CORS/CSRF boundary | **Implemented / API integrated** | CORS uses exact origin/preflight allowlists with server-side rejection. Bearer-header OIDC is non-ambient and intentionally CSRF-exempt; a bound HMAC/double-submit control exists for future cookie/session-authenticated mutations. CORS is not authentication. |
+| Streaming request-body limit | **Implemented / API integrated** | Actual ASGI bytes are counted rather than trusting `Content-Length`; deployment testing remains relevant. |
+| Client-safe unexpected errors | **Implemented** | Unexpected client responses use fixed safe codes/messages; detailed diagnostics stay on the server-side logging plane. |
+| Security headers | **Implemented in API and Caddy / runtime assurance required** | CSP, HSTS, COOP, CORP, COEP, frame/MIME/referrer/permissions/cache controls are defined. HSTS `preload` text is not proof of preload-list enrollment or browser compatibility. |
+| External production secret authority | **Implemented / deployment integrated** | Active production composition uses mounted/private secret authority and rejects the development Fernet manager. `.secrets/` is ignored; any credential historically committed remains compromised and must stay rotated. |
+| Production ingress topology | **Implemented templates / runtime assurance required** | Only Caddy publishes host ports; public API diagnostics/schema UI are blocked; Prometheus has no public Caddy route; Caddy overwrites forwarding identity. Exact proxy CIDRs, TLS, firewall and direct-port denial remain target-deployment facts. |
+| Dependency/security scanning | **Configured; execution evidence unavailable** | Dependabot, Bandit, `pip-audit`, repository-native scanning, Trivy workflow definitions, and a manual `make security-check` lane exist. GitHub Actions are disabled at the time of the 2026-08-22 reassessment, so no current automated result is claimed. |
 | GUI secure-default bind policy | **Implemented / integrated** | The supported launcher defaults to loopback and repairs legacy wildcard defaults to `127.0.0.1`. Explicit `WE3_GUI_ALLOW_REMOTE_BIND=1` permits non-loopback binding; that opt-in requires independent authenticated/authorized TLS, firewall, and network assurance. |
 | GUI runtime overlays (`ux4`/`ux5`/`ux6`) | **Implemented / integrated** | The supported server injects these layers into baseline `index.html` before serving `/`; they are active runtime assets even though baseline HTML lacks static script tags for them. |
 | Provider destination policy | **Implemented / GUI integrated** | Application controls reduce risk; network-level egress assurance and deployment allowlists remain environment responsibilities. |
 | GUI secret transport | **Implemented in supported POSIX path** | One-shot secret transport avoids the historical regular plaintext temp file; non-POSIX secure transport remains platform specific. |
-| Streaming request-body limit | **Implemented** | Actual ASGI bytes are counted rather than trusting `Content-Length`; deployment testing remains relevant. |
 | Telemetry/tracing | **Implemented** | Production SLOs, alerts, tracing backends, and evidence must be validated in the running environment. |
-| Backup metadata / recovery models / reconciliation scaffold | **Implemented / provisional** | Models, command scaffolding, restore-plan concepts, reconciliation queries, recovery manifests, tests, and runbooks exist. |
-| Encrypted database backup payload | **Not yet established by current backup manager** | `create_full_backup` invokes `pg_basebackup` but does not currently encrypt the resulting payload even though metadata is marked encrypted. Do not claim KMS-encrypted WE3 backups from this path. |
-| Backup content-integrity verification | **Provisional / insufficient for production** | Current checksum logic hashes the backup directory pathname rather than backup bytes/objects; signature verification also contains an unimplemented branch. |
-| WAL archive / PITR coverage | **Provisional scaffold** | Current WAL method creates metadata and restore planning synthesizes placeholder segment names; continuous real WAL coverage is not yet proven. |
-| Isolated restore execution | **Provisional scaffold** | `execute_isolated_restore` currently logs intent and returns success rather than executing a real restore/replay. |
-| Durable CLI backup catalogue | **Not established by current manager** | Backup metadata is held in an in-process mapping, so separate CLI invocations do not constitute a durable catalogue through this class. |
+| Backup metadata / recovery models / reconciliation scaffold | **Implemented / provisional on this branch** | Models, command scaffolding, restore-plan concepts, reconciliation queries, recovery manifests, tests, and runbooks exist. Separate recovery-completion work must be reviewed/merged independently. |
+| Encrypted database backup payload | **Not established on this branch** | This security branch is based on the current `main` recovery state; do not borrow claims from a separate unmerged recovery branch. |
+| Backup content-integrity verification | **Provisional on this branch** | Apply the recovery status of the exact deployed branch rather than a parallel workstream. |
+| WAL archive / PITR coverage | **Provisional scaffold on this branch** | Continuous real WAL coverage is not claimed by this branch. |
+| Isolated restore execution | **Provisional scaffold on this branch** | Actual restore/replay evidence must come from the recovery workstream and target runtime. |
+| Durable CLI backup catalogue | **Not established on this branch** | Apply the exact branch/release recovery implementation and evidence. |
 | Production Compose/Caddy topology | **Implemented templates** | Intended ingress/source config does not prove deployed firewall/network behavior. |
 | Certification requirements/orchestration | **Implemented** | A release only passes when required evidence is actually satisfied. |
 | Production certification of a specific deployment | **Runtime assurance required** | Public source cannot establish private identities, secrets, provider destinations, certificates, network policy, restores, scans, or runtime results by itself. |
@@ -88,7 +98,19 @@ It does **not** exercise every provider, production scheduler, external KMS/secr
 
 ### Analyst/reviewer scope
 
-The analyst helper now enforces that the canonical report's project matches the authorized project argument and rejects missing project scope. That closes the local view-construction relabelling gap, but authorization must still be enforced at API/service boundaries and backed by real identity/project policy. The reviewer redaction helper is baseline pattern masking, not a production DLP engine.
+The analyst helper enforces that the canonical report's project matches the authorized project argument and rejects missing project scope. That closes the local view-construction relabelling gap, but authorization must still be enforced at API/service boundaries and backed by real identity/project policy. The reviewer redaction helper is baseline pattern masking, not a production DLP engine.
+
+### Synchronous operation state
+
+Redis-backed idempotency preserves the project/key/request-intent binding, but `OperationRegistry` is deliberately process-local in the synchronous API lane. A retry after process restart can therefore receive `idempotency_operation_state_unavailable` instead of silently creating duplicate work. Horizontally scaled long-running execution should use the durable PostgreSQL scheduler rather than treating the synchronous registry as durable state.
+
+### Bearer-token replay boundary
+
+`jti`, expiry, and Redis revocation provide token invalidation. They do not sender-bind an unrevoked bearer token. If the target threat model requires proof-of-possession, that must be designed and validated with the actual identity provider; the repository does not claim ordinary bearer tokens are cryptographically non-replayable.
+
+### Proxy and browser deployment inputs
+
+`WE3_TRUSTED_PROXY_CIDRS` must name only the private Caddy-to-API ranges. Empty is spoof-safe but collapses remote clients into the proxy's rate bucket; overly broad values can reintroduce forwarded-header spoofing. CORS origins must likewise be exact approved browser origins. COEP/CSP/HSTS behavior and Grafana/browser compatibility require runtime validation.
 
 ### Report/export boundaries
 
@@ -96,9 +118,7 @@ Cross-format hash reconciliation checks that JSON, CSV, and HTML representations
 
 ### Backup/PITR/recovery execution
 
-The current backup module should be treated as **design/scaffold plus partial reconciliation implementation**, not production recovery protection. In particular, backup payload encryption, content-based integrity, signed verification, real WAL archival/coverage, durable catalogue persistence, and actual isolated restore execution are incomplete in the current manager. The previous runbook wording overstated these controls and has been replaced with explicit completion gates in [Backup and Recovery Runbook](operations/backup-recovery-runbook.md).
-
-A CI unit/integration test that simulates backup records is source-level evidence; it is not proof that an authorized PostgreSQL instance was backed up, encrypted, restored to a point in time, reconciled, and returned to service under approval.
+This branch does not import assurance claims from the parallel recovery-completion workstream. Production recovery status must be read from the exact release branch being deployed and proven with executed encrypted-backup, WAL, restore, reconciliation, and approval evidence.
 
 ### Calibration and threshold authority
 
@@ -106,7 +126,7 @@ Deterministic grading and gate code do not make every grader or threshold certif
 
 ### Local versus managed evidence controls
 
-Content-addressed local artifacts, local audit data, development signing keys, and the development KMS are appropriate for deterministic development but are not substitutes for managed production storage, key custody, retention/legal hold, secret management, and external audit/checkpoint controls.
+Content-addressed local artifacts, local audit data, development signing keys, and development KMS are appropriate for deterministic development but are not substitutes for managed production storage, key custody, retention/legal hold, secret management, and external audit/checkpoint controls.
 
 ### GUI bind/identity boundary
 
@@ -114,7 +134,9 @@ The supported GUI is **secure-by-default**, not mathematically incapable of remo
 
 ## Security assessment status
 
-`docs/security/MASTER_SECURITY_ASSESSMENT.md` is a valuable **point-in-time security assessment dated 2026-08-01**. Later code/documentation should not present its runtime-pending statements as if they were freshly re-executed on every commit.
+[`docs/security/SECURITY_ASSESSMENT.md`](security/SECURITY_ASSESSMENT.md) is the historical 2026-07-30 finding set. [`docs/security/MASTER_SECURITY_ASSESSMENT.md`](security/MASTER_SECURITY_ASSESSMENT.md) is a point-in-time 2026-08-01 assessment. The current source-level revalidation is [`docs/security/SECURITY_REASSESSMENT_2026-08-22.md`](security/SECURITY_REASSESSMENT_2026-08-22.md).
+
+GitHub Actions are disabled at the time of the current reassessment. Workflow files are therefore definitions, not current execution evidence. The manual security lane is documented in the reassessment and `SECURITY.md`; no unobserved command is represented as passing.
 
 `docs/security/PRIVATE_RUNTIME_ASSURANCE.md` remains the enduring contract for what public source can prove versus what must be verified privately. Raw private evidence should stay outside the public repository while bounded outcomes/fingerprints can be published where appropriate.
 
@@ -128,6 +150,6 @@ The original `docs/Plans_/` and `docs/08-planning/Plans_/` material remains in p
 
 ## Current release statement
 
-> **Wilson Eval3ngine `0.1.0` is an active evidence-first LLM evaluation platform in pre-production assurance. The deterministic local evaluation lane and many provider, scheduling, review, security, evidence, reporting, GUI, and certification components are implemented, while explicitly documented statistical, persona-view, backup/PITR, and private-runtime areas remain provisional or evidence-dependent. Production certification must be established for the exact release/deployment being approved.**
+> **Wilson Eval3ngine `0.1.0` is an active evidence-first LLM evaluation platform in pre-production assurance. The deterministic local evaluation lane and many provider, scheduling, review, security, evidence, reporting, GUI, and certification components are implemented, while explicitly documented statistical, persona-view, recovery, and private-runtime areas remain provisional or evidence-dependent. Production certification must be established for the exact release/deployment being approved.**
 
-See [Architecture](ARCHITECTURE.md) for component relationships, [Getting Started](GETTING_STARTED.md) for the first safe run, [GUI & Evidence Guide](GUI_AND_EVIDENCE_GUIDE.md) for the operator/evidence model, and [Backup and Recovery Runbook](operations/backup-recovery-runbook.md) for the current recovery completion boundary.
+See [Architecture](ARCHITECTURE.md) for component relationships, [Getting Started](GETTING_STARTED.md) for the first safe run, [GUI & Evidence Guide](GUI_AND_EVIDENCE_GUIDE.md) for the operator/evidence model, [Current Security Reassessment](security/SECURITY_REASSESSMENT_2026-08-22.md) for the active security findings/status, and [Backup and Recovery Runbook](operations/backup-recovery-runbook.md) for the recovery boundary of the exact branch being reviewed.
