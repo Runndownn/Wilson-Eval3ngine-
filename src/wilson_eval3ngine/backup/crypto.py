@@ -1,15 +1,15 @@
 """Streaming envelope encryption for backup payloads.
 
 Backup payloads can be much larger than ordinary evidence artifacts, so this
-module deliberately avoids loading an entire physical backup into memory. AES-
-256-GCM protects confidentiality and authenticity while the KMS protocol wraps
-the one-time data-encryption key (DEK).
+module avoids loading an entire physical backup into memory. AES-256-GCM
+protects confidentiality and authenticity while the KMS protocol wraps the
+one-time data-encryption key (DEK).
 
-The envelope retains both the operator-supplied key reference and the bounded
-resolved KMS identity. KMS operations prefer an immutable resolved ARN/key ID
-when the adapter supplies one. This prevents a later alias retarget from making
-an otherwise valid historical backup undecryptable or accidentally resolving it
-to a different key.
+This implementation intentionally caps a single GCM message. GCM has a finite
+per-IV invocation bound; silently streaming arbitrarily large database backups
+through one nonce would create a cryptographic correctness hazard. Deployments
+that need objects above this conservative bound must use a chunked/object-store
+backup service rather than bypassing the guard.
 """
 
 from __future__ import annotations
@@ -27,6 +27,10 @@ from ..storage.encrypted_store import KMSClient
 
 
 CHUNK_SIZE = 1024 * 1024
+# NIST SP 800-38D limits GCM plaintext length for one invocation to less than
+# 2^39-256 bits. Stay one full application chunk below that theoretical ceiling
+# so the guard is simple and conservative.
+MAX_GCM_PLAINTEXT_BYTES = (1 << 36) - CHUNK_SIZE
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,7 +53,7 @@ class EncryptionEnvelope:
 
     @classmethod
     def from_dict(cls, value: dict[str, object]) -> "EncryptionEnvelope":
-        return cls(
+        envelope = cls(
             algorithm=str(value["algorithm"]),
             key_id=str(value["key_id"]),
             kms_identity=dict(value.get("kms_identity") or {}),
@@ -61,6 +65,13 @@ class EncryptionEnvelope:
             plaintext_size_bytes=int(value["plaintext_size_bytes"]),
             ciphertext_size_bytes=int(value["ciphertext_size_bytes"]),
         )
+        if envelope.plaintext_size_bytes < 0 or envelope.ciphertext_size_bytes < 0:
+            raise BackupEncryptionError("Backup encryption sizes must be non-negative")
+        if envelope.plaintext_size_bytes > MAX_GCM_PLAINTEXT_BYTES:
+            raise BackupEncryptionError(
+                "Backup payload exceeds the supported single-message AES-GCM bound"
+            )
+        return envelope
 
 
 class BackupEncryptionError(RuntimeError):
@@ -87,6 +98,20 @@ def _operation_key_id(
     return requested_key_id
 
 
+def _decode_metadata(value: str, *, field_name: str, expected_length: int | None = None) -> bytes:
+    try:
+        decoded = base64.b64decode(value, validate=True)
+    except Exception as exc:
+        raise BackupEncryptionError(
+            f"Backup encryption metadata field {field_name!r} is malformed"
+        ) from exc
+    if expected_length is not None and len(decoded) != expected_length:
+        raise BackupEncryptionError(
+            f"Backup encryption metadata field {field_name!r} has an invalid length"
+        )
+    return decoded
+
+
 def encrypt_stream(
     source: BinaryIO,
     destination: Path,
@@ -95,11 +120,13 @@ def encrypt_stream(
     key_id: str,
     kms_identity: dict[str, object],
 ) -> EncryptionEnvelope:
-    """Encrypt a binary stream to ``destination`` using AES-256-GCM."""
+    """Encrypt a binary stream to ``destination`` using one bounded AES-256-GCM message."""
     operation_key_id = _operation_key_id(key_id, kms_identity)
     dek, encrypted_dek = kms_client.generate_data_key(operation_key_id)
     if len(dek) != 32:
         raise BackupEncryptionError("KMS returned a DEK that is not 256 bits")
+    if not encrypted_dek:
+        raise BackupEncryptionError("KMS returned an empty wrapped DEK")
 
     nonce = os.urandom(12)
     encryptor = Cipher(algorithms.AES(dek), modes.GCM(nonce)).encryptor()
@@ -112,8 +139,12 @@ def encrypt_stream(
     try:
         with destination.open("xb") as target:
             for chunk in _iter_chunks(source):
-                plaintext_digest.update(chunk)
                 plaintext_size += len(chunk)
+                if plaintext_size > MAX_GCM_PLAINTEXT_BYTES:
+                    raise BackupEncryptionError(
+                        "Backup payload exceeds the supported single-message AES-GCM bound"
+                    )
+                plaintext_digest.update(chunk)
                 encrypted = encryptor.update(chunk)
                 if encrypted:
                     target.write(encrypted)
@@ -130,9 +161,8 @@ def encrypt_stream(
         destination.unlink(missing_ok=True)
         raise
     finally:
-        # Python bytes cannot be reliably zeroized in place. Drop the explicit
-        # reference promptly and rely on the KMS-scoped DEK lifetime rather
-        # than claiming memory zeroization that Python cannot guarantee.
+        # Python immutable bytes cannot be reliably zeroized in place. Drop the
+        # explicit reference promptly without claiming memory erasure guarantees.
         dek = b""
 
     return EncryptionEnvelope(
@@ -169,6 +199,8 @@ def encrypt_file(
 
 def verify_ciphertext(path: Path, envelope: EncryptionEnvelope) -> bool:
     """Verify the immutable ciphertext identity without decrypting it."""
+    if envelope.ciphertext_size_bytes < 0:
+        return False
     digest = hashlib.sha256()
     size = 0
     try:
@@ -196,15 +228,29 @@ def decrypt_file(
         raise BackupEncryptionError(
             f"Unsupported backup encryption algorithm: {envelope.algorithm}"
         )
+    if envelope.plaintext_size_bytes > MAX_GCM_PLAINTEXT_BYTES:
+        raise BackupEncryptionError(
+            "Backup payload exceeds the supported single-message AES-GCM bound"
+        )
     if not verify_ciphertext(source, envelope):
         raise BackupEncryptionError("Encrypted backup payload digest/size mismatch")
 
-    try:
-        encrypted_dek = base64.b64decode(envelope.encrypted_dek_base64, validate=True)
-        nonce = base64.b64decode(envelope.nonce_base64, validate=True)
-        tag = base64.b64decode(envelope.tag_base64, validate=True)
-    except Exception as exc:
-        raise BackupEncryptionError("Backup encryption metadata is malformed") from exc
+    encrypted_dek = _decode_metadata(
+        envelope.encrypted_dek_base64,
+        field_name="encrypted_dek_base64",
+    )
+    if not encrypted_dek:
+        raise BackupEncryptionError("Backup encryption metadata contains an empty wrapped DEK")
+    nonce = _decode_metadata(
+        envelope.nonce_base64,
+        field_name="nonce_base64",
+        expected_length=12,
+    )
+    tag = _decode_metadata(
+        envelope.tag_base64,
+        field_name="tag_base64",
+        expected_length=16,
+    )
 
     operation_key_id = _operation_key_id(envelope.key_id, envelope.kms_identity)
     dek = kms_client.decrypt(operation_key_id, encrypted_dek)
@@ -220,18 +266,28 @@ def decrypt_file(
             for chunk in _iter_chunks(encrypted):
                 clear = decryptor.update(chunk)
                 if clear:
+                    plaintext_size += len(clear)
+                    if plaintext_size > MAX_GCM_PLAINTEXT_BYTES:
+                        raise BackupEncryptionError(
+                            "Decrypted backup exceeds the supported AES-GCM bound"
+                        )
                     plaintext.write(clear)
                     plaintext_digest.update(clear)
-                    plaintext_size += len(clear)
             final = decryptor.finalize()
             if final:
+                plaintext_size += len(final)
+                if plaintext_size > MAX_GCM_PLAINTEXT_BYTES:
+                    raise BackupEncryptionError(
+                        "Decrypted backup exceeds the supported AES-GCM bound"
+                    )
                 plaintext.write(final)
                 plaintext_digest.update(final)
-                plaintext_size += len(final)
             plaintext.flush()
             os.fsync(plaintext.fileno())
     except Exception as exc:
         destination.unlink(missing_ok=True)
+        if isinstance(exc, BackupEncryptionError):
+            raise
         raise BackupEncryptionError("Backup payload decryption/authentication failed") from exc
     finally:
         dek = b""
@@ -246,7 +302,9 @@ def decrypt_file(
 
 __all__ = [
     "BackupEncryptionError",
+    "CHUNK_SIZE",
     "EncryptionEnvelope",
+    "MAX_GCM_PLAINTEXT_BYTES",
     "decrypt_file",
     "encrypt_file",
     "encrypt_stream",
