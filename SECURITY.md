@@ -2,7 +2,7 @@
 
 ## Current security position
 
-Wilson Eval3ngine `0.1.0` is an **active evaluation platform in pre-production assurance**. The repository contains substantial security, identity, evidence-protection, deployment, and certification implementations, but source code alone does not certify a production environment. Production use must satisfy the applicable repository checks plus the private runtime-assurance contract for the exact deployment.
+Wilson Eval3ngine `0.1.0` is an **active evaluation platform in pre-production assurance**. The repository contains substantial security, identity, evidence-protection, deployment, recovery, and certification implementations, but source code alone does not certify a production environment. Production use must satisfy the applicable repository checks plus the private runtime-assurance contract for the exact deployment.
 
 The deterministic local `foundation` lane remains intentionally constrained and should not be connected to real production credentials, sensitive corpora, personal data, or release authority merely because it is easy to run. See [`docs/STATUS.md`](docs/STATUS.md) for the current implementation/assurance matrix and [`docs/security/PRIVATE_RUNTIME_ASSURANCE.md`](docs/security/PRIVATE_RUNTIME_ASSURANCE.md) for the public/private evidence boundary.
 
@@ -19,7 +19,7 @@ The deterministic local `foundation` lane remains intentionally constrained and 
 - The operator GUI is **secure-by-default on loopback**. Non-loopback binding requires the explicit `WE3_GUI_ALLOW_REMOTE_BIND=1` override plus independent authenticated/authorized TLS and network controls.
 - Provider destination checks do not replace host/container network egress policy.
 - A Boolean metadata field is not proof of encryption; cryptographic/storage evidence must match the actual payload.
-- A restore plan or successful scaffold test is not proof that a restore occurred.
+- A restore plan is not proof that a restore executed; successful recovery requires the restore target to be reached and reconciliation to pass.
 - Repository implementation is not deployment proof; required runtime evidence must be executed and retained.
 
 ## Authentication and authorization
@@ -62,27 +62,33 @@ Untrusted prompts, outputs, attachments, report text, Markdown, filenames, and p
 
 ## Evidence, audit, reporting, and cryptography
 
-The evaluation path uses content-addressed artifacts, audit-chain primitives, and Ed25519 signing for dossier integrity. The broader **evaluation evidence** storage layer includes AES-256-GCM envelope-encryption behavior and retention/legal-hold interfaces.
+The evaluation path uses content-addressed artifacts, audit-chain primitives, and Ed25519 signing for dossier integrity. The broader evaluation-evidence storage layer includes AES-256-GCM envelope-encryption behavior and retention/legal-hold interfaces.
 
-That implemented evidence-store encryption must not be confused with the current **database backup** path. The backup manager's present `pg_basebackup` scaffold does not encrypt the generated backup payload even though its metadata is marked encrypted, and its current checksum is not a content checksum. Backup/PITR/restore must therefore remain provisional until the completion gates in [`docs/operations/backup-recovery-runbook.md`](docs/operations/backup-recovery-runbook.md) are implemented and exercised.
+The backup path now applies the same envelope-encryption principle to physical PostgreSQL data through a streaming implementation appropriate for large backups. `pg_basebackup` stdout is encrypted directly with a one-time AES-256-GCM data key, while the configured KMS retains the wrapped DEK. The signed canonical manifest binds plaintext/ciphertext hashes, KMS identity, PostgreSQL system/timeline/WAL identity, and storage version. Verification requires a trusted signer and then verifies manifest hash/signature, ciphertext identity, KMS unwrap, AEAD authentication, and decrypted plaintext identity.
 
-Cross-format report reconciliation now requires JSON, CSV, and HTML representations to carry the exact canonical report hash instead of returning unconditional success. This is a representation-integrity check; it is not a substitute for validating the meaning of every rendered field.
+The repository includes an AWS KMS adapter for production-oriented backup use. `LocalKMSClient` remains development/test only, and the backup CLI requires an explicit opt-in before selecting it. A production deployment must still prove its KMS IAM policy, key rotation/revocation/custody, storage durability, retention, object lock/legal hold where required, and recovery authorization in the target environment.
 
-Development key generation and `LocalKMSClient` are explicitly not production key custody. Production storage, KMS, retention, audit checkpoints, trust registry, rotation, revocation, backup, and restore controls must be selected and validated in the target environment.
+Cross-format report reconciliation requires JSON, CSV, and HTML representations to carry the exact canonical report hash. This is a representation-integrity check; it is not a substitute for validating the meaning of every rendered field.
+
+### Audit failure semantics
+
+The persistent `AuditLedger` raises when an append fails. `AuditService.log_event()` is a higher-level **non-blocking** wrapper: it catches that exception, logs `audit_event_failed`, and returns an empty string. Code that requires audit persistence as a precondition for a security-sensitive operation must therefore check the returned event hash or call the ledger/another fail-closed policy boundary; it must not assume the `AuditService` wrapper automatically aborts the surrounding operation. This is intentionally stated plainly because calling the current wrapper “fail-closed” would misdescribe its behavior.
+
+Recovery reconciliation does not rely on the presence of non-empty event-hash fields. It recomputes each project's chain using the same canonical event-hash function used by normal audit writes and requires the terminal roots to match the trusted signed recovery baseline.
 
 ## Backup and recovery security boundary
 
-Do not rely on the current WE3 backup CLI/scaffold as the sole protection for production evidence. A production recovery claim requires, at minimum:
+The native recovery path is now implemented, but its security properties depend on several independent checks rather than a single success flag.
 
-- actual encrypted backup objects and KMS/version evidence;
-- deterministic content/object manifests and verified signatures;
-- a durable backup catalogue;
-- real WAL capture and continuous PITR coverage;
-- an executed isolated restore/replay;
-- cryptographic audit-chain and evidence reconciliation;
-- independent approval before restored release authority resumes.
+A backup is eligible for restore only when its catalogue identity, canonical manifest hash, Ed25519 signature, trusted signer fingerprint, ciphertext SHA-256/size, KMS-wrapped key, AES-GCM tag, decrypted plaintext SHA-256/size, PostgreSQL system identifier, timeline, and WAL properties agree. Actual PostgreSQL WAL files are archived through the same encrypted/signed model, and restore planning rejects a missing base segment, timeline mismatch, or non-contiguous sequence instead of inventing placeholder WAL names.
 
-A simulated backup record in a unit/integration test is useful source-level verification, not runtime restore evidence.
+A restore is loopback-only, requires an empty data directory, authenticates/decrypts every selected object, safely extracts the physical backup, configures PostgreSQL recovery, starts the restored server with `pg_ctl`, waits for the requested timestamp/LSN and promotion, and then reconciles the restored state to a trusted signed baseline. Pending outbox state comes from the actual `outbox_events` table, provenance comes from `provenance_edges`, and audit chains are recomputed cryptographically. A discrepancy prevents a successful recovery result.
+
+The dedicated operator interface is `we3-backup`; it does not silently fall back to SQLite or a local development KMS. See [`docs/operations/backup-recovery-runbook.md`](docs/operations/backup-recovery-runbook.md) for the workflow and failure interpretation.
+
+These source controls still do not prove production disaster recovery. A production claim additionally needs evidence about the real KMS authority, backup storage durability/immutability/replication, PostgreSQL archive operation, database size and workload, network isolation, restore duration, external artifact stores, operator approvals, and return-to-service process. The configured 15-minute RPO and four-hour RTO remain objectives until measured on that environment.
+
+The current native streaming path rejects user-defined PostgreSQL tablespaces because restoring external tablespace topology safely requires deployment-specific storage mapping. Treat that rejection as a safety boundary rather than disabling it to force an unsupported restore.
 
 ## Production-oriented deployment
 
@@ -98,7 +104,7 @@ Private runtime evidence such as real identities, certificates, provider destina
 
 ## Historical security material
 
-[`docs/security/MASTER_SECURITY_ASSESSMENT.md`](docs/security/MASTER_SECURITY_ASSESSMENT.md) is a point-in-time assessment dated 2026-08-01 and should be read against the branch/head it reviewed. ADRs, Plans/TODOs, evidence inventories, and Phase-1 reports preserve useful history but do not automatically describe the latest implementation or runtime state.
+[`docs/security/MASTER_SECURITY_ASSESSMENT.md`](docs/security/MASTER_SECURITY_ASSESSMENT.md) is a point-in-time assessment dated 2026-08-01 and should be read against the branch/head it reviewed. Recovery implementation added after that assessment does not retroactively change what the historical assessment observed. ADRs, Plans/TODOs, evidence inventories, and Phase-1 reports likewise preserve useful history but do not automatically describe the latest implementation or runtime state.
 
 ## Reporting vulnerabilities
 
