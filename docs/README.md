@@ -12,12 +12,12 @@ This directory contains current product/operator documentation **and** historica
 | [Current Status](STATUS.md) | Determine what is implemented, integrated, provisional, historical, or still dependent on private runtime assurance. |
 | [GUI & Evidence Guide](GUI_AND_EVIDENCE_GUIDE.md) | Use the current five-workspace UI and interpret charts/reports without confusing inventory, demos, or screenshots with release evidence. |
 | [Provider & Local Model Setup](operations/api-key-local-model-setup.md) | Configure hosted providers, intentional local/private gateways, Ollama, and CLI-backed model access safely. |
-| [Current Security Reassessment](security/SECURITY_REASSESSMENT_2026-08-22.md) | Revalidate the July 30 findings against the current security branch, including root-cause fixes, residual bearer/proxy/runtime risks, and the manual validation contract while GitHub Actions are disabled. |
+| [Current Security Reassessment](security/SECURITY_REASSESSMENT_2026-08-22.md) | Revalidate the July 30 findings against current source, including root-cause fixes, residual bearer/proxy/runtime risks, and manual/runtime validation requirements. |
 | [Private Runtime Assurance](security/PRIVATE_RUNTIME_ASSURANCE.md) | Understand which production facts belong in private runtime evidence rather than the public repository. |
 | [Master Security Assessment](security/MASTER_SECURITY_ASSESSMENT.md) | Review the detailed 2026-08-01 point-in-time assessment and the branch/head it evaluated; do not use it as a substitute for the current reassessment. |
 | [Documentation Audit](DOCUMENTATION_AUDIT.md) | See how documentation was reconciled against code and what stale claims/assets were corrected. |
 
-The root [README](../README.md) is the public entry point. It gives the minimum complete mental model; the documents above add operational and assurance detail without requiring a reader to reverse-engineer the plans or source tree first.
+The root [README](../README.md) is the public entry point and authoritative high-level narrative. It explains the project identity, current implementation, architecture, operator flow, agentic-engineering origin, version progression, and evidence-based development timeline; the documents above add operational and assurance detail.
 
 ## Source-of-truth rules
 
@@ -30,7 +30,7 @@ A useful precedence model is:
 3. retained run evidence for what a specific evaluation/deployment actually demonstrated;
 4. historical plans, screenshots, reports, and archives for provenance only.
 
-The package version remains `0.1.0`, but the repository is not accurately described as only “the foundation.” `foundation` names the retained deterministic local lane; the broader repository includes real-provider paths, durable scheduling, review/adjudication, encrypted storage, identity/security, operations, recovery, certification, and deployment capabilities.
+The package version is `0.2.0`. `foundation` remains the name of the retained deterministic local lane and the historical `0.1.0` milestone; the broader repository now includes real-provider paths, durable scheduling, review/adjudication, encrypted storage, identity/security, operations, recovery, certification, and deployment capabilities.
 
 ## Historical planning and TODO material
 
@@ -53,7 +53,9 @@ docs/assets/
 ├── brand/
 │   └── wilson-eval3ngine-logo.png
 ├── diagrams/
+│   ├── development-gantt.svg
 │   ├── evaluation-pipeline.svg
+│   ├── generation-workflow.svg
 │   ├── system-architecture.svg
 │   └── trust-boundaries.svg
 ├── gui/
@@ -72,6 +74,8 @@ docs/assets/
 └── charts/
     └── *.png
 ```
+
+`diagrams/generation-workflow.svg` explains the current Generate-to-evidence control path. `diagrams/development-gantt.svg` is an evidence-based July 14–August 22 history view derived from Git milestones rather than arbitrary file timestamps.
 
 `gui/current/` is the canonical five-workspace walkthrough matching the current UI: **Endpoints → Models → Generate → Charts → Reports**. The six PNGs in the parent `gui/` directory are retained historical point-in-time screenshots. Prompt-package controls are now explained as part of **Generate**, while PDF viewing is part of **Reports**.
 
