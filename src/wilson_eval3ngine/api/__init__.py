@@ -35,6 +35,12 @@ if "If-Match" not in _middleware.CORS_ALLOWED_HEADERS:
         "If-Match",
     ]
 
+# Self-revocation is an authenticated bodyless POST. Requiring a fabricated JSON
+# Content-Type/body adds no parser protection and creates a false client contract.
+_middleware.ContentTypeValidationMiddleware._JSON_ENDPOINTS.discard(
+    "/v1/auth/revoke"
+)
+
 # Authentication/security-state endpoints receive a deliberately lower bound
 # than normal API work. Readiness remains bounded as an internal operational
 # endpoint even though Caddy does not publish it on the public API hostname.
