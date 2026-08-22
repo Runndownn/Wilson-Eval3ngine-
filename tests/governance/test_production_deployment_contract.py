@@ -167,19 +167,23 @@ def test_stock_caddy_contract_has_no_optional_plugin_directives() -> None:
     assert "admin off" in text
     assert "protocols tls1.2 tls1.3" in text
     assert "reverse_proxy api:8000" in text
-    assert "reverse_proxy prometheus:9090" in text
     assert "reverse_proxy grafana:3000" in text
 
 
-def test_proxy_headers_are_site_scoped_and_metrics_are_restricted() -> None:
+def test_proxy_security_headers_are_explicit() -> None:
     text = CADDYFILE.read_text(encoding="utf-8")
     assert "(security_headers)" in text
     assert 'Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"' in text
     assert 'Cross-Origin-Opener-Policy "same-origin"' in text
     assert 'Cross-Origin-Resource-Policy "same-origin"' in text
     assert 'Cross-Origin-Embedder-Policy "require-corp"' in text
-    assert "@private_clients remote_ip" in text
-    assert 'respond "Forbidden" 403' in text
+
+
+def test_prometheus_has_no_public_caddy_route() -> None:
+    text = CADDYFILE.read_text(encoding="utf-8")
+    assert "metrics.{$WE3_DOMAIN}" not in text
+    assert "reverse_proxy prometheus:9090" not in text
+    assert _compose()["networks"]["observability"]["internal"] is True
 
 
 def test_public_api_host_blocks_diagnostics_and_overwrites_forwarded_identity() -> None:
