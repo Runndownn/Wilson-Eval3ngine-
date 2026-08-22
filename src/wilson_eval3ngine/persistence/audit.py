@@ -4,7 +4,7 @@ import hashlib
 import threading
 from collections import defaultdict
 from contextlib import nullcontext
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Protocol
 
 from sqlalchemy import select, text
@@ -13,16 +13,18 @@ from .database import AuditEventRow, Database
 from ..util import new_id, sha256_hex, utc_now
 
 
-def _timestamp_token(value):
+def _coerce_utc(value: Any) -> datetime:
     if isinstance(value, str):
-        # SQLite/raw-SQL callers may surface textual timestamps. Normalizing
-        # through datetime keeps verification aligned with ORM/PostgreSQL rows.
-        from datetime import datetime
-
         value = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    if value.tzinfo is not None:
-        value = value.astimezone(timezone.utc).replace(tzinfo=None)
-    return value.isoformat(timespec="microseconds")
+    if not isinstance(value, datetime):
+        raise TypeError("audit timestamp must be a datetime or ISO timestamp")
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _timestamp_token(value: Any) -> str:
+    return _coerce_utc(value).replace(tzinfo=None).isoformat(timespec="microseconds")
 
 
 class AuditRecord(Protocol):
@@ -152,11 +154,13 @@ class AuditLedger:
                 previous_hash = previous.event_hash if previous else None
                 event_id = new_id("audit")
                 occurred_at = utc_now()
-                if previous is not None and occurred_at <= previous.created_at:
-                    # Verification orders by timestamp + id. A strictly
-                    # increasing timestamp makes the hash-chain order stable
-                    # even if two appends happen inside one clock microsecond.
-                    occurred_at = previous.created_at + timedelta(microseconds=1)
+                if previous is not None:
+                    previous_time = _coerce_utc(previous.created_at)
+                    if occurred_at <= previous_time:
+                        # Verification orders by timestamp + id. A strictly
+                        # increasing timestamp makes the hash-chain order stable
+                        # even if two appends happen inside one clock microsecond.
+                        occurred_at = previous_time + timedelta(microseconds=1)
 
                 event_hash = compute_audit_event_hash(
                     event_id=event_id,
