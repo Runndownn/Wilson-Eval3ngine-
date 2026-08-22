@@ -15,6 +15,10 @@ from wilson_eval3ngine.api.security_middleware import (
 from wilson_eval3ngine.config import Settings
 from wilson_eval3ngine.persistence.audit import AuditLedger
 from wilson_eval3ngine.persistence.database import Database
+from wilson_eval3ngine.security.authorization import (
+    AuthorizationError,
+    check_authorization,
+)
 from wilson_eval3ngine.security.csrf import CSRFProtection
 from wilson_eval3ngine.security.oidc import TokenRevocationList, TokenValidationError
 from wilson_eval3ngine.security.rate_limit import (
@@ -50,6 +54,7 @@ def test_pre_auth_rate_key_does_not_require_project_identity() -> None:
     first = build_rate_limit_key("198.51.100.9", "/v1/experiments:run")
     second = build_rate_limit_key("198.51.100.9", "/v1/experiments:run")
     assert first == second
+    assert "198.51.100.9" not in first
     assert "project:" not in first
 
 
@@ -86,12 +91,14 @@ def test_revocation_preserves_requested_remaining_lifetime() -> None:
     )
 
 
-def test_csrf_tokens_are_unique_even_when_issued_close_together() -> None:
+def test_csrf_tokens_are_unique_while_preserving_two_part_compatibility() -> None:
     protection = CSRFProtection(secret="unit-test-secret-with-sufficient-length")
     first = protection.generate_token()
     second = protection.generate_token()
     assert first != second
-    assert len(first.split(".")) == 3
+    timestamp, proof = first.split(".", 1)
+    assert timestamp.isdigit()
+    assert ":" in proof
     assert protection.validate_token(first, first) is True
 
 
@@ -137,6 +144,30 @@ def test_allowed_cors_origin_receives_exact_origin_not_wildcard() -> None:
     assert response.headers["Access-Control-Allow-Origin"] != "*"
 
 
+def test_cors_preflight_can_authorize_conditional_if_match_header() -> None:
+    app = FastAPI()
+    app.add_middleware(
+        StrictCORSMiddleware,
+        allowed_origins=("https://allowed.example",),
+        allowed_headers=("Authorization", "Content-Type", "If-Match"),
+    )
+
+    @app.patch("/resource")
+    def patch_resource() -> dict[str, bool]:
+        return {"ok": True}
+
+    response = TestClient(app).options(
+        "/resource",
+        headers={
+            "Origin": "https://allowed.example",
+            "Access-Control-Request-Method": "PATCH",
+            "Access-Control-Request-Headers": "If-Match, Authorization",
+        },
+    )
+    assert response.status_code == 204
+    assert "if-match" in response.headers["Access-Control-Allow-Headers"].lower()
+
+
 def test_bad_idempotency_header_is_rejected_before_route_side_effect() -> None:
     app = FastAPI()
     mutations: list[str] = []
@@ -169,6 +200,19 @@ def test_production_settings_require_distributed_security_state() -> None:
     )
     with pytest.raises(ValueError, match="WE3_REDIS_URL"):
         settings.validate_for_production()
+
+
+def test_workload_role_prefix_is_part_of_authorization_identity() -> None:
+    assert check_authorization("workload:api", "jobs", "create") is True
+    with pytest.raises(AuthorizationError):
+        check_authorization("api", "jobs", "create")
+    with pytest.raises(AuthorizationError):
+        check_authorization("workload:api", "exports", "create")
+
+
+def test_unlisted_system_admin_role_does_not_gain_implicit_api_authority() -> None:
+    with pytest.raises(AuthorizationError):
+        check_authorization("system_admin", "experiments", "read")
 
 
 def test_sqlite_audit_chain_serializes_concurrent_project_appends(tmp_path) -> None:
