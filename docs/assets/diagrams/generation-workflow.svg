@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="940" viewBox="0 0 1600 940" role="img" aria-labelledby="title desc">
+  <title id="title">Wilson Eval3ngine generation workflow</title>
+  <desc id="desc">Architecture flow from the Generate operator workspace through validated workload definition, provider execution, evidence capture, grading, metrics, gates, charts, reports, and review.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0 0 L12 6 L0 12 z" fill="#58a6ff"/></marker>
+    <marker id="greenArrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0 0 L12 6 L0 12 z" fill="#3fb950"/></marker>
+    <style>
+      .title{font:700 34px Arial,sans-serif;fill:#f0f6fc}.subtitle{font:400 18px Arial,sans-serif;fill:#8b949e}
+      .h{font:700 19px Arial,sans-serif;fill:#f0f6fc}.t{font:400 15px Arial,sans-serif;fill:#c9d1d9}.small{font:400 14px Arial,sans-serif;fill:#8b949e}
+      .box{fill:#161b22;stroke:#30363d;stroke-width:2}.accent{fill:#111820;stroke:#58a6ff;stroke-width:2}.good{fill:#111820;stroke:#3fb950;stroke-width:2}.warn{fill:#18140f;stroke:#d29922;stroke-width:2}
+      .lane{fill:none;stroke:#30363d;stroke-width:2;stroke-dasharray:8 8}.a{fill:none;stroke:#58a6ff;stroke-width:3;marker-end:url(#arrow)}.g{fill:none;stroke:#3fb950;stroke-width:3;marker-end:url(#greenArrow)}
+    </style>
+  </defs>
+  <rect width="1600" height="940" rx="28" fill="#0d1117"/>
+  <text x="800" y="54" text-anchor="middle" class="title">Generate → governed evaluation evidence</text>
+  <text x="800" y="84" text-anchor="middle" class="subtitle">The operator declares workload scope first; every later result remains linked to that definition.</text>
+
+  <rect x="55" y="120" width="1490" height="205" rx="22" class="lane"/>
+  <text x="80" y="151" class="small">OPERATOR / CONTROL PLANE</text>
+
+  <rect x="95" y="175" width="280" height="115" rx="16" class="accent"/>
+  <text x="235" y="208" text-anchor="middle" class="h">Generate workspace</text>
+  <text x="235" y="237" text-anchor="middle" class="t">Exact model IDs</text>
+  <text x="235" y="260" text-anchor="middle" class="t">Prompt package / custom prompts</text>
+  <text x="235" y="283" text-anchor="middle" class="t">Execution mode</text>
+
+  <rect x="485" y="175" width="300" height="115" rx="16" class="box"/>
+  <text x="635" y="208" text-anchor="middle" class="h">Scope review</text>
+  <text x="635" y="237" text-anchor="middle" class="t">Model count + prompt count</text>
+  <text x="635" y="260" text-anchor="middle" class="t">Total request volume</text>
+  <text x="635" y="283" text-anchor="middle" class="t">Provider / destination lineage</text>
+
+  <rect x="895" y="175" width="305" height="115" rx="16" class="box"/>
+  <text x="1047" y="208" text-anchor="middle" class="h">Contract validation</text>
+  <text x="1047" y="237" text-anchor="middle" class="t">Experiment + dataset identity</text>
+  <text x="1047" y="260" text-anchor="middle" class="t">Policy / rubric references</text>
+  <text x="1047" y="283" text-anchor="middle" class="t">Score-affecting configuration</text>
+
+  <rect x="1310" y="175" width="190" height="115" rx="16" class="good"/>
+  <text x="1405" y="208" text-anchor="middle" class="h">Work identity</text>
+  <text x="1405" y="237" text-anchor="middle" class="t">Logical run key</text>
+  <text x="1405" y="260" text-anchor="middle" class="t">Idempotency scope</text>
+  <text x="1405" y="283" text-anchor="middle" class="t">Evidence lineage</text>
+
+  <path d="M375 233 H470" class="a"/><path d="M785 233 H880" class="a"/><path d="M1200 233 H1295" class="g"/>
+
+  <rect x="55" y="355" width="1490" height="295" rx="22" class="lane"/>
+  <text x="80" y="386" class="small">EXECUTION / EVIDENCE PLANE</text>
+
+  <rect x="95" y="420" width="260" height="150" rx="16" class="box"/>
+  <text x="225" y="453" text-anchor="middle" class="h">Expectation compiler</text>
+  <text x="225" y="482" text-anchor="middle" class="t">Expected treatment fixed</text>
+  <text x="225" y="505" text-anchor="middle" class="t">before provider output</text>
+  <text x="225" y="535" text-anchor="middle" class="small">Failure remains reliability evidence</text>
+
+  <rect x="435" y="420" width="270" height="150" rx="16" class="accent"/>
+  <text x="570" y="453" text-anchor="middle" class="h">Provider dispatch</text>
+  <text x="570" y="482" text-anchor="middle" class="t">Mock / hosted / private / CLI</text>
+  <text x="570" y="505" text-anchor="middle" class="t">Destination + credential policy</text>
+  <text x="570" y="535" text-anchor="middle" class="small">Attempts, retries, elapsed budget</text>
+
+  <rect x="785" y="420" width="280" height="150" rx="16" class="good"/>
+  <text x="925" y="453" text-anchor="middle" class="h">Evidence capture</text>
+  <text x="925" y="482" text-anchor="middle" class="t">Request / response hashes</text>
+  <text x="925" y="505" text-anchor="middle" class="t">Attempt + failure state</text>
+  <text x="925" y="535" text-anchor="middle" class="small">Audit + content-addressed artifacts</text>
+
+  <rect x="1145" y="420" width="320" height="150" rx="16" class="box"/>
+  <text x="1305" y="453" text-anchor="middle" class="h">Behavior + human review</text>
+  <text x="1305" y="482" text-anchor="middle" class="t">Five-outcome grading</text>
+  <text x="1305" y="505" text-anchor="middle" class="t">Reliability kept separate</text>
+  <text x="1305" y="535" text-anchor="middle" class="small">Recusal • abstention • adjudication</text>
+
+  <path d="M355 495 H420" class="a"/><path d="M705 495 H770" class="a"/><path d="M1065 495 H1130" class="g"/>
+
+  <rect x="55" y="680" width="1490" height="205" rx="22" class="lane"/>
+  <text x="80" y="711" class="small">MEASUREMENT / DECISION / PRESENTATION</text>
+
+  <rect x="95" y="745" width="275" height="105" rx="16" class="box"/>
+  <text x="232" y="778" text-anchor="middle" class="h">Metric snapshots</text>
+  <text x="232" y="807" text-anchor="middle" class="t">N / D • exclusions • lineage</text>
+  <text x="232" y="830" text-anchor="middle" class="t">Wilson intervals + method version</text>
+
+  <rect x="455" y="745" width="275" height="105" rx="16" class="warn"/>
+  <text x="592" y="778" text-anchor="middle" class="h">Release gates</text>
+  <text x="592" y="807" text-anchor="middle" class="t">Support + threshold rules</text>
+  <text x="592" y="830" text-anchor="middle" class="t">Pass / warning / indeterminate / block</text>
+
+  <rect x="815" y="745" width="285" height="105" rx="16" class="good"/>
+  <text x="957" y="778" text-anchor="middle" class="h">Signed evidence outputs</text>
+  <text x="957" y="807" text-anchor="middle" class="t">Canonical report + dossier</text>
+  <text x="957" y="830" text-anchor="middle" class="t">Hashes • audit • export lineage</text>
+
+  <rect x="1185" y="745" width="280" height="105" rx="16" class="accent"/>
+  <text x="1325" y="778" text-anchor="middle" class="h">Charts + Reports</text>
+  <text x="1325" y="807" text-anchor="middle" class="t">Human-readable views</text>
+  <text x="1325" y="830" text-anchor="middle" class="t">never sole release authority</text>
+
+  <path d="M370 797 H440" class="a"/><path d="M730 797 H800" class="a"/><path d="M1100 797 H1170" class="g"/>
+  <path d="M1405 290 V350 H225 V405" class="a"/>
+  <path d="M1305 570 V635 H232 V730" class="a"/>
+
+  <text x="800" y="912" text-anchor="middle" class="small">Trust boundary: provider execution may depend on external services; evaluation evidence and release authority remain governed by repository contracts and retained runtime evidence.</text>
+</svg>
