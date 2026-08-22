@@ -1,7 +1,7 @@
 """CSRF token primitive for future ambient-cookie authentication paths.
 
 Current production API authentication uses explicit bearer headers and therefore
-does not rely on CSRF tokens.  If cookie/session credentials are introduced,
+does not rely on CSRF tokens. If cookie/session credentials are introduced,
 this primitive provides a double-submit token with an HMAC-authenticated
 issuance time and random nonce. The HMAC secret must be bound during application
 composition in staging/production.
@@ -46,10 +46,17 @@ class CSRFProtection:
         return os.urandom(32).hex()
 
     def generate_token(self) -> str:
+        """Return a two-part token while binding a unique nonce under the HMAC.
+
+        Earlier releases exposed ``timestamp.signature``. Keeping two
+        dot-separated fields avoids breaking clients that split on the final dot,
+        while the new second field is ``nonce:signature`` and therefore unique
+        for every issuance even inside the same second.
+        """
         timestamp = str(int(time.time()))
         nonce = secrets.token_urlsafe(24)
         signed_part = f"{timestamp}.{nonce}"
-        return f"{signed_part}.{self._sign(signed_part)}"
+        return f"{timestamp}.{nonce}:{self._sign(signed_part)}"
 
     def validate_token(self, header_token: str, cookie_token: str) -> bool:
         if not header_token:
@@ -72,19 +79,20 @@ class CSRFProtection:
 
     def _validate_signature(self, token: str) -> None:
         parts = token.split(".")
-        if len(parts) == 3:
-            timestamp_str, nonce, provided_signature = parts
+        if len(parts) != 2:
+            raise CSRFValidationError("Invalid CSRF token format")
+        timestamp_str, proof = parts
+
+        if ":" in proof:
+            nonce, provided_signature = proof.split(":", 1)
             if not _NONCE.fullmatch(nonce):
                 raise CSRFValidationError("Invalid CSRF token format")
             signed_part = f"{timestamp_str}.{nonce}"
-        elif len(parts) == 2:
-            # Compatibility for tokens emitted by earlier source revisions.
-            # The current implementation never generates this deterministic
-            # form, so new browser sessions receive nonce-bearing tokens.
-            timestamp_str, provided_signature = parts
-            signed_part = timestamp_str
         else:
-            raise CSRFValidationError("Invalid CSRF token format")
+            # Legacy deterministic token emitted by earlier source revisions.
+            # Current generation never uses this form.
+            provided_signature = proof
+            signed_part = timestamp_str
 
         if len(timestamp_str) != self.TIMESTAMP_LENGTH or not timestamp_str.isdigit():
             raise CSRFValidationError("Invalid token timestamp")
