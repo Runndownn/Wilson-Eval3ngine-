@@ -12,8 +12,9 @@ This directory contains current product/operator documentation **and** historica
 | [Current Status](STATUS.md) | Determine what is implemented, integrated, provisional, historical, or still dependent on private runtime assurance. |
 | [GUI & Evidence Guide](GUI_AND_EVIDENCE_GUIDE.md) | Use the current five-workspace UI and interpret charts/reports without confusing inventory, demos, or screenshots with release evidence. |
 | [Provider & Local Model Setup](operations/api-key-local-model-setup.md) | Configure hosted providers, intentional local/private gateways, Ollama, and CLI-backed model access safely. |
+| [Current Security Reassessment](security/SECURITY_REASSESSMENT_2026-08-22.md) | Revalidate the July 30 findings against the current security branch, including root-cause fixes, residual bearer/proxy/runtime risks, and the manual validation contract while GitHub Actions are disabled. |
 | [Private Runtime Assurance](security/PRIVATE_RUNTIME_ASSURANCE.md) | Understand which production facts belong in private runtime evidence rather than the public repository. |
-| [Master Security Assessment](security/MASTER_SECURITY_ASSESSMENT.md) | Review the detailed 2026-08-01 point-in-time security assessment, its findings, and residual risks. |
+| [Master Security Assessment](security/MASTER_SECURITY_ASSESSMENT.md) | Review the detailed 2026-08-01 point-in-time assessment and the branch/head it evaluated; do not use it as a substitute for the current reassessment. |
 | [Documentation Audit](DOCUMENTATION_AUDIT.md) | See how documentation was reconciled against code and what stale claims/assets were corrected. |
 
 The root [README](../README.md) is the public entry point. It gives the minimum complete mental model; the documents above add operational and assurance detail without requiring a reader to reverse-engineer the plans or source tree first.
