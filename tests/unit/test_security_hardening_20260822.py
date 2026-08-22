@@ -1,0 +1,296 @@
+from __future__ import annotations
+
+from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from wilson_eval3ngine.api.security_middleware import (
+    RequestMetadataValidationMiddleware,
+    StrictCORSMiddleware,
+)
+from wilson_eval3ngine.config import Settings
+from wilson_eval3ngine.persistence.audit import AuditLedger
+from wilson_eval3ngine.persistence.database import Database
+from wilson_eval3ngine.security.authorization import (
+    AuthorizationAuditUnavailable,
+    AuthorizationError,
+    authorization_audit_scope,
+    check_authorization,
+)
+from wilson_eval3ngine.security.csrf import CSRFProtection
+from wilson_eval3ngine.security.oidc import TokenRevocationList, TokenValidationError
+from wilson_eval3ngine.security.rate_limit import (
+    ClientIdentityResolver,
+    RateLimitBackendUnavailable,
+    RateLimiter,
+    build_rate_limit_key,
+)
+from wilson_eval3ngine.security.redis_authority import (
+    RedisSecurityAuthority,
+    SecurityStateUnavailable,
+)
+
+
+def _request(peer: str, forwarded_for: str | None = None):
+    headers: dict[str, str] = {}
+    if forwarded_for is not None:
+        headers["X-Forwarded-For"] = forwarded_for
+    return SimpleNamespace(client=SimpleNamespace(host=peer), headers=headers)
+
+
+def test_untrusted_peer_cannot_spoof_forwarded_client_identity() -> None:
+    resolver = ClientIdentityResolver(["10.0.0.0/24"])
+    assert resolver.resolve_address(
+        _request("203.0.113.7", "198.51.100.9")
+    ) == "203.0.113.7"
+
+
+def test_trusted_proxy_chain_resolves_first_untrusted_client() -> None:
+    resolver = ClientIdentityResolver(["10.0.0.0/24"])
+    assert resolver.resolve_address(
+        _request("10.0.0.5", "198.51.100.9, 10.0.0.4")
+    ) == "198.51.100.9"
+
+
+def test_pre_auth_rate_key_does_not_require_project_identity() -> None:
+    first = build_rate_limit_key("198.51.100.9", "/v1/experiments:run")
+    second = build_rate_limit_key("198.51.100.9", "/v1/experiments:run")
+    assert first == second
+    assert "198.51.100.9" not in first
+    assert "project:" not in first
+
+
+def test_authenticated_project_scope_can_have_distinct_secondary_bucket() -> None:
+    first = build_rate_limit_key(
+        "198.51.100.9", "/v1/experiments:run", "proj_a"
+    )
+    second = build_rate_limit_key(
+        "198.51.100.9", "/v1/experiments:run", "proj_b"
+    )
+    assert first != second
+    assert "proj_a" in first
+
+
+def test_assurance_rate_limiter_requires_distributed_authority() -> None:
+    with pytest.raises(RateLimitBackendUnavailable):
+        RateLimiter(fail_closed=True)
+
+
+def test_redis_security_authority_normalizes_backend_errors() -> None:
+    redis_client = Mock()
+    redis_client.exists.side_effect = Exception("backend detail must not escape")
+    authority = RedisSecurityAuthority(redis_client)
+    with pytest.raises(SecurityStateUnavailable) as captured:
+        authority.exists("we3:token_revoked:test")
+    assert "backend detail" not in str(captured.value)
+
+
+def test_redis_script_runtime_error_is_normalized() -> None:
+    redis_client = Mock()
+    script = Mock(side_effect=Exception("redis implementation detail"))
+    redis_client.register_script.return_value = script
+    authority = RedisSecurityAuthority(redis_client)
+    wrapped = authority.register_script("return 1")
+    with pytest.raises(SecurityStateUnavailable):
+        wrapped(keys=["bounded"], args=[1])
+
+
+def test_revocation_jti_is_bounded_before_redis_key_use() -> None:
+    redis_client = Mock()
+    revocations = TokenRevocationList(redis_client=redis_client)
+    with pytest.raises(TokenValidationError):
+        revocations.revoke("x" * 257, token_ttl=60)
+    redis_client.setex.assert_not_called()
+
+
+def test_revocation_preserves_requested_remaining_lifetime() -> None:
+    redis_client = Mock()
+    revocations = TokenRevocationList(redis_client=redis_client)
+    revocations.revoke("token-123", token_ttl=7200)
+    redis_client.setex.assert_called_once_with(
+        "we3:token_revoked:token-123", 7200, "1"
+    )
+
+
+def test_csrf_tokens_are_unique_while_preserving_two_part_compatibility() -> None:
+    protection = CSRFProtection(secret="unit-test-secret-with-sufficient-length")
+    first = protection.generate_token()
+    second = protection.generate_token()
+    assert first != second
+    timestamp, proof = first.split(".", 1)
+    assert timestamp.isdigit()
+    assert ":" in proof
+    assert protection.validate_token(first, first) is True
+
+
+def test_disallowed_cors_origin_is_rejected_before_route_side_effect() -> None:
+    app = FastAPI()
+    mutations: list[str] = []
+
+    @app.post("/mutate")
+    def mutate() -> dict[str, bool]:
+        mutations.append("executed")
+        return {"ok": True}
+
+    app.add_middleware(
+        StrictCORSMiddleware,
+        allowed_origins=("https://allowed.example",),
+    )
+    response = TestClient(app).post(
+        "/mutate",
+        headers={"Origin": "https://attacker.example"},
+    )
+    assert response.status_code == 403
+    assert mutations == []
+
+
+def test_allowed_cors_origin_receives_exact_origin_not_wildcard() -> None:
+    app = FastAPI()
+
+    @app.get("/read")
+    def read() -> dict[str, bool]:
+        return {"ok": True}
+
+    app.add_middleware(
+        StrictCORSMiddleware,
+        allowed_origins=("https://allowed.example",),
+    )
+    response = TestClient(app).get(
+        "/read",
+        headers={"Origin": "https://allowed.example"},
+    )
+    assert response.status_code == 200
+    assert response.headers["Access-Control-Allow-Origin"] == "https://allowed.example"
+    assert response.headers["Access-Control-Allow-Origin"] != "*"
+
+
+def test_cors_preflight_can_authorize_conditional_if_match_header() -> None:
+    app = FastAPI()
+    app.add_middleware(
+        StrictCORSMiddleware,
+        allowed_origins=("https://allowed.example",),
+        allowed_headers=("Authorization", "Content-Type", "If-Match"),
+    )
+
+    @app.patch("/resource")
+    def patch_resource() -> dict[str, bool]:
+        return {"ok": True}
+
+    response = TestClient(app).options(
+        "/resource",
+        headers={
+            "Origin": "https://allowed.example",
+            "Access-Control-Request-Method": "PATCH",
+            "Access-Control-Request-Headers": "If-Match, Authorization",
+        },
+    )
+    assert response.status_code == 204
+    assert "if-match" in response.headers["Access-Control-Allow-Headers"].lower()
+
+
+def test_bad_idempotency_header_is_rejected_before_route_side_effect() -> None:
+    app = FastAPI()
+    mutations: list[str] = []
+
+    @app.post("/mutate")
+    def mutate() -> dict[str, bool]:
+        mutations.append("executed")
+        return {"ok": True}
+
+    app.add_middleware(RequestMetadataValidationMiddleware)
+    response = TestClient(app).post(
+        "/mutate",
+        headers={"Idempotency-Key": "not valid because spaces"},
+    )
+    assert response.status_code == 400
+    assert mutations == []
+
+
+def test_production_settings_require_distributed_security_state() -> None:
+    settings = Settings(
+        database_url="postgresql://we3@database.invalid/we3",
+        artifact_root=__import__("pathlib").Path("/var/lib/we3/artifacts"),
+        auth_mode="oidc",
+        environment="production",
+        oidc_issuer="https://issuer.example",
+        oidc_jwks_uri="https://issuer.example/jwks.json",
+        oidc_audience="wilson-eval3ngine-api",
+        encryption_key="x" * 32,
+        csrf_secret="y" * 32,
+    )
+    with pytest.raises(ValueError, match="WE3_REDIS_URL"):
+        settings.validate_for_production()
+
+
+def test_workload_role_prefix_is_part_of_authorization_identity() -> None:
+    assert check_authorization("workload:api", "jobs", "create") is True
+    with pytest.raises(AuthorizationError):
+        check_authorization("api", "jobs", "create")
+    with pytest.raises(AuthorizationError):
+        check_authorization("workload:api", "exports", "create")
+
+
+def test_unlisted_system_admin_role_does_not_gain_implicit_api_authority() -> None:
+    with pytest.raises(AuthorizationError):
+        check_authorization("system_admin", "experiments", "read")
+
+
+def test_authorization_audit_scope_records_allow_and_deny() -> None:
+    decisions: list[tuple[str, str, str, bool, str | None]] = []
+
+    def record(
+        role: str,
+        resource: str,
+        action: str,
+        allowed: bool,
+        project_id: str | None,
+    ) -> None:
+        decisions.append((role, resource, action, allowed, project_id))
+
+    with authorization_audit_scope(record):
+        assert check_authorization(
+            "viewer", "projects", "read", project_id="proj_a"
+        ) is True
+        with pytest.raises(AuthorizationError):
+            check_authorization(
+                "viewer", "projects", "update", project_id="proj_a"
+            )
+
+    assert decisions == [
+        ("viewer", "projects", "read", True, "proj_a"),
+        ("viewer", "projects", "update", False, "proj_a"),
+    ]
+
+
+def test_authorization_audit_failure_prevents_allow_decision() -> None:
+    def unavailable(*_args) -> None:
+        raise AuthorizationAuditUnavailable("audit unavailable")
+
+    with authorization_audit_scope(unavailable):
+        with pytest.raises(AuthorizationAuditUnavailable):
+            check_authorization("viewer", "projects", "read")
+
+
+def test_sqlite_audit_chain_serializes_concurrent_project_appends(tmp_path) -> None:
+    database = Database(f"sqlite:///{tmp_path / 'audit.db'}")
+    database.initialize()
+    ledger = AuditLedger(database)
+
+    def append(index: int) -> None:
+        ledger.append(
+            project_id="proj_concurrency",
+            event_type="concurrency_probe",
+            aggregate_type="test",
+            aggregate_id=str(index),
+            actor_id="test-suite",
+            payload={"index": index},
+        )
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        list(executor.map(append, range(32)))
+
+    assert ledger.verify("proj_concurrency") is True

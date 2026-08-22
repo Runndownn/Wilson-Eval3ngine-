@@ -1,7 +1,10 @@
-.PHONY: install lint docs-check test coverage validate demo critical verify schemas openapi api clean backup backup-create backup-list backup-verify backup-restore-plan
+.PHONY: install install-security lint docs-check test coverage security-check security-unit validate demo critical verify schemas openapi api clean backup backup-create backup-list backup-verify backup-restore-plan
 
 install:
 	python -m pip install -e ".[dev]"
+
+install-security:
+	python -m pip install -e ".[dev,security]"
 
 lint:
 	python -m compileall -q src tests scripts
@@ -20,6 +23,16 @@ test:
 coverage:
 	python -m coverage run -m pytest -q
 	python -m coverage report
+
+security-unit:
+	python -m pytest -q tests/unit/test_oidc_auth.py tests/unit/test_security_enhancements.py tests/unit/test_production_middleware.py tests/unit/test_security_hardening_20260822.py tests/unit/test_api_authorization_contract.py tests/unit/test_api_security_composition.py
+
+security-check:
+	python -m compileall -q src tests scripts
+	python -m bandit -q -r src/wilson_eval3ngine
+	python -m pip_audit --local
+	we3 scan-ci --source . --output var/security/supply_chain_report.json
+	$(MAKE) security-unit
 
 validate:
 	we3 validate examples/experiments/foundation.yaml
@@ -47,7 +60,7 @@ clean:
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
 
 # ============================================================================
-# Backup Commands (TODO 55)
+# Backup Commands (legacy compatibility surface; see recovery documentation)
 # ============================================================================
 
 backup:
