@@ -1,12 +1,8 @@
-"""
-Persona-specific view models for TODO 48.
-
-T7.1.4 - Deliver safe analyst, executive, and reviewer workflows.
-Provides role-appropriate interfaces without exposing restricted evidence.
-"""
+"""Persona-specific view models with explicit evidence and scope boundaries."""
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -15,17 +11,16 @@ from ..reports.models import CanonicalReport
 
 @dataclass(frozen=True, slots=True)
 class ExecutiveSummary:
-    """Aggregate-only view for executives.
+    """Aggregate-only executive view containing no raw evidence."""
 
-    Security: Contains NO raw evidence, only release status and critical blocks.
-    """
     schema_version: str = "we3.executive_summary.v1"
     experiment_id: str = ""
     project_id: str = ""
-    release_status: str = "pending"  # pass, block, indeterminate, warning
+    release_status: str = "pending"
     critical_blocks: list[str] = field(default_factory=list)
-    support_percentage: float = 0.0
-    uncertainty_percentage: float = 0.0
+    # Unknown aggregates are represented as None rather than fabricated 100%/0%.
+    support_percentage: float | None = None
+    uncertainty_percentage: float | None = None
     cost_usd: float = 0.0
     freshness_hours: float = 0.0
     last_refresh_at: str = ""
@@ -34,11 +29,8 @@ class ExecutiveSummary:
 
 @dataclass(frozen=True, slots=True)
 class AnalystView:
-    """Drill-down view for analysts with lineage.
+    """Project-scoped analyst drill-down with evidence lineage."""
 
-    Security: Full lineage within authorized project scope.
-    No cross-project data exposure.
-    """
     schema_version: str = "we3.analyst_view.v1"
     experiment_id: str = ""
     project_id: str = ""
@@ -49,16 +41,13 @@ class AnalystView:
     reviews: list[dict[str, Any]] = field(default_factory=list)
     provenance: list[dict[str, Any]] = field(default_factory=list)
     version_context: dict[str, str] = field(default_factory=dict)
-    freshness_state: str = "fresh"  # fresh, stale, invalid
+    freshness_state: str = "fresh"
 
 
 @dataclass(frozen=True, slots=True)
 class ReviewerQueueItem:
-    """Redacted evidence item for reviewer queue.
+    """Redacted reviewer task. Raw evidence requires a separate reveal flow."""
 
-    Security: Evidence is redacted by default.
-    Raw reveal requires explicit approval flow.
-    """
     schema_version: str = "we3.reviewer_queue_item.v1"
     case_id: str = ""
     experiment_id: str = ""
@@ -73,10 +62,8 @@ class ReviewerQueueItem:
 
 @dataclass(frozen=True, slots=True)
 class EvidenceRevealRequest:
-    """Request to reveal restricted evidence.
+    """Auditable request to reveal restricted evidence."""
 
-    Security: Audit requirement for raw evidence access.
-    """
     schema_version: str = "we3.evidence_reveal.v1"
     case_id: str = ""
     reviewer_id: str = ""
@@ -91,33 +78,45 @@ def build_executive_summary(
     cost_usd: float = 0.0,
     freshness_hours: float = 0.0,
 ) -> ExecutiveSummary:
-    """Build aggregate summary from canonical report.
+    """Build an aggregate-only summary from canonical evidence.
 
-    Implements TODO 48 requirement: Executives see only aggregates.
+    Support and uncertainty remain ``None`` until the canonical report contains
+    an authoritative aggregate contract for those concepts. Missing evidence is
+    never converted into an optimistic value.
     """
-    if not report.gate_statuses:
-        status = "indeterminate"
-    elif any(s == "block" for s in report.gate_statuses.values()):
-        status = "block"
-    elif any(s == "indeterminate" for s in report.gate_statuses.values()):
-        status = "indeterminate"
-    elif any(s == "warning" for s in report.gate_statuses.values()):
-        status = "warning"
-    else:
-        status = "pass"
+    if cost_usd < 0:
+        raise ValueError("cost_usd must be non-negative")
+    if freshness_hours < 0:
+        raise ValueError("freshness_hours must be non-negative")
 
-    blocks = []
-    for model_id, status in report.gate_statuses.items():
-        if status == "block":
-            blocks.append(f"{model_id}: critical failure")
+    statuses = tuple(report.gate_statuses.values())
+    if not statuses:
+        release_status = "indeterminate"
+    elif "block" in statuses:
+        release_status = "block"
+    elif "indeterminate" in statuses:
+        release_status = "indeterminate"
+    elif "warning" in statuses:
+        release_status = "warning"
+    elif all(status == "pass" for status in statuses):
+        release_status = "pass"
+    else:
+        # Unknown status vocabulary must fail closed rather than becoming pass.
+        release_status = "indeterminate"
+
+    critical_blocks = [
+        f"{model_id}: critical failure"
+        for model_id, gate_status in sorted(report.gate_statuses.items())
+        if gate_status == "block"
+    ]
 
     return ExecutiveSummary(
         experiment_id=report.experiment_id,
         project_id=report.project_id,
-        release_status=status,
-        critical_blocks=blocks,
-        support_percentage=100.0,  # Provisional: canonical report lacks an aggregate support contract.
-        uncertainty_percentage=0.0,  # Provisional: canonical report lacks an aggregate uncertainty contract.
+        release_status=release_status,
+        critical_blocks=critical_blocks,
+        support_percentage=None,
+        uncertainty_percentage=None,
         cost_usd=cost_usd,
         freshness_hours=freshness_hours,
         last_refresh_at=report.generated_at,
@@ -125,41 +124,28 @@ def build_executive_summary(
     )
 
 
-def build_analyst_view(
-    report: CanonicalReport,
-    project_id: str,
-) -> AnalystView:
-    """Build an analyst drill-down view within one authorized project.
-
-    The caller-supplied project ID is treated as the authorization scope. A
-    canonical report carrying a different project ID is rejected before any
-    metrics, artifact hashes, or other lineage is copied into the view. Reports
-    without a project ID are also rejected because an unscoped report cannot be
-    safely exposed through a project-scoped analyst view.
-    """
+def build_analyst_view(report: CanonicalReport, project_id: str) -> AnalystView:
+    """Build an analyst view only when canonical and authorized scope match."""
+    if not project_id:
+        raise ValueError("authorized project scope is required")
     if not report.project_id:
         raise ValueError("Canonical report is missing project scope")
     if report.project_id != project_id:
         raise PermissionError("Canonical report is outside the authorized project scope")
 
-    slices = []
-    for model_id, metrics in report.metric_values.items():
-        slice_data = {
+    slices = [
+        {
             "model_id": model_id,
-            "metrics": list(metrics.keys()),
+            "metrics": sorted(metrics.keys()),
             "gate_status": report.gate_statuses.get(model_id, "unknown"),
         }
-        slices.append(slice_data)
-
+        for model_id, metrics in sorted(report.metric_values.items())
+    ]
     return AnalystView(
         experiment_id=report.experiment_id,
         project_id=report.project_id,
         slices=slices,
-        cases=[],  # Populated only when authorized evidence-store integration supplies them.
-        attempts=[],
-        grades=[],
-        reviews=[],
-        provenance=[{"artifacts": report.artifact_hashes}],
+        provenance=[{"artifacts": sorted(report.artifact_hashes)}],
         version_context={
             "manifest": report.manifest_hash,
             "dataset": report.dataset_hash,
@@ -168,17 +154,21 @@ def build_analyst_view(
 
 
 def render_redacted_evidence(content: str) -> str:
-    """Render evidence in redacted form for reviewer queue.
+    """Apply bounded baseline redaction for reviewer queue presentation.
 
-    Security: PII/restricted content is masked. This helper is a baseline
-    pattern redactor, not a complete production DLP policy.
+    This helper is intentionally described as pattern masking, not a production
+    DLP authority. Raw reveal remains a separate audited workflow.
     """
-    import re
-
-    content = re.sub(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", "[EMAIL REDACTED]", content)
-    content = re.sub(r"\b\d{8,}\b", "[ID REDACTED]", content)
-    content = re.sub(r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b", "[PHONE REDACTED]", content)
-    return content
+    if not isinstance(content, str):
+        raise TypeError("content must be a string")
+    redacted = re.sub(
+        r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
+        "[EMAIL REDACTED]",
+        content,
+    )
+    redacted = re.sub(r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b", "[PHONE REDACTED]", redacted)
+    redacted = re.sub(r"\b\d{8,}\b", "[ID REDACTED]", redacted)
+    return redacted
 
 
 __all__ = [
