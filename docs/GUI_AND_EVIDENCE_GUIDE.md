@@ -4,7 +4,7 @@ This guide explains the **current five-workspace operator interface** and how to
 
 **Endpoints → Models → Generate → Charts → Reports**
 
-The canonical captures live under `docs/assets/gui/current/`. Older six-image captures remain under `docs/assets/gui/` as historical point-in-time evidence; they are not the current navigation model because prompt-package selection belongs inside **Generate** and PDF viewing belongs inside **Reports**.
+The canonical high-resolution captures live under `docs/assets/gui/current/` as `endpoints.png`, `models.png`, `generate.png`, `charts.png`, and `reports.png`. The same directory also contains detailed current analytics captures used by the root README visual atlas. Lower-resolution WebP captures remain as compatibility/history assets; the former `03-generate.webp` was removed and is not a valid current documentation path. PDF viewing belongs inside **Reports** and the retained `docs/assets/gui/05-pdf-viewer.png` image documents that reading surface.
 
 ## Security boundary before you start
 
@@ -38,7 +38,7 @@ The browser UI is composed at runtime. `gui/static/index.html` contains the base
 
 ### 1. Endpoints
 
-<p align="center"><img src="assets/gui/current/01-endpoints.webp" alt="Current Wilson Eval3ngine Endpoints workspace" width="1100"></p>
+<p align="center"><img src="assets/gui/current/endpoints.png" alt="Current Wilson Eval3ngine Endpoints workspace" width="1100"></p>
 
 The Endpoints workspace establishes where evaluation traffic may go. The operator supplies a display name, provider adapter, base URL, and—when required—an API key that remains backend-managed rather than being returned to the browser. The connected-provider inventory shows health, provider type, registered-model count, recent test information, and endpoint identity so connectivity failures can be diagnosed before evaluation spend.
 
@@ -46,7 +46,7 @@ The Endpoints workspace establishes where evaluation traffic may go. The operato
 
 ### 2. Models
 
-<p align="center"><img src="assets/gui/current/02-models.webp" alt="Current Wilson Eval3ngine Models workspace" width="1100"></p>
+<p align="center"><img src="assets/gui/current/models.png" alt="Current Wilson Eval3ngine Models workspace" width="1100"></p>
 
 The registry exposes exact provider model IDs, endpoint lineage, filtering, and family grouping. Manual registration is available where a provider model ID must be entered explicitly.
 
@@ -54,7 +54,7 @@ Family labels and “recommended” starting points are navigation metadata, not
 
 ### 3. Generate
 
-<p align="center"><img src="assets/gui/current/03-generate.webp" alt="Current Wilson Eval3ngine Generate workspace" width="1100"></p>
+<p align="center"><img src="assets/gui/current/generate.png" alt="Current Wilson Eval3ngine Generate workspace" width="1100"></p>
 
 Generate turns selection into a bounded workload. Choose models, select/build the prompt set, select execution mode, inspect prompt count and total request volume, then start the job. Prompt packages belong here; there is no separate sixth prompt-package workflow stage.
 
@@ -62,7 +62,7 @@ The start action is gated by configuration state. Before execution, verify model
 
 ### 4. Charts
 
-<p align="center"><img src="assets/gui/current/04-charts.webp" alt="Current Wilson Eval3ngine Charts workspace" width="1100"></p>
+<p align="center"><img src="assets/gui/current/charts.png" alt="Current Wilson Eval3ngine Charts workspace" width="1100"></p>
 
 Charts are grouped by completed evidence run. A run can generate missing charts, expose data/metadata, expand a visualization, or delete chart artifacts. Run frames are cleaned when their last chart is removed instead of lingering as misleading empty evidence containers.
 
@@ -70,7 +70,7 @@ The **Generate demo charts** action is intentionally different from run evidence
 
 ### 5. Reports
 
-<p align="center"><img src="assets/gui/current/05-reports.webp" alt="Current Wilson Eval3ngine Reports workspace" width="1100"></p>
+<p align="center"><img src="assets/gui/current/reports.png" alt="Current Wilson Eval3ngine Reports workspace" width="1100"></p>
 
 Reports are shown in a two-column layout with top/bottom PDF previews so multiple artifacts remain reviewable without leaving the workspace. A report can expose run/model context plus full-report/export actions. The PDF is the narrative presentation layer; structured evidence/provenance remains authoritative for exact values.
 
@@ -99,7 +99,7 @@ Do not rewrite the underlying metric merely to make it match a picture.
 
 ## Chart catalogue
 
-The sample PNGs under `docs/assets/charts/` demonstrate visualization capability. They are examples, not current production benchmark claims.
+The sample PNGs under `docs/assets/charts/` demonstrate visualization capability. They are examples, not current production benchmark claims. The root README additionally displays the current detailed GUI analytics captures from `docs/assets/gui/current/` so readers can see the active presentation surfaces directly.
 
 | Chart | What it helps answer | Important caution |
 |---|---|---|
