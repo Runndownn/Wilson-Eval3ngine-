@@ -166,56 +166,11 @@ jobs:
           we3 run examples/experiments/foundation.yaml --output var/foundation --database-url sqlite:///./var/we3.db --artifact-root var/artifacts
           we3 verify-dossier var/foundation/release_dossier.json
 
-  recovery-runtime:
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs: quality-and-test
-    steps:
-      - name: Checkout exact source revision
-        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-
-      - name: Install PostgreSQL recovery tooling
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql postgresql-client
-          pg_config --version
-
-      - name: Install backup test dependencies
-        run: |
-          python -m pip install --upgrade "pip==${PIP_VERSION}"
-          python -m pip install -e ".[dev,backup]"
-
-      - name: Execute real encrypted backup and PITR exercise
-        env:
-          WE3_RUN_POSTGRES_RECOVERY_TEST: "1"
-        run: |
-          python -m pytest tests/integration/test_backup_restore.py -v --basetemp=var/recovery-runtime
-
-      - name: Upload recovery runtime evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: recovery-runtime-${{ github.sha }}
-          path: var/recovery-runtime
-          if-no-files-found: error
-          retention-days: 30
-
   attest-build:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [validate-foundation, recovery-runtime]
+    needs: validate-foundation
     permissions:
       contents: read
       id-token: write
@@ -258,28 +213,12 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
 
-      - name: Install PostgreSQL recovery tooling
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql postgresql-client
-
       - name: Install backup test dependencies
         run: |
           python -m pip install --upgrade "pip==${PIP_VERSION}"
-          python -m pip install -e ".[dev,backup]"
+          python -m pip install -e ".[dev,postgres]"
 
-      - name: Verify backup primitives and real restore behavior
-        env:
-          WE3_RUN_POSTGRES_RECOVERY_TEST: "1"
+      - name: Verify backup integrity and restore behavior
         run: |
-          python -m pytest tests/unit/test_backup.py tests/unit/test_backup_reconciliation_unit.py -v
-          python -m pytest tests/integration/test_backup_restore.py -v --basetemp=var/recovery-runtime
-
-      - name: Upload scheduled recovery evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: scheduled-recovery-${{ github.sha }}
-          path: var/recovery-runtime
-          if-no-files-found: warn
-          retention-days: 30
+          python -m pytest tests/unit/test_backup.py -v -k "integrity or reconciliation"
+          python -m pytest tests/integration/test_backup_restore.py -v

@@ -36,21 +36,37 @@ def test_mounted_secret_is_path_confined_and_permission_checked(tmp_path: Path) 
         backend.read("DATABASE_PASSWORD")
 
 
-def test_mounted_secret_rejects_symlink(tmp_path: Path) -> None:
+def test_mounted_secret_rejects_symlink_final_component(tmp_path: Path) -> None:
     if not hasattr(os, "symlink"):
         pytest.skip("symlinks unavailable")
     root = tmp_path / "secrets"
     root.mkdir(mode=0o700)
     outside = tmp_path / "outside"
     outside.write_bytes(b"private")
+    outside.chmod(0o600)
     link = root / "TOKEN"
     try:
         link.symlink_to(outside)
     except OSError:
         pytest.skip("symlink creation unavailable")
 
-    with pytest.raises(SecretBackendError, match="non-symlink"):
+    with pytest.raises(SecretBackendError, match="opened safely"):
         MountedSecretBackend(root).read("TOKEN")
+
+
+def test_mounted_secret_rejects_symlink_root(tmp_path: Path) -> None:
+    if not hasattr(os, "symlink"):
+        pytest.skip("symlinks unavailable")
+    real_root = tmp_path / "real-secrets"
+    real_root.mkdir(mode=0o700)
+    link_root = tmp_path / "secrets"
+    try:
+        link_root.symlink_to(real_root, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlink creation unavailable")
+
+    with pytest.raises(SecretBackendError, match="root must not be a symlink"):
+        MountedSecretBackend(link_root)
 
 
 def test_secret_lease_closes_and_zeroes_internal_buffer(monkeypatch: pytest.MonkeyPatch) -> None:

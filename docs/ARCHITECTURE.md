@@ -4,15 +4,15 @@ This document describes the architecture that exists in the current repository, 
 
 ## Architectural intent
 
-WE3 is organized as a Python modular platform whose central contract is an evidence-producing evaluation pipeline. The system validates versioned experiment inputs, compiles expected behavior before model execution, records provider attempts and terminal responses, classifies behavior, computes versioned statistical snapshots, evaluates release gates, and preserves the artifacts and audit lineage needed to reconstruct the decision.
+WE3 is organized as a Python modular platform whose central contract is an evidence-producing evaluation pipeline. The system validates versioned experiment inputs, compiles the expected behavior before model execution, records provider attempts and terminal responses, classifies behavior, computes versioned statistical snapshots, evaluates release gates, and preserves the artifacts and audit lineage needed to reconstruct the decision.
 
-The repository also contains the infrastructure needed to operate that contract beyond a local demonstration: real provider adapters, durable PostgreSQL scheduling, project and identity controls, encrypted evidence storage, human review/adjudication, certification orchestration, telemetry, an encrypted PostgreSQL backup/PITR path, browser/operator controls, and hardened deployment templates. These modules make the codebase substantially broader than the historical “foundation” vertical slice, but a production certification claim still requires runtime evidence from the actual target environment.
+The repository also contains the infrastructure needed to operate that contract beyond a local demonstration: real provider adapters, durable PostgreSQL scheduling, project and identity controls, encrypted evidence storage, human review/adjudication, certification orchestration, telemetry, backup/recovery, browser/operator controls, and hardened deployment templates. These modules make the codebase substantially broader than the historical “foundation” vertical slice, but a production certification claim still requires runtime evidence from the actual target environment.
 
 ## System view
 
 <p align="center"><img src="assets/diagrams/system-architecture.svg" alt="Wilson Eval3ngine system architecture" width="1100"></p>
 
-The architecture places GUI, CLI, and API interfaces above application services so multiple entry points can reuse the same evaluation concepts instead of inventing separate measurement semantics. Evaluation, provider execution, evidence/state, review/governance, recovery, and operations are represented as explicit module families, while production infrastructure remains a deployment boundary rather than being mixed into the domain model. This view is useful for contributors because it shows where a change belongs and which interfaces should remain stable when implementation details evolve.
+The architecture places GUI, CLI, and API interfaces above application services so multiple entry points can reuse the same evaluation concepts instead of inventing separate measurement semantics. Evaluation, provider execution, evidence/state, review/governance, and operations are represented as explicit module families, while production infrastructure remains a deployment boundary rather than being mixed into the domain model. This view is useful for contributors because it shows where a change belongs and which interfaces should remain stable when implementation details evolve.
 
 ## Core evaluation data flow
 
@@ -64,9 +64,7 @@ Some cross-run comparison/statistical work remains provisional in the current co
 
 `src/wilson_eval3ngine/evidence/`, `reports/`, `security/`, and `storage/` provide the evidence-handling layer. The local evaluation path uses content-addressed filesystem artifacts and generates a signed JSON dossier plus inert/safe report output, while the broader repository includes encrypted object-storage behavior based on AES-256-GCM envelope encryption and retention/legal-hold policy interfaces.
 
-Audit-chain primitives make security- and decision-relevant events linkable rather than relying solely on mutable application logs. The audit writer and verifier now share one canonical event-hash function, which is also used during recovery reconciliation. This matters because recovery should not invent a weaker definition of “valid audit chain” than the normal application uses.
-
-Signing code supports Ed25519 dossier, backup-manifest, recovery-baseline, and reconciliation identity. A mathematically valid signature is not automatically trusted: recovery verification also checks the signer fingerprint against the configured trust registry. Development keys or locally generated keys should not be confused with a managed production signing authority.
+Audit-chain primitives make security- and decision-relevant events linkable rather than relying solely on mutable application logs. In the supported API path, authenticated requests are appended to the hash-linked audit ledger before route work, and authorization allow/deny decisions are appended at the authorization decision boundary before an allow returns. Signing code supports Ed25519 dossier identity, but development keys or locally generated keys should not be confused with a managed production signing authority.
 
 ### 8. Persistence and durable scheduling
 
@@ -74,116 +72,99 @@ The deterministic local path can use SQLite for fast development and CI. Product
 
 This is a material architectural distinction from the original synchronous slice. The synchronous service remains useful for deterministic local execution and recovery diagnostics, while the durable scheduler provides the primitives required for workers that can survive process failure and prevent stale lease owners from completing work incorrectly.
 
+The API's synchronous `OperationRegistry` is intentionally process-local. Redis-backed idempotency can preserve the binding between a project, key, request intent, and operation identifier, but it does not make that process-local operation view durable. If the API process restarts, a retry may fail safely with `idempotency_operation_state_unavailable`; horizontally scaled or restart-resilient long-running execution should use the PostgreSQL scheduler.
+
 ### 9. Certification orchestration
 
 `src/wilson_eval3ngine/certification/` implements release-evidence orchestration rather than assuming “tests passed” means “production certified.” Requirements can be grouped across reproducibility, durability, integrity, security, statistics, grading, governance, recovery, operations, and usability, with must-level requirements able to block certification outcomes.
 
-This code means certification capability is part of the current platform. It does **not** mean the public repository can self-certify an arbitrary deployment, because many required facts—real identity configuration, certificates, secrets, egress policy, provider destinations, runtime checks, recovery evidence, and similar controls—exist only in the target environment.
+This code means certification capability is part of the current platform. It does **not** mean the public repository can self-certify an arbitrary deployment, because many required facts—real identity configuration, certificates, secrets, egress policy, provider destinations, runtime checks, restore evidence, and similar controls—exist only in the target environment.
 
-## Recovery architecture
+## API security architecture
 
-PostgreSQL recovery is deliberately separated from the deterministic SQLite evaluation lane because a physical backup/PITR claim can only be validated against PostgreSQL and real WAL. The recovery code lives primarily under `src/wilson_eval3ngine/backup/`, while canonical audit verification remains in `persistence/audit.py` and schema evolution remains in `persistence/migrations/`.
-
-The high-level flow is:
+The supported production API uses layered boundaries rather than treating one middleware or identity token as the entire security model:
 
 ```text
-PostgreSQL source
-   │
-   ├─ capture system/timeline/LSN identity
-   │
-   ├─ pg_basebackup --format=tar --pgdata=-
-   │        │
-   │        └─ stdout → AES-256-GCM stream encryption
-   │                     │
-   │                     ├─ KMS-wrapped one-time DEK
-   │                     ├─ plaintext + ciphertext SHA-256
-   │                     └─ encrypted physical-backup object
-   │
-   └─ actual completed WAL files
-            │
-            └─ validate filename/timeline/segment size
-                 → AES-256-GCM encryption
-
-Encrypted object + DB identity + KMS identity
-            │
-            └─ canonical manifest → Ed25519 signature
-                         │
-                         └─ durable backup catalogue
-
-Signed recovery baseline + verified base backup + continuous WAL
-            │
-            └─ RestorePlan
-                  │
-                  ├─ decrypt/authenticate selected objects
-                  ├─ safe physical-backup extraction
-                  ├─ loopback PostgreSQL recovery/PITR
-                  ├─ wait for target and promotion
-                  └─ reconcile actual DB state to signed baseline
-                            │
-                            └─ measured restore evidence
+internet/browser
+      |
+      v
+Caddy public TLS boundary
+  - only published host ports
+  - blocks public /metrics, /ready, /docs, /redoc, /openapi.json
+  - Prometheus has no public Caddy route
+  - overwrites X-Forwarded-For at ingress
+      |
+      v
+ASGI request boundary
+  - actual-byte request limit
+  - exact CORS/preflight policy
+  - content-type and metadata validation
+  - Redis-authoritative pre-auth rate admission
+      |
+      v
+OIDC authentication
+  - bounded bearer token
+  - signed issuer/audience/lifetime/claim validation
+  - one app-lifetime authenticator
+  - shared Redis revocation authority
+      |
+      v
+authenticated request context
+  - project, exact role, subject
+  - durable authenticated-request audit
+      |
+      v
+exact authorization matrix
+  - human and workload:* namespaces remain distinct
+  - durable allow/deny audit before allow returns
+      |
+      v
+project-scoped persistence/evaluation behavior
 ```
 
-### Why backup encryption is a streaming boundary
+These layers solve different problems. CORS constrains browser-origin traffic but is not authorization. The CSRF primitive protects ambient cookie/session-style state changes, while current production OIDC uses an explicit bearer header and is therefore intentionally exempt from cookie-CSRF checking. A JWT `jti` plus Redis revocation enables invalidation but does not sender-bind an unrevoked bearer token; deployments requiring proof-of-possession must design that with the actual identity provider.
 
-Physical database backups can be large enough that ordinary artifact patterns—read whole file, encrypt whole byte string, write result—are inappropriate. `backup/crypto.py` therefore uses streaming AES-256-GCM. `pg_basebackup` writes its tar stream to stdout, and WE3 encrypts chunks as they arrive. The one-time data-encryption key never becomes a persistent file; the KMS returns a plaintext DEK for the encryption operation plus a wrapped DEK that is retained in the manifest.
+Redis is an authoritative shared-state dependency for production request admission, token revocation, and API idempotency. Development may intentionally use local process state, but staging/production fail closed when the shared security-state authority cannot make the required decision. Raw Redis exceptions are normalized at the security boundary so backend implementation details do not become public error messages.
 
-The implementation records both plaintext and ciphertext hashes because they answer different questions. The plaintext hash proves which backup bytes were protected after successful authenticated decryption. The ciphertext hash identifies the exact stored encrypted object and acts as the filesystem storage version. Neither replaces the signed manifest, which binds those bytes to database identity, KMS identity, recovery position, and the trusted signing identity.
+Client-address trust also has an explicit boundary. The API ignores `X-Forwarded-For` unless the direct peer belongs to `WE3_TRUSTED_PROXY_CIDRS`. Caddy overwrites `X-Forwarded-For` with the public peer address before proxying, so production should configure only the private Caddy-to-API range(s) as trusted. The exact normalized client identity is one-way hashed for the rate-limit backend; privacy-reduced address labels are used only for logs.
 
-### WAL identity and continuity
-
-A WAL file is not accepted because a filename merely looks plausible. Its 24-hex PostgreSQL name is decoded with the recorded WAL-segment size, its timeline is checked against the base backup, and its file size must match the cluster's segment size. The catalogue also rejects a second, different plaintext payload for an already catalogued WAL segment name.
-
-Restore planning reasons over these recorded segment indices. Coverage must begin with the base backup's ending WAL segment and remain continuous through the requested timestamp or LSN. Missing coverage therefore remains an error instead of being represented by synthetic names or an optimistic plan.
-
-### Baseline and reconciliation are a separate trust boundary
-
-A backup can be cryptographically intact and still restore to the wrong logical state—for example, to an earlier point than intended. Recovery therefore uses a signed expected-state baseline in addition to object integrity. The baseline captures run/classification/metric/gate/provenance/outbox populations and per-project terminal audit roots. Its signature and fingerprint are independently verified before planning and restore.
-
-After PostgreSQL reaches the recovery target, WE3 reads the actual persistence schema. `outbox_events` supplies pending event state, `provenance_edges` supplies lineage population, and audit events are fully re-hashed project by project. A count or root difference is retained as a discrepancy. This is stronger than the earlier scaffold behavior that looked for outbox/provenance hints inside audit JSON and treated non-empty event hashes as chain validity.
-
-### Isolated restore and its current boundary
-
-The native restore path accepts only a loopback PostgreSQL target and an empty data directory. Tar extraction rejects path traversal, device entries, symlinks, and hard links. Because PostgreSQL user-defined tablespaces rely on external filesystem topology, native streaming backup currently rejects clusters that have them rather than restoring an incomplete or misleading topology.
-
-The restore process writes PostgreSQL recovery settings, starts the server with `pg_ctl`, waits until the recovery target has been reached and promotion completes, performs reconciliation, and stops the restored server. The resulting evidence records timing, tool versions, restore-log hash, and reconciliation output. Those facts demonstrate what happened in that exercise; the configured RPO/RTO constants remain objectives until a target deployment measures them.
-
-### Operational storage versus managed durability
-
-The operational catalogue is an atomically written `backup_catalog.v2.json` under the backup root. It solves the previous process-memory problem: separate CLI invocations can list, verify, plan, and restore the same retained records. Migration `008_backup_evidence_v2` augments the PostgreSQL recovery schema with the same database/WAL/integrity/storage identities so a managed control plane can mirror those facts.
-
-A local backup root is not automatically an immutable, replicated, legal-hold-capable backup service. Production designs that need object lock, regional replication, multiple concurrent catalogue writers, external tablespaces, or platform-managed snapshots should layer those deployment controls around the WE3 recovery identities and retain their native evidence rather than treating local filesystem persistence as equivalent.
+Role identity is exact rather than suffix-normalized. `workload:api` and other workload identities retain their namespace and receive only the matrix grants defined for that exact role. `system_admin` may be recognized as an OIDC identity value but does not obtain an implicit API bypass; administrative actions must be represented by explicit authorization grants if such endpoints are introduced.
 
 ## Operator GUI boundary
 
-The operator GUI is an administrative control plane, even when it runs for one user on one workstation. The supported launcher is **secure-by-default**: it uses loopback unless an operator explicitly enables non-loopback binding with `WE3_GUI_ALLOW_REMOTE_BIND=1`. The launcher also composes access-control, UI-overlay, and secret-transport behavior around the FastAPI application.
+The operator GUI is an administrative control plane, even when it runs for one user on one workstation. The official launcher is secure-by-default on loopback and composes access-control, UI overlay, and secret-transport behavior around the FastAPI application. An explicit remote-bind override exists for deliberate deployments, but it is not itself authentication; remote operation requires independent authenticated/authorized TLS and network controls.
 
-That override is an operational trust decision, not an authentication feature. If remote binding is enabled, the deployment must independently provide authenticated and authorized TLS access, trusted forwarding behavior, firewall exposure controls, and network validation. The GUI manages endpoints, credentials, model inventory, jobs, charts, reports, exports, and deletion, so direct unauthenticated exposure is not an acceptable architecture.
-
-Because the GUI process can decrypt endpoint credentials and start provider-capable child processes, compromise of the operating-system account remains a meaningful residual risk and is not solved by encrypting state under a key owned by the same account.
+GUI functions include endpoint configuration/testing, model discovery/inventory, bounded report/evaluation jobs, chart and report presentation, exports, and destructive actions such as deletion. Because the process can decrypt endpoint credentials and start provider-capable child processes, compromise of the local operating-system account remains a meaningful residual risk and is not solved by encrypting state under a key owned by the same account.
 
 ## Production-oriented deployment
 
-The repository contains `Dockerfile.prod`, `Dockerfile.secure`, `docker-compose.prod.yml`, `docker-compose.secure.yml`, and supporting infrastructure configuration. The production Compose design places Caddy at the host-published ingress while API, PostgreSQL, Redis, Prometheus, and Grafana remain on internal purpose-specific networks; required secrets/configuration are explicit rather than relying on known production defaults.
+The repository contains `Dockerfile.prod`, `Dockerfile.secure`, `docker-compose.prod.yml`, `docker-compose.secure.yml`, and supporting infrastructure configuration. The production design requires operator-supplied immutable image references, external/mounted secret authority, PostgreSQL TLS/SCRAM configuration, authenticated Redis, explicit egress-proxy routing, non-root application execution, and internal purpose-specific networks.
 
-OIDC, project authorization, database isolation, body-size enforcement, rate limiting, observability, backup/recovery, and other controls are implemented across the codebase and deployment material. The private deployment must still supply and validate its actual issuer/JWKS, role mapping, secrets, connection material, certificates, host/network policy, approved image digests, provider egress rules, KMS/storage configuration, and recovery evidence.
+Only Caddy publishes host ports. API, PostgreSQL, Redis, Prometheus, and Grafana containers remain unexposed directly; Grafana is intentionally reachable through its own Caddy site, while Prometheus has no public Caddy route. The public API site rejects internal diagnostics and interactive schema surfaces before proxying application traffic.
+
+OIDC, project authorization, database isolation, actual-byte body enforcement, distributed rate limiting, audit persistence, browser origin policy, secret authority, and related controls are implemented across the codebase and deployment material. The private deployment must still supply and validate its actual issuer/JWKS, role mapping, secret files, connection material, certificates, trusted proxy CIDRs, host/network policy, approved image digests, provider egress rules, and recovery evidence.
 
 ## Trust boundaries
 
 <p align="center"><img src="assets/diagrams/trust-boundaries.svg" alt="Wilson Eval3ngine trust and assurance boundaries" width="1100"></p>
 
-The trust-boundary model distinguishes local operator authority, outbound provider execution, production service exposure, recovery/key/storage authority, and the evidence boundary between public source and private deployment facts. It prevents a common documentation mistake where implemented security code is presented as proof that every deployment is secure, or where private runtime details are copied into a public repository in an attempt to prove the opposite. This view is useful for security and release reviewers because it identifies which assurances can be established from source and which require controlled runtime validation.
+The trust-boundary model distinguishes local operator authority, public ingress, outbound provider execution, shared security state, persistence, and the evidence boundary between public source and private deployment facts. It prevents a common documentation mistake where implemented security code is presented as proof that every deployment is secure, or where private runtime details are copied into a public repository in an attempt to prove the opposite.
+
+A particularly important distinction is between **implementation evidence** and **runtime assurance**. Source can establish that Redis failures fail closed in the supported production composition, that Caddy has no Prometheus route, or that the authorization matrix records decisions. Only the target deployment can establish that its Redis instance was reachable, its Caddy configuration parsed and was the only ingress, its private proxy CIDRs were correct, its IdP enforced the intended lifecycle, or its PostgreSQL audit chain survived the expected concurrency/failure conditions.
 
 ## Public source versus private runtime evidence
 
-The public repository can safely own stable contracts, fail-closed validation, synthetic tests, sanitized runtime-evidence schemas, deterministic inventory tools, deployment templates, security controls, recovery mechanics, and code-level assurance records. A real deployment owns its identities, groups, domains, certificates, secret-manager/KMS implementation, database/cache credentials, provider endpoints, allowlists, hosts, firewall/egress policy, backup storage topology, incident contacts, raw scans, logs, packet captures, screenshots, and test accounts.
+The public repository can safely own stable contracts, fail-closed validation, synthetic tests, sanitized runtime-evidence schemas, deterministic inventory tools, deployment templates, security controls, and code-level assurance records. A real deployment owns its identities, groups, domains, certificates, secret-manager implementation, database/cache credentials, provider endpoints, allowlists, hosts, proxy CIDRs, firewall/egress policy, incident contacts, raw scans, logs, packet captures, screenshots, and test accounts.
 
-The bridge between the two is bounded evidence. `docs/security/PRIVATE_RUNTIME_ASSURANCE.md` defines how private checks can be reduced to sanitized statuses and SHA-256 evidence fingerprints without publishing the raw private material.
+The bridge between the two is bounded evidence. `docs/security/PRIVATE_RUNTIME_ASSURANCE.md` defines how private checks can be reduced to sanitized statuses and SHA-256 evidence fingerprints without publishing the raw private material. The current source-level security revalidation is in [Security Reassessment — 2026-08-22](security/SECURITY_REASSESSMENT_2026-08-22.md).
+
+GitHub Actions are disabled at the time of that reassessment. Workflow definitions remain useful policy/configuration, but they are not current execution evidence. Local/manual scanner and test commands likewise become evidence only after they are actually run and their result is retained.
 
 ## Where the historical “foundation” lane fits
 
-The synchronous `EvaluationService` and `examples/experiments/foundation.yaml` are retained because they provide a small, deterministic path through the core measurement contract. That path is valuable for local learning, CI, golden behavior, and recovery diagnostics, but it exercises only a subset of the broader platform and uses development/local choices that are intentionally not production authorities.
+The synchronous `EvaluationService` and `examples/experiments/foundation.yaml` are retained because they provide a small, deterministic path through the core measurement contract. That path is valuable for local learning, CI/golden behavior, and recovery diagnostics, but it exercises only a subset of the broader platform and uses development/local choices that are intentionally not production authorities.
 
-Recovery has a separate disposable PostgreSQL CI exercise because a physical backup/WAL/PITR path cannot be meaningfully demonstrated by the SQLite foundation lane. Therefore the correct architecture statement is: **WE3 is an active evaluation platform with a deterministic local foundation lane and broader production-oriented modules, currently in pre-production assurance.** The global project should not be described as “the foundation” merely because the original vertical slice and some historical identifiers retain that term.
+Therefore the correct architecture statement is: **WE3 is an active evaluation platform with a deterministic local foundation lane and broader production-oriented modules, currently in pre-production assurance.** The global project should not be described as “the foundation” merely because the original vertical slice and some historical identifiers retain that term.
 
 ## Reading the code by concern
 
@@ -198,13 +179,12 @@ Recovery has a separate disposable PostgreSQL CI exercise because a physical bac
 | Human review | `src/wilson_eval3ngine/review/` |
 | Metrics/statistics | `src/wilson_eval3ngine/metrics/`, `statistics/` |
 | Release gates | `src/wilson_eval3ngine/gates/` |
-| Evaluation evidence/report/signing/storage | `evidence/`, `reports/`, `security/`, `storage/` |
+| Evidence/report/signing/storage | `evidence/`, `reports/`, `security/`, `storage/` |
 | Persistence/scheduling/audit | `src/wilson_eval3ngine/persistence/` |
-| Physical backup/PITR/reconciliation | `src/wilson_eval3ngine/backup/` |
 | Certification | `src/wilson_eval3ngine/certification/` |
 | API/auth/middleware | `src/wilson_eval3ngine/api/`, `security/` |
 | GUI | `src/wilson_eval3ngine/gui/`, `gui/static/` |
 | Telemetry/tracing | `src/wilson_eval3ngine/telemetry*`, `tracing*` |
 | Deployment/observability | `docker-compose*.yml`, `Dockerfile*`, `infrastructure/` |
 
-For exact maturity and limitations, continue with [Current Status](STATUS.md). For the recovery procedure, continue with [Backup and Recovery Runbook](operations/backup-recovery-runbook.md). For the visual operator flow, continue with [GUI & Evidence Guide](GUI_AND_EVIDENCE_GUIDE.md).
+For exact maturity and limitations, continue with [Current Status](STATUS.md). For source-level security findings and residual risk, continue with [Current Security Reassessment](security/SECURITY_REASSESSMENT_2026-08-22.md). For the visual operator flow, continue with [GUI & Evidence Guide](GUI_AND_EVIDENCE_GUIDE.md).

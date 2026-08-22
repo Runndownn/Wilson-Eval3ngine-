@@ -2,7 +2,9 @@
 
 ## Current security position
 
-Wilson Eval3ngine `0.1.0` is an **active evaluation platform in pre-production assurance**. The repository contains substantial security, identity, evidence-protection, deployment, recovery, and certification implementations, but source code alone does not certify a production environment. Production use must satisfy the applicable repository checks plus the private runtime-assurance contract for the exact deployment.
+Wilson Eval3ngine `0.1.0` is an **active evaluation platform in pre-production assurance**. The repository contains substantial security, identity, evidence-protection, deployment, and certification implementations, but source code alone does not certify a production environment. Production use must satisfy the applicable repository checks plus the private runtime-assurance contract for the exact deployment.
+
+The current source-level security reassessment is [`docs/security/SECURITY_REASSESSMENT_2026-08-22.md`](docs/security/SECURITY_REASSESSMENT_2026-08-22.md). It revalidates the July 30 findings against the hardened API/deployment composition and explicitly separates implemented controls from runtime evidence. GitHub Actions are disabled at the time of that reassessment; workflow definitions therefore are **not** current execution evidence.
 
 The deterministic local `foundation` lane remains intentionally constrained and should not be connected to real production credentials, sensitive corpora, personal data, or release authority merely because it is easy to run. See [`docs/STATUS.md`](docs/STATUS.md) for the current implementation/assurance matrix and [`docs/security/PRIVATE_RUNTIME_ASSURANCE.md`](docs/security/PRIVATE_RUNTIME_ASSURANCE.md) for the public/private evidence boundary.
 
@@ -19,16 +21,21 @@ The deterministic local `foundation` lane remains intentionally constrained and 
 - The operator GUI is **secure-by-default on loopback**. Non-loopback binding requires the explicit `WE3_GUI_ALLOW_REMOTE_BIND=1` override plus independent authenticated/authorized TLS and network controls.
 - Provider destination checks do not replace host/container network egress policy.
 - A Boolean metadata field is not proof of encryption; cryptographic/storage evidence must match the actual payload.
-- A restore plan is not proof that a restore executed; successful recovery requires the restore target to be reached and reconciliation to pass.
+- A restore plan or successful scaffold test is not proof that a restore occurred.
+- CORS is not authentication, `jti` is not bearer sender-binding, and structured logs are not the durable security audit ledger.
 - Repository implementation is not deployment proof; required runtime evidence must be executed and retained.
 
 ## Authentication and authorization
 
-The production-oriented API includes OIDC/JWT validation, JWKS handling, workload-identity concepts, role-based authorization, project scope, and database/project-isolation controls. Development modes exist for local work but must not be treated as production identity.
+The production-oriented API uses OIDC/JWT validation with bounded signed claims, restricted signing algorithms, JWKS caching/rotation behavior, project/role/MFA claim checks, and a shared Redis-backed token-revocation authority in staging/production. The supported application composes one OIDC authenticator for the application lifetime rather than recreating independent revocation state per request.
 
-A real deployment owns its approved issuer, JWKS endpoint, audience, claims, groups/roles, MFA policy, revocation behavior, workload identities, database row policies, object policies, and negative authorization tests. Do not publish those private values merely to document that a feature exists.
+JWT IDs (`jti`) and revocation are useful invalidation controls, but they do **not** make an otherwise valid bearer token non-replayable before it expires or is revoked. If the deployment threat model requires sender-constrained tokens, evaluate that with the real identity provider (for example, DPoP or mutually authenticated client credentials) and retain runtime evidence. Do not label ordinary `jti` checking as cryptographic replay prevention.
 
-The analyst-view helper also enforces that a canonical report's project matches the authorized project scope before copying metrics or artifact lineage. That defense-in-depth check does not remove the requirement for API/service authorization and database/object-store isolation.
+Role authorization uses exact canonical identities. Workload role prefixes such as `workload:api` are security-significant and are not collapsed to suffixes. `system_admin` may be recognized as an identity claim, but it receives no implicit all-powerful API bypass; administrative APIs must define explicit matrix grants if they are introduced.
+
+Supported project-scoped API routes pass through the shared authorization matrix. In the API request scope, matrix allow/deny decisions are appended to the hash-linked database audit ledger before an allow returns. If required authorization-audit persistence fails, the protected action fails closed with a bounded service-unavailable response.
+
+A real deployment owns its approved issuer, JWKS endpoint, audience, claims, groups/roles, MFA policy, token lifetime, revocation behavior, workload identities, database row policies, object policies, and negative authorization tests. Do not publish those private values merely to document that a feature exists.
 
 ## Operator GUI security
 
@@ -50,61 +57,65 @@ Application destination checks are only one layer. Production deployments must a
 
 ## Secrets and child-process transport
 
-Credentials must not be committed, logged, returned through endpoint APIs, pasted into issue/PR text, or placed in regular plaintext report-key files. Local GUI state uses encrypted credential storage under the operating-system account; this protects some accidental/offline disclosure cases but is not equivalent to an external production secret manager.
+Credentials must not be committed, logged, returned through endpoint APIs, pasted into issue/PR text, or placed in regular plaintext report-key files. `.secrets/` is ignored, and the active production path rejects the development Fernet helper in favor of an external secret authority/KMS boundary. Any credential that ever existed in repository history must remain treated as compromised and rotated even after it is deleted from the active tree.
 
 On supported POSIX systems, the supported keyed report-job path uses a one-shot FIFO inside a restrictive directory rather than the historical regular temporary file. Production deployment should use its approved secret authority and platform-appropriate protected process-to-process transport.
 
-## Input and browser protections
+## Input, browser, and request-admission protections
 
-The API includes content-type/project/idempotency validation and an ASGI receive-channel body limiter that counts actual received bytes rather than trusting `Content-Length`. Browser-facing controls include restrictive security headers, CSRF/CORS protections where applicable, inert-rendering rules, and bounded operator/session assumptions.
+The API validates project/idempotency metadata and route media types and enforces request size using the actual ASGI receive stream rather than trusting `Content-Length` alone. Idempotency keys are format-bounded; assurance environments bind key + project + request-intent hash in Redis and fail closed if shared idempotency state is unavailable.
 
-Untrusted prompts, outputs, attachments, report text, Markdown, filenames, and provider metadata must never be treated as executable instructions simply because they were generated by a model. Browser assurance should include XSS/inert-rendering, keyboard/accessibility, zoom/layout, origin controls, and bounded WebSocket/message behavior where relevant.
+Distributed rate limiting is also a production shared-state control. The supported path uses an atomic Redis sliding window, fails closed in staging/production when Redis cannot decide, separates exact enforcement identity from privacy-reduced log labels, and does not let an unauthenticated `X-WE3-Project-ID` choose a fresh pre-authentication bucket. `X-Forwarded-For` is trusted only when the direct peer is inside `WE3_TRUSTED_PROXY_CIDRS`.
+
+Caddy is the public forwarding authority in the provided production topology. It overwrites `X-Forwarded-For` at ingress. `WE3_TRUSTED_PROXY_CIDRS` must therefore contain only the private Caddy-to-API network range(s), never broad client networks. An empty trusted-proxy value is safe against spoofing but causes the API to rate-limit clients as the proxy peer rather than individually.
+
+Browser `Origin` handling uses an exact configured allowlist with server-side rejection of disallowed origins and invalid preflights. Wildcard origins are not a supported credentialed production policy. Conditional requests include `If-Match` in the allowed preflight header set.
+
+Current production authentication uses an explicit bearer header, which is not an ambient browser cookie and is therefore not subject to classic cookie-CSRF in the same way. A bound HMAC/double-submit CSRF primitive is present for any future cookie/session-authenticated state-changing path; bearer-header OIDC and development header authentication are deliberately exempt. CORS and CSRF remain separate controls.
+
+Security headers are applied by both the API and Caddy, including CSP, COOP, CORP, COEP, MIME/frame/referrer/permissions controls, cache restrictions, and HSTS with `includeSubDomains; preload`. The header token `preload` does not prove browser-list enrollment and should not prompt enrollment until the domain owner has verified every required subdomain and rollback implication.
 
 ## Evidence, audit, reporting, and cryptography
 
-The evaluation path uses content-addressed artifacts, audit-chain primitives, and Ed25519 signing for dossier integrity. The broader evaluation-evidence storage layer includes AES-256-GCM envelope-encryption behavior and retention/legal-hold interfaces.
+The evaluation path uses content-addressed artifacts, hash-linked database audit events, and Ed25519 signing for dossier integrity. Authenticated API requests are durably audited before protected route work, and API authorization decisions are recorded at the matrix decision boundary. The legacy `AuditService.log_event` remains explicitly best effort for compatibility; security-sensitive callers use `log_event_required` or `AuditLedger.append` directly.
 
-The backup path now applies the same envelope-encryption principle to physical PostgreSQL data through a streaming implementation appropriate for large backups. `pg_basebackup` stdout is encrypted directly with a one-time AES-256-GCM data key, while the configured KMS retains the wrapped DEK. The signed canonical manifest binds plaintext/ciphertext hashes, KMS identity, PostgreSQL system/timeline/WAL identity, and storage version. Verification requires a trusted signer and then verifies manifest hash/signature, ciphertext identity, KMS unwrap, AEAD authentication, and decrypted plaintext identity.
+The broader evaluation-evidence storage layer includes AES-256-GCM envelope-encryption behavior and retention/legal-hold interfaces. Development key generation and `LocalKMSClient` are not production key custody.
 
-The repository includes an AWS KMS adapter for production-oriented backup use. `LocalKMSClient` remains development/test only, and the backup CLI requires an explicit opt-in before selecting it. A production deployment must still prove its KMS IAM policy, key rotation/revocation/custody, storage durability, retention, object lock/legal hold where required, and recovery authorization in the target environment.
-
-Cross-format report reconciliation requires JSON, CSV, and HTML representations to carry the exact canonical report hash. This is a representation-integrity check; it is not a substitute for validating the meaning of every rendered field.
-
-### Audit failure semantics
-
-The persistent `AuditLedger` raises when an append fails. `AuditService.log_event()` is a higher-level **non-blocking** wrapper: it catches that exception, logs `audit_event_failed`, and returns an empty string. Code that requires audit persistence as a precondition for a security-sensitive operation must therefore check the returned event hash or call the ledger/another fail-closed policy boundary; it must not assume the `AuditService` wrapper automatically aborts the surrounding operation. This is intentionally stated plainly because calling the current wrapper “fail-closed” would misdescribe its behavior.
-
-Recovery reconciliation does not rely on the presence of non-empty event-hash fields. It recomputes each project's chain using the same canonical event-hash function used by normal audit writes and requires the terminal roots to match the trusted signed recovery baseline.
-
-## Backup and recovery security boundary
-
-The native recovery path is now implemented, but its security properties depend on several independent checks rather than a single success flag.
-
-A backup is eligible for restore only when its catalogue identity, canonical manifest hash, Ed25519 signature, trusted signer fingerprint, ciphertext SHA-256/size, KMS-wrapped key, AES-GCM tag, decrypted plaintext SHA-256/size, PostgreSQL system identifier, timeline, and WAL properties agree. Actual PostgreSQL WAL files are archived through the same encrypted/signed model, and restore planning rejects a missing base segment, timeline mismatch, or non-contiguous sequence instead of inventing placeholder WAL names.
-
-A restore is loopback-only, requires an empty data directory, authenticates/decrypts every selected object, safely extracts the physical backup, configures PostgreSQL recovery, starts the restored server with `pg_ctl`, waits for the requested timestamp/LSN and promotion, and then reconciles the restored state to a trusted signed baseline. Pending outbox state comes from the actual `outbox_events` table, provenance comes from `provenance_edges`, and audit chains are recomputed cryptographically. A discrepancy prevents a successful recovery result.
-
-The dedicated operator interface is `we3-backup`; it does not silently fall back to SQLite or a local development KMS. See [`docs/operations/backup-recovery-runbook.md`](docs/operations/backup-recovery-runbook.md) for the workflow and failure interpretation.
-
-These source controls still do not prove production disaster recovery. A production claim additionally needs evidence about the real KMS authority, backup storage durability/immutability/replication, PostgreSQL archive operation, database size and workload, network isolation, restore duration, external artifact stores, operator approvals, and return-to-service process. The configured 15-minute RPO and four-hour RTO remain objectives until measured on that environment.
-
-The current native streaming path rejects user-defined PostgreSQL tablespaces because restoring external tablespace topology safely requires deployment-specific storage mapping. Treat that rejection as a safety boundary rather than disabling it to force an unsupported restore.
+The security branch is based on the current `main` recovery state. Separate backup/PITR completion work must be reviewed and merged on its own evidence rather than copied into this branch to manufacture a broader security claim. Until that work is integrated, apply the backup/recovery status documented by the branch actually being deployed.
 
 ## Production-oriented deployment
 
-The repository includes hardened Docker/Compose material with Caddy as intended published ingress and API, PostgreSQL, Redis, Prometheus, and Grafana on internal service networks. Required configuration is explicit and production identity is intended to use OIDC rather than development headers.
+The hardened production image requires an operator-supplied immutable base reference, builds the complete package into a wheel, installs PostgreSQL/backup and Redis runtime dependencies, runs as UID/GID 10001, and starts the external-secret API entrypoint. Production Compose requires immutable image references and mounted secret files rather than ordinary API secret environment values.
 
-Deployment source is a template, not runtime evidence. Before production approval, validate exact image digests, TLS, only-proxy ingress, database/cache authentication/transport, filesystem/container permissions, egress default-deny behavior, health/readiness, real backup/restore behavior, observability, and failure handling using the authorized environment.
+Only Caddy publishes host ports. API, PostgreSQL, Redis, Prometheus, and Grafana remain on purpose-specific internal networks, while explicit egress goes through the egress proxy boundary. Caddy blocks `/metrics`, `/ready`, `/openapi.json`, `/docs*`, and `/redoc*` on the public API hostname; FastAPI also disables interactive docs/OpenAPI endpoints in staging/production.
+
+Deployment source is a template, not runtime evidence. Before production approval, validate exact image digests, Caddy parsing, TLS, only-proxy ingress, trusted proxy CIDRs, database/cache authentication and transport, filesystem/container permissions, egress default-deny behavior, health/readiness from intended internal probes, browser headers/CORS behavior, real backup/restore behavior, observability, and failure handling in the authorized environment.
+
+## Dependency and supply-chain assurance
+
+The repository defines Dependabot updates, a repository-native supply-chain scanner, Bandit, `pip-audit`, Trivy workflow scanning, pinned GitHub Action references, build provenance steps, and governance tests. The local/manual fail-closed lane is:
+
+```bash
+make install-security
+make lint
+make security-check
+make test
+make coverage
+```
+
+These commands are requirements, not claims about this branch. GitHub Actions are disabled at the time of the 2026-08-22 reassessment, so no current automated workflow or vulnerability-scan result is asserted as passing. Raw scanner findings and private deployment evidence should follow the private-assurance boundary.
 
 ## Certification and assurance
 
 The repository contains certification orchestration across reproducibility, durability, integrity, security, statistics, grading, governance, recovery, operations, and usability. A certification result is valid only when the required evidence for the exact release is present, verified, and meets blocking requirements.
 
-Private runtime evidence such as real identities, certificates, provider destinations, raw scanner output, logs, packet captures, test accounts, KMS/object metadata, and restore topology should remain outside the public repository. Follow [`docs/security/PRIVATE_RUNTIME_ASSURANCE.md`](docs/security/PRIVATE_RUNTIME_ASSURANCE.md) to publish only bounded statuses/fingerprints when public traceability is required.
+Private runtime evidence such as real identities, certificates, provider destinations, raw scanner output, logs, packet captures, test accounts, KMS/object metadata, proxy CIDRs, and restore topology should remain outside the public repository. Follow [`docs/security/PRIVATE_RUNTIME_ASSURANCE.md`](docs/security/PRIVATE_RUNTIME_ASSURANCE.md) to publish only bounded statuses/fingerprints when public traceability is required.
 
 ## Historical security material
 
-[`docs/security/MASTER_SECURITY_ASSESSMENT.md`](docs/security/MASTER_SECURITY_ASSESSMENT.md) is a point-in-time assessment dated 2026-08-01 and should be read against the branch/head it reviewed. Recovery implementation added after that assessment does not retroactively change what the historical assessment observed. ADRs, Plans/TODOs, evidence inventories, and Phase-1 reports likewise preserve useful history but do not automatically describe the latest implementation or runtime state.
+[`docs/security/SECURITY_ASSESSMENT.md`](docs/security/SECURITY_ASSESSMENT.md) is the July 30 automated assessment supplied to the hardening workstream. [`docs/security/MASTER_SECURITY_ASSESSMENT.md`](docs/security/MASTER_SECURITY_ASSESSMENT.md) is a detailed point-in-time assessment dated 2026-08-01. Read both against the branch/head and date they reviewed. The current source-level revalidation is [`docs/security/SECURITY_REASSESSMENT_2026-08-22.md`](docs/security/SECURITY_REASSESSMENT_2026-08-22.md).
+
+ADRs, Plans/TODOs, evidence inventories, and Phase-1 reports preserve useful history but do not automatically describe the latest implementation or runtime state.
 
 ## Reporting vulnerabilities
 

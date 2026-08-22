@@ -1,16 +1,10 @@
-"""Enhanced audit service with signing and API integration.
+"""Persistent audit convenience service and signed checkpoint support.
 
-T6.1.7 - Integrate audit logging into API layer with signed checkpoints.
-
-Security:
-- Authorization/audit events can be written to the persistent audit ledger
-- Audit events are persisted to the database, not just process logs
-- Checkpoints can be signed with Ed25519 for integrity verification
-- Events include project scope, actor identity, and correlation IDs
-- ``log_event`` is deliberately non-blocking on ledger failure: it logs the
-  failure and returns an empty hash. Callers that require audit persistence as
-  a precondition must check the returned hash or enforce a fail-closed policy
-  at their own service boundary.
+The hash-linked ``AuditLedger`` is the durable security primitive. ``AuditService``
+keeps a compatibility best-effort logging API for non-critical telemetry and an
+explicit required API for security boundaries that must fail closed when audit
+persistence is unavailable. Callers must choose that policy deliberately; a
+failure must never be described as fail-closed when it is actually swallowed.
 """
 
 from __future__ import annotations
@@ -21,25 +15,23 @@ from typing import Any
 
 from ..persistence.audit import AuditLedger
 from ..persistence.database import Database
-from .signing import AuditCheckpoint, SignatureEnvelope, TrustRegistry, sign_bytes
 from ..util import new_id, utc_now
+from .signing import AuditCheckpoint, TrustRegistry, sign_bytes
 
 logger = logging.getLogger("wilson.security.audit")
 
 
+class AuditPersistenceError(RuntimeError):
+    """Raised when a required audit event cannot be durably persisted."""
+
+
 class AuditService:
-    """Audit convenience layer with signing and API-oriented metadata.
+    """Audit convenience layer with explicit best-effort/required semantics.
 
-    The service wraps :class:`AuditLedger` with event categorization,
-    correlation metadata, signed checkpoints, and helper methods for common
-    authentication/authorization/data-access events.
-
-    ``AuditLedger.append`` is the persistence primitive and raises on database
-    failure. ``AuditService.log_event`` intentionally catches that exception so
-    callers that only need best-effort audit telemetry are not automatically
-    failed. Security-sensitive callers that require durable audit evidence
-    before continuing must treat an empty returned hash as failure or call an
-    explicitly fail-closed policy/service boundary.
+    ``log_event`` is retained as a compatibility best-effort method and returns
+    an empty string on failure. Security-sensitive API composition should use
+    ``log_event_required`` (or ``AuditLedger.append`` directly), which raises
+    ``AuditPersistenceError`` before the caller proceeds with its side effect.
     """
 
     def __init__(
@@ -47,12 +39,58 @@ class AuditService:
         database: Database,
         trust_registry: TrustRegistry | None = None,
         signing_key: Any | None = None,
-    ):
+    ) -> None:
         self._ledger = AuditLedger(database)
         self._trust_registry = trust_registry
         self._signing_key = signing_key
-        self._event_buffer: list[dict[str, Any]] = []
-        self._buffer_size = 100
+
+    @staticmethod
+    def _event_payload(
+        payload: dict[str, Any],
+        *,
+        correlation_id: str,
+        severity: str,
+    ) -> dict[str, Any]:
+        bounded = {**payload, "_severity": severity}
+        if correlation_id:
+            bounded["_correlation_id"] = correlation_id
+        return bounded
+
+    def _append(
+        self,
+        *,
+        project_id: str,
+        event_type: str,
+        aggregate_type: str,
+        aggregate_id: str,
+        actor_id: str,
+        payload: dict[str, Any],
+        correlation_id: str,
+        severity: str,
+    ) -> str:
+        event_hash = self._ledger.append(
+            project_id=project_id,
+            event_type=event_type,
+            aggregate_type=aggregate_type,
+            aggregate_id=aggregate_id,
+            actor_id=actor_id,
+            payload=self._event_payload(
+                payload,
+                correlation_id=correlation_id,
+                severity=severity,
+            ),
+        )
+        logger.info(
+            "audit_event_logged",
+            extra={
+                "event_type": event_type,
+                "project_id": project_id,
+                "aggregate_type": aggregate_type,
+                "event_hash": event_hash[:16],
+                "correlation_id": correlation_id,
+            },
+        )
+        return event_hash
 
     def log_event(
         self,
@@ -66,63 +104,67 @@ class AuditService:
         correlation_id: str = "",
         severity: str = "info",
     ) -> str:
-        """Log an audit event to the persistent ledger when available.
-
-        Args:
-            project_id: Project scope for the event
-            event_type: Type of event (e.g., ``auth_success``/``auth_failure``)
-            aggregate_type: Type of aggregate (e.g., ``experiment``/``operation``)
-            aggregate_id: ID of the aggregate
-            actor_id: Identity of the actor
-            payload: Sanitized event payload; secrets must not be included
-            correlation_id: Request correlation ID
-            severity: Event severity (info, warning, error)
-
-        Returns:
-            The event hash when persistence succeeded; an empty string when the
-            ledger append failed. An empty result is therefore a failure signal,
-            not a valid audit identity.
-        """
-        if correlation_id:
-            payload = {**payload, "_correlation_id": correlation_id}
-        payload = {**payload, "_severity": severity}
-
+        """Best-effort compatibility API; returns ``""`` if persistence fails."""
         try:
-            event_hash = self._ledger.append(
+            return self._append(
                 project_id=project_id,
                 event_type=event_type,
                 aggregate_type=aggregate_type,
                 aggregate_id=aggregate_id,
                 actor_id=actor_id,
                 payload=payload,
+                correlation_id=correlation_id,
+                severity=severity,
             )
-            logger.info(
-                "audit_event_logged",
-                extra={
-                    "event_type": event_type,
-                    "project_id": project_id,
-                    "aggregate_type": aggregate_type,
-                    "aggregate_id": aggregate_id,
-                    "actor_id": actor_id,
-                    "event_hash": event_hash[:16],
-                    "correlation_id": correlation_id,
-                },
-            )
-            return event_hash
-        except Exception as e:
-            # This wrapper is intentionally non-blocking. The empty return value
-            # is the caller-visible failure signal; callers that require audit
-            # persistence must enforce their own fail-closed policy.
+        except Exception as exc:
             logger.error(
                 "audit_event_failed",
                 extra={
                     "event_type": event_type,
                     "project_id": project_id,
-                    "error": str(e),
+                    "error_class": type(exc).__name__,
                     "correlation_id": correlation_id,
                 },
             )
             return ""
+
+    def log_event_required(
+        self,
+        *,
+        project_id: str,
+        event_type: str,
+        aggregate_type: str,
+        aggregate_id: str,
+        actor_id: str,
+        payload: dict[str, Any],
+        correlation_id: str = "",
+        severity: str = "info",
+    ) -> str:
+        """Persist an audit event or raise a bounded fail-closed error."""
+        try:
+            return self._append(
+                project_id=project_id,
+                event_type=event_type,
+                aggregate_type=aggregate_type,
+                aggregate_id=aggregate_id,
+                actor_id=actor_id,
+                payload=payload,
+                correlation_id=correlation_id,
+                severity=severity,
+            )
+        except Exception as exc:
+            logger.error(
+                "required_audit_event_failed",
+                extra={
+                    "event_type": event_type,
+                    "project_id": project_id,
+                    "error_class": type(exc).__name__,
+                    "correlation_id": correlation_id,
+                },
+            )
+            raise AuditPersistenceError(
+                "required audit persistence is unavailable"
+            ) from exc
 
     def log_auth_event(
         self,
@@ -134,21 +176,19 @@ class AuditService:
         failure_reason: str = "",
         correlation_id: str = "",
     ) -> str:
-        """Log an authentication event and return its audit hash on success."""
-        event_type = "auth_success" if success else "auth_failure"
-        severity = "info" if success else "warning"
-        payload = {"method": method, "success": success}
+        """Best-effort authentication event helper."""
+        payload: dict[str, Any] = {"method": method, "success": success}
         if failure_reason:
             payload["failure_reason"] = failure_reason
         return self.log_event(
             project_id=project_id,
-            event_type=event_type,
+            event_type="auth_success" if success else "auth_failure",
             aggregate_type="auth",
             aggregate_id="auth_session",
             actor_id=actor_id,
             payload=payload,
             correlation_id=correlation_id,
-            severity=severity,
+            severity="info" if success else "warning",
         )
 
     def log_authorization_event(
@@ -161,13 +201,13 @@ class AuditService:
         action: str,
         allowed: bool,
         correlation_id: str = "",
+        required: bool = False,
     ) -> str:
-        """Log an authorization decision and return its audit hash on success."""
-        event_type = "authz_allowed" if allowed else "authz_denied"
-        severity = "info" if allowed else "warning"
-        return self.log_event(
+        """Persist an authorization decision with caller-selected failure policy."""
+        method = self.log_event_required if required else self.log_event
+        return method(
             project_id=project_id,
-            event_type=event_type,
+            event_type="authz_allowed" if allowed else "authz_denied",
             aggregate_type=resource,
             aggregate_id=resource,
             actor_id=actor_id,
@@ -178,7 +218,7 @@ class AuditService:
                 "allowed": allowed,
             },
             correlation_id=correlation_id,
-            severity=severity,
+            severity="info" if allowed else "warning",
         )
 
     def log_data_access_event(
@@ -190,9 +230,11 @@ class AuditService:
         resource_id: str,
         operation: str,
         correlation_id: str = "",
+        required: bool = False,
     ) -> str:
-        """Log a data-access event and return its audit hash on success."""
-        return self.log_event(
+        """Persist a data-access event with caller-selected failure policy."""
+        method = self.log_event_required if required else self.log_event
+        return method(
             project_id=project_id,
             event_type=f"data_access_{operation}",
             aggregate_type=resource_type,
@@ -215,12 +257,7 @@ class AuditService:
         event_window_start: datetime | str,
         event_window_end: datetime | str,
     ) -> AuditCheckpoint | None:
-        """Create a signed checkpoint over the current audit-chain root.
-
-        Checkpoints are created only when a signing key is configured. When a
-        trust registry is supplied, the newly created checkpoint must also
-        verify against that registry before it is returned.
-        """
+        """Create and optionally trust-verify a checkpoint over the current tail."""
         if self._signing_key is None:
             logger.warning(
                 "checkpoint_skipped_no_signing_key",
@@ -229,9 +266,9 @@ class AuditService:
             return None
 
         from sqlalchemy import select  # noqa: PLC0415
+
         from ..persistence.database import AuditEventRow  # noqa: PLC0415
 
-        event_hash_root = "none"
         try:
             with self._ledger.database.session() as session:
                 latest = session.scalar(
@@ -240,14 +277,17 @@ class AuditService:
                     .order_by(AuditEventRow.created_at.desc(), AuditEventRow.id.desc())
                     .limit(1)
                 )
-                if latest:
-                    event_hash_root = latest.event_hash
-        except Exception as e:
+        except Exception as exc:
             logger.error(
                 "checkpoint_hash_retrieval_failed",
-                extra={"error": str(e)},
+                extra={
+                    "project_id": project_id,
+                    "error_class": type(exc).__name__,
+                },
             )
+            return None
 
+        event_hash_root = latest.event_hash if latest else "none"
         if isinstance(event_window_start, datetime):
             event_window_start = event_window_start.isoformat()
         if isinstance(event_window_end, datetime):
@@ -256,7 +296,6 @@ class AuditService:
         now_iso = utc_now().isoformat()
         checkpoint_payload = f"{now_iso}:{event_count}:{event_hash_root}"
         envelope = sign_bytes(checkpoint_payload.encode(), self._signing_key)
-
         checkpoint = AuditCheckpoint(
             checkpoint_id=new_id("chk"),
             timestamp=now_iso,
@@ -268,14 +307,14 @@ class AuditService:
             signer_key_id="primary",
         )
 
-        if self._trust_registry is not None:
-            is_valid = checkpoint.verify(self._trust_registry)
-            if not is_valid:
-                logger.error(
-                    "checkpoint_verification_failed",
-                    extra={"checkpoint_id": checkpoint.checkpoint_id},
-                )
-                return None
+        if self._trust_registry is not None and not checkpoint.verify(
+            self._trust_registry
+        ):
+            logger.error(
+                "checkpoint_verification_failed",
+                extra={"checkpoint_id": checkpoint.checkpoint_id},
+            )
+            return None
 
         logger.info(
             "checkpoint_created",
@@ -288,13 +327,16 @@ class AuditService:
         return checkpoint
 
     def verify_audit_trail(self, project_id: str) -> bool:
-        """Verify the canonical hash chain for one project."""
+        """Return whether the project audit hash chain is internally consistent."""
         try:
             return self._ledger.verify(project_id)
-        except Exception as e:
+        except Exception as exc:
             logger.error(
                 "audit_verification_failed",
-                extra={"error": str(e), "project_id": project_id},
+                extra={
+                    "error_class": type(exc).__name__,
+                    "project_id": project_id,
+                },
             )
             return False
 
@@ -304,7 +346,6 @@ def get_audit_service(
     signing_key: Any | None = None,
     trust_registry: TrustRegistry | None = None,
 ) -> AuditService:
-    """Create an AuditService over the supplied database and trust material."""
     return AuditService(
         database=database,
         trust_registry=trust_registry,
@@ -313,6 +354,7 @@ def get_audit_service(
 
 
 __all__ = [
+    "AuditPersistenceError",
     "AuditService",
     "get_audit_service",
 ]

@@ -1,9 +1,8 @@
 """Pluggable secret authority with explicit development/production boundaries.
 
-This module contains no deployment-specific backend, endpoint, credential,
-namespace, or policy. Production integrations are loaded through a narrow
-factory contract so private operational code can remain in a private package or
-injected sidecar while the public application retains stable semantics.
+Public code owns the contract and validation. Real production secret values,
+endpoints, namespaces, identities, and vendor-specific plugins remain private
+deployment inputs.
 """
 
 from __future__ import annotations
@@ -28,21 +27,16 @@ class SecretBackendError(RuntimeError):
 
 @runtime_checkable
 class SecretBackend(Protocol):
-    """Minimal production secret authority contract."""
-
     backend_id: str
     external_authority: bool
 
-    def read(self, name: str) -> bytes:
-        """Return one secret as bytes or raise ``SecretBackendError``."""
-
-    def healthcheck(self) -> bool:
-        """Return whether the authority can currently serve secrets."""
+    def read(self, name: str) -> bytes: ...
+    def healthcheck(self) -> bool: ...
 
 
 @dataclass(slots=True)
 class SecretLease(AbstractContextManager["SecretLease"]):
-    """Bounded in-memory secret lifetime with deterministic zeroing."""
+    """Bounded mutable secret buffer with deterministic zeroing."""
 
     name: str
     backend_id: str
@@ -89,7 +83,7 @@ def validate_secret_name(name: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class EnvironmentSecretBackend:
-    """Development/test backend; never an acceptable production authority."""
+    """Development/test backend; never a production secret authority."""
 
     prefix: str = "WE3_SECRET_"
     backend_id: str = "environment"
@@ -109,9 +103,11 @@ class EnvironmentSecretBackend:
 class MountedSecretBackend:
     """Read-only secret files injected by an external orchestrator.
 
-    The directory itself is configuration, not a public repository value. Every
-    file must be regular, non-symlinked, owner-readable, and inaccessible to
-    group/other users. Reads are bounded and path-confined.
+    Reads are descriptor-based. ``O_NOFOLLOW`` prevents the final path component
+    from becoming a symlink between validation and use, and ``fstat`` validates
+    the object that was actually opened. Files must be regular, owned by the
+    current service identity (or root), owner-readable, and inaccessible to
+    group/other users.
     """
 
     root: Path
@@ -119,9 +115,17 @@ class MountedSecretBackend:
     external_authority: bool = True
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "root", self.root.resolve(strict=True))
-        if not self.root.is_dir():
+        raw_root = Path(self.root)
+        try:
+            metadata = raw_root.lstat()
+        except OSError as exc:
+            raise SecretBackendError("mounted secret root is unavailable") from exc
+        if stat.S_ISLNK(metadata.st_mode):
+            raise SecretBackendError("mounted secret root must not be a symlink")
+        resolved = raw_root.resolve(strict=True)
+        if not resolved.is_dir():
             raise SecretBackendError("mounted secret root is not a directory")
+        object.__setattr__(self, "root", resolved)
 
     def _path(self, name: str) -> Path:
         candidate = self.root / validate_secret_name(name)
@@ -129,28 +133,60 @@ class MountedSecretBackend:
             raise SecretBackendError("secret path escaped the configured root")
         return candidate
 
-    def read(self, name: str) -> bytes:
-        path = self._path(name)
-        metadata = path.lstat()
-        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
-            raise SecretBackendError("secret must be a regular non-symlink file")
-        if stat.S_IMODE(metadata.st_mode) & 0o077:
+    @staticmethod
+    def _validate_open_file(metadata: os.stat_result) -> None:
+        if not stat.S_ISREG(metadata.st_mode):
+            raise SecretBackendError("secret must be a regular file")
+        permissions = stat.S_IMODE(metadata.st_mode)
+        if permissions & 0o077:
             raise SecretBackendError("secret file permissions are too broad")
+        if not permissions & stat.S_IRUSR:
+            raise SecretBackendError("secret file is not owner-readable")
         if metadata.st_size <= 0 or metadata.st_size > _MAX_SECRET_BYTES:
             raise SecretBackendError("secret file is empty or exceeds the size limit")
-        with path.open("rb") as handle:
-            value = handle.read(_MAX_SECRET_BYTES + 1)
+        current_uid = os.geteuid() if hasattr(os, "geteuid") else None
+        if current_uid is not None and metadata.st_uid not in {0, current_uid}:
+            raise SecretBackendError("secret file owner is not trusted")
+
+    def read(self, name: str) -> bytes:
+        path = self._path(name)
+        flags = os.O_RDONLY
+        if hasattr(os, "O_CLOEXEC"):
+            flags |= os.O_CLOEXEC
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        try:
+            descriptor = os.open(path, flags)
+        except OSError as exc:
+            raise SecretBackendError("secret file could not be opened safely") from exc
+
+        try:
+            metadata = os.fstat(descriptor)
+            self._validate_open_file(metadata)
+            chunks: list[bytes] = []
+            remaining = _MAX_SECRET_BYTES + 1
+            while remaining > 0:
+                chunk = os.read(descriptor, min(8192, remaining))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            value = b"".join(chunks)
+        finally:
+            os.close(descriptor)
+
         if len(value) > _MAX_SECRET_BYTES:
             raise SecretBackendError("secret exceeds the size limit")
-        return value.rstrip(b"\r\n")
+        value = value.rstrip(b"\r\n")
+        if not value:
+            raise SecretBackendError("secret value is empty")
+        return value
 
     def healthcheck(self) -> bool:
         return self.root.is_dir() and os.access(self.root, os.R_OK | os.X_OK)
 
 
 def _load_plugin(spec: str, configuration: Mapping[str, str]) -> SecretBackend:
-    """Load ``module:factory`` without exposing private plugin implementation."""
-
     module_name, separator, factory_name = spec.partition(":")
     if not separator or not module_name or not factory_name:
         raise SecretBackendError("plugin must use module:factory syntax")
@@ -175,9 +211,9 @@ def build_secret_backend(
     mounted_root: str | Path | None = None,
     configuration: Mapping[str, str] | None = None,
 ) -> SecretBackend:
-    """Build the selected backend and enforce the production invariant."""
-
-    selected = (mode or os.environ.get("WE3_SECRET_BACKEND", "environment")).strip().lower()
+    selected = (
+        mode or os.environ.get("WE3_SECRET_BACKEND", "environment")
+    ).strip().lower()
     configuration = configuration or {}
     if selected == "environment":
         backend: SecretBackend = EnvironmentSecretBackend()

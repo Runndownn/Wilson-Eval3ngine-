@@ -1,7 +1,10 @@
-.PHONY: install lint docs-check test coverage validate demo critical verify schemas openapi api clean backup backup-create backup-list backup-verify backup-baseline backup-restore-plan backup-restore
+.PHONY: install install-security lint docs-check test coverage security-check security-unit validate demo critical verify schemas openapi api clean backup backup-create backup-list backup-verify backup-restore-plan
 
 install:
 	python -m pip install -e ".[dev]"
+
+install-security:
+	python -m pip install -e ".[dev,security]"
 
 lint:
 	python -m compileall -q src tests scripts
@@ -20,6 +23,16 @@ test:
 coverage:
 	python -m coverage run -m pytest -q
 	python -m coverage report
+
+security-unit:
+	python -m pytest -q tests/unit/test_oidc_auth.py tests/unit/test_security_enhancements.py tests/unit/test_production_middleware.py tests/unit/test_security_hardening_20260822.py tests/unit/test_api_authorization_contract.py tests/unit/test_api_security_composition.py
+
+security-check:
+	python -m compileall -q src tests scripts
+	python -m bandit -q -r src/wilson_eval3ngine
+	python -m pip_audit --local
+	we3 scan-ci --source . --output var/security/supply_chain_report.json
+	$(MAKE) security-unit
 
 validate:
 	we3 validate examples/experiments/foundation.yaml
@@ -46,25 +59,21 @@ clean:
 	rm -rf .pytest_cache .coverage htmlcov var build dist *.egg-info src/*.egg-info
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
 
-# Recovery operations intentionally use the dedicated PostgreSQL/KMS-aware CLI.
-# Install the optional dependencies first with: python -m pip install -e ".[dev,backup]"
+# ============================================================================
+# Backup Commands (legacy compatibility surface; see recovery documentation)
+# ============================================================================
+
 backup:
-	we3-backup --help
+	we3 backup --help
 
 backup-create:
-	we3-backup create --key-id "$(KEY_ID)" --signing-key "$(SIGNING_KEY)"
+	we3 backup-create --key-id we3-db-key-$$(date +%Y%m%d)
 
 backup-list:
-	we3-backup list --limit 20
+	we3 backup-list --limit 20
 
 backup-verify:
-	we3-backup verify "$(BACKUP_ID)"
-
-backup-baseline:
-	we3-backup capture-baseline --output "$(BASELINE)" --signing-key "$(SIGNING_KEY)"
+	we3 backup-verify $(BACKUP_ID)
 
 backup-restore-plan:
-	we3-backup plan --timestamp "$(TIMESTAMP)" --baseline "$(BASELINE)" $(if $(TARGET_LSN),--target-lsn "$(TARGET_LSN)",)
-
-backup-restore:
-	we3-backup restore --timestamp "$(TIMESTAMP)" --baseline "$(BASELINE)" --isolated-database-url "$(ISOLATED_DATABASE_URL)" --data-directory "$(RESTORE_DATA_DIR)" $(if $(TARGET_LSN),--target-lsn "$(TARGET_LSN)",)
+	we3 backup-restore-plan --timestamp "$$(date -u +%Y-%m-%dT%H:%M:%SZ)"

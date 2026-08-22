@@ -56,7 +56,6 @@ security = [
 
 [project.scripts]
 we3 = "wilson_eval3ngine.cli:app"
-we3-backup = "wilson_eval3ngine.backup.cli:app"
 we3-gui-start = "wilson_eval3ngine.gui.run_gui:main"
 we3-gui-stop = "wilson_eval3ngine.gui.stop_gui:main"
 

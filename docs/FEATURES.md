@@ -36,7 +36,7 @@ Reliability state is separate from those labels. “The model refused” and “
 
 Review primitives include task creation, qualified assignment, blind dual review, recusal, abstention, disagreement handling, adjudication, and immutable review records. Automated grading is therefore not treated as autonomous release authority.
 
-The analyst persona helper rejects canonical reports outside the authorized project scope before copying metrics/artifact lineage. Executive aggregate support/uncertainty fields remain provisional because the canonical report does not yet define authoritative aggregate contracts for them, and the reviewer regex redactor is baseline masking rather than a production DLP system.
+The analyst persona helper now rejects canonical reports outside the authorized project scope before copying metrics/artifact lineage. Executive aggregate support/uncertainty fields remain provisional because the canonical report does not yet define authoritative aggregate contracts for them, and the reviewer regex redactor is baseline masking rather than a production DLP system.
 
 ## Metrics and uncertainty
 
@@ -54,11 +54,11 @@ Gate implementation is not threshold authority; organizational/benchmark policy 
 
 The deterministic path persists score-affecting artifacts in a content-addressed evidence store, records audit events, and generates signed dossier/report/result artifacts. The broader evaluation-evidence layer includes AES-256-GCM envelope-encryption and retention/legal-hold interfaces.
 
-Development/local key handling is not equivalent to external production KMS/signing custody. The backup system described later reuses the same envelope-encryption principle but has a separate operational trust chain because a physical database backup has different size, WAL, restore, and recovery requirements from ordinary evaluation artifacts.
+Development/local key handling is not described as equivalent to external production KMS/signing custody. This implemented **evaluation-evidence encryption** is also distinct from the currently provisional **database-backup encryption** path.
 
 ## Report serialization and reconciliation
 
-Canonical reports have deterministic hashes and safe summary serialization. CSV export protects against common formula-injection prefixes. Cross-format reconciliation fails closed unless JSON, CSV, and HTML outputs carry the exact canonical report hash; it does not report unconditional success for unrelated representations.
+Canonical reports have deterministic hashes and safe summary serialization. CSV export protects against common formula-injection prefixes. Cross-format reconciliation now fails closed unless JSON, CSV, and HTML outputs carry the exact canonical report hash; it no longer reports unconditional success for unrelated representations.
 
 Optional Parquet export writes report identity/hash plus metric rows when `pyarrow` is available. If the optional dependency is absent, export fails explicitly instead of returning an empty byte string that could be mistaken for a valid artifact.
 
@@ -110,37 +110,22 @@ Telemetry/tracing modules provide correlation and operational instrumentation ac
 
 Production SLO, alert-delivery, tracing-backend, and incident-response claims require observed runtime evidence rather than source presence alone.
 
-## Encrypted PostgreSQL backup, PITR, and recovery
+## Backup / PITR / recovery — provisional
 
-WE3 now implements an end-to-end native PostgreSQL recovery path instead of the earlier metadata-only scaffold. A physical backup begins by recording the PostgreSQL system identifier, timeline, WAL-segment size, LSN, and server identity. `pg_basebackup` then streams its tar output directly through AES-256-GCM encryption. A one-time 256-bit data-encryption key protects the stream, while the configured KMS stores only the wrapped form of that key. The repository includes an AWS KMS adapter for production-oriented use; the local KMS remains an explicit development/test option and cannot be selected accidentally through the backup CLI.
+The repository contains backup metadata models, PostgreSQL command scaffolding, restore-plan concepts, reconciliation queries, recovery manifests, CLI entry points, tests, and an operations runbook. These are useful design and implementation foundations, but the current manager must **not** be described as complete production backup protection.
 
-The encrypted object is not trusted merely because encryption completed. WE3 records both plaintext and ciphertext SHA-256 values, the ciphertext storage version, the bounded KMS identity, PostgreSQL identity, and recovery coordinates in a canonical manifest. The manifest is signed with Ed25519. Verification requires a trusted signer and then checks the manifest hash/signature, catalogue identity, ciphertext size/hash, KMS unwrap, AES-GCM authentication tag, and decrypted plaintext size/hash. A changed manifest, forged signature, changed ciphertext byte, wrong KMS key, or unauthenticated plaintext therefore causes verification to fail instead of producing a “valid” Boolean from metadata alone.
+A source audit found that the native path currently lacks or overstates several material controls:
 
-### Durable catalogue and actual WAL
+- the `pg_basebackup` output is not actually encrypted even though metadata is marked encrypted;
+- the checksum is based on the directory pathname rather than backup contents;
+- WAL archival is metadata scaffolding rather than a real archive;
+- restore planning synthesizes placeholder WAL segment names;
+- signature verification is not implemented in the current verification path;
+- isolated restore execution currently logs intent and returns success instead of running a restore/replay;
+- backup catalogue state is held in-process rather than durably persisted through this manager;
+- integration tests use simulated backup records rather than a real encrypted PostgreSQL backup → PITR restore → reconciliation exercise.
 
-Backup metadata is persisted in `backup_catalog.v2.json` under the backup root rather than existing only in process memory. Independent `we3-backup list`, verify, plan, and restore invocations can therefore operate over retained state. Catalogue writes are atomic on the local filesystem. This is durable across process restarts, but it is deliberately not described as a distributed multi-writer database or immutable object store; production storage durability, object lock, retention/legal hold, replication, and concurrency policy still belong to the deployment.
-
-WAL archival accepts actual completed PostgreSQL WAL files. Their 24-hex filenames are parsed according to the recorded cluster WAL-segment size, and every segment is bound to the same PostgreSQL system identifier and timeline as the base backup. Restore planning uses those real filenames, sorts them by PostgreSQL sequence, requires coverage to begin at the base backup's ending segment, and rejects gaps or insufficient coverage through the requested timestamp/LSN. The earlier synthetic `segment_0` style planning no longer exists in the supported path.
-
-### Signed recovery baseline and schema-aware reconciliation
-
-Before a protected recovery point is approved, WE3 can capture a signed recovery baseline. The baseline records expected run, classification, metric-snapshot, gate-decision, provenance-edge, and pending-outbox populations plus the terminal audit-chain root for each project. Audit chains are recomputed with the same canonical function used by normal audit writes; a baseline cannot be signed from a broken chain.
-
-After restore, reconciliation reads the real persistence schema. Pending delivery work comes from `outbox_events`, provenance comes from `provenance_edges`, and audit events are cryptographically recomputed rather than accepted because an `event_hash` column is non-empty. Restored counts and project audit roots are compared with the trusted baseline, and every discrepancy remains explicit in the reconciliation artifact.
-
-### Actual isolated restore
-
-The recovery orchestrator decrypts and authenticates the selected full backup and WAL objects, safely extracts the physical backup into an empty data directory, writes PostgreSQL recovery settings, starts the restored server on loopback with `pg_ctl`, waits for the requested recovery point and promotion, and requires reconciliation to pass. A startup failure, missing WAL, target that cannot be reached, signature/KMS/integrity error, or reconciliation difference prevents a successful result. The restored server is stopped after the exercise, including failure paths.
-
-The restore evidence records measured duration, PostgreSQL/tool versions, restore-log hash, and reconciliation result. This distinction is important: the repository's 15-minute RPO and four-hour RTO are objectives, while the duration of an executed recovery exercise is evidence. A source constant cannot prove an SLO.
-
-### Recovery CLI and runtime validation
-
-The supported recovery interface is the dedicated `we3-backup` CLI. It requires PostgreSQL and explicit KMS/signing/trust configuration rather than silently falling back to SQLite or a development key. See [Backup and Recovery Runbook](operations/backup-recovery-runbook.md) for the complete operator workflow.
-
-A dedicated CI runtime job exercises the real path against disposable PostgreSQL: physical encrypted backup, state mutation, real WAL archival, negative corruption/signature/missing-WAL cases, restore to a second loopback database, and reconciliation. That is strong evidence about the tested commit and CI environment. It is not a substitute for a production recovery exercise on the target database size, storage system, KMS, network boundary, and operational process.
-
-The current native streaming path intentionally rejects PostgreSQL clusters with user-defined tablespaces. Safe reconstruction of external tablespace topology requires deployment-specific storage mapping; such deployments should use their platform-native backup service until that mapping is implemented rather than accept an incomplete physical backup.
+Until those gaps are closed, use the target platform's independently managed backup/encryption/PITR controls for real production protection and treat WE3's native recovery code as provisional. See [Backup and Recovery Runbook](operations/backup-recovery-runbook.md) and tracked issue #38.
 
 ## Visual analytics
 
@@ -158,9 +143,7 @@ WE3 does not claim that:
 - a screenshot is a metric snapshot;
 - a PDF is the entire release dossier;
 - a source file proves private deployment security;
-- implementing KMS-backed backup encryption proves a deployment's KMS policy or key custody;
-- a configured RPO/RTO is an observed recovery result;
-- a disposable CI restore proves production disaster-recovery readiness;
+- a `True` metadata field proves cryptographic protection;
 - a restore plan means a restore executed;
 - automated judging removes accountable human release authority;
 - historical Plans/TODOs or old test reports are current runtime evidence.
