@@ -52,8 +52,16 @@ def _local_providers_enabled() -> bool:
 
 
 def _is_forbidden_address(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    """Return whether an address is never a valid provider destination."""
+    """Return whether an address is never a valid provider destination.
 
+    Loopback is a deliberate local-provider class and therefore must be handled
+    before ``is_reserved``. Python classifies IPv6 ``::1`` as reserved; treating
+    that implementation detail as a security prohibition would break the
+    explicit local-provider opt-in without improving the trust boundary.
+    """
+
+    if address.is_loopback:
+        return False
     return (
         address.is_link_local
         or address.is_multicast
@@ -95,7 +103,9 @@ def _validate_outbound_url(value: str | httpx.URL) -> None:
     Local/private destinations are denied by default and require the explicit
     WE3_GUI_ALLOW_LOCAL_PROVIDERS=1 deployment decision. Link-local, metadata,
     multicast, unspecified, and reserved ranges remain blocked even in local
-    mode. Every resolved address must satisfy the same policy.
+    mode. Explicit loopback destinations are treated as local providers and are
+    allowed only after that opt-in. Every resolved address must satisfy the same
+    policy.
     """
 
     parsed = urlparse(str(value))
@@ -262,9 +272,6 @@ def _existing_chart_runs() -> list[dict[str, Any]]:
             )
 
         if not charts:
-            # Clean up empty run directory so empty frames don't persist.
-            # A run-window frame remains visible only while it contains
-            # one or more charts.
             try:
                 run_dir.rmdir()
             except OSError:
