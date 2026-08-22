@@ -1,62 +1,60 @@
-"""CLI-based provider adapters for locally-installed AI agents.
+"""CLI-backed provider adapters for approved locally installed agents.
 
-Supports:
-- Claude CLI (claw) - via claude command
-- Kilo CLI - via kilo command
-- Codex CLI - via codex command
-- Other compatible local agents
-
-These adapters execute the agent through installed command-line interfaces
-without requiring separate API key configuration, using the user's existing
-local authentication.
+The adapters never invoke a shell. Provider output is treated as untrusted data,
+and response metadata contains only bounded operational evidence: raw stderr,
+exception text, absolute executable paths, credentials, and prompts are not
+copied into canonical response metadata.
 """
 
 from __future__ import annotations
 
 import json
-import shutil
+import logging
 import subprocess
 import time
+from pathlib import Path
 from typing import Any
+
+import shutil
 
 from ..constants import FailureMode
 from ..domain.contracts import ProviderRequest, ProviderResponse
 from ..util import new_id, sha256_hex
-from .base import ProviderFailure, ProviderAdapter
+from .base import ProviderFailure
+
+logger = logging.getLogger(__name__)
+
+_MAX_STDOUT_BYTES = 4 * 1024 * 1024
+_MAX_STDERR_BYTES = 512 * 1024
 
 
 class CLIProviderAdapter:
-    """Base adapter for CLI-based providers.
-
-    Provides common subprocess execution pattern for CLI tools.
-    Subclasses must implement:
-    - executable_name: str - the CLI command name
-    - detect_available(): bool - check if CLI is installed/authenticated
-    - get_supported_models(): list[str] - available model IDs
-    - build_command(request, prompt): list[str] - construct CLI args
-    - parse_output(stdout, stderr, returncode): dict - extract response
-    """
+    """Base adapter for a reviewed local CLI provider."""
 
     name: str = "cli_base"
-    executable_name: str = "cli-tool"  # Override in subclass
+    executable_name: str = "cli-tool"
 
     def __init__(self) -> None:
         self._executable_path: str | None = None
 
     def _find_executable(self) -> str | None:
-        """Find the CLI executable in PATH."""
+        """Resolve an executable through the operating system PATH policy."""
         path = shutil.which(self.executable_name)
-        if path:
-            self._executable_path = path
+        self._executable_path = path
         return path
 
     def detect_available(self) -> bool:
-        """Check if CLI is installed and ready. Override in subclass."""
         return self._find_executable() is not None
 
     def get_supported_models(self) -> list[str]:
-        """Return list of supported model identifiers. Override in subclass."""
         return []
+
+    @staticmethod
+    def _bounded_text(value: str, max_bytes: int) -> str:
+        encoded = value.encode("utf-8", errors="replace")
+        if len(encoded) <= max_bytes:
+            return value
+        return encoded[:max_bytes].decode("utf-8", errors="ignore")
 
     def _execute_cli(
         self,
@@ -64,8 +62,13 @@ class CLIProviderAdapter:
         input_data: str | None = None,
         timeout_seconds: float = 60.0,
     ) -> tuple[int, str, str, float]:
-        """Execute CLI command and return (returncode, stdout, stderr, elapsed_ms)."""
-        start = time.time()
+        """Execute one argv-only process and bound captured provider output."""
+        if timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be positive")
+        if not args or not args[0]:
+            raise ValueError("CLI argv requires an executable")
+
+        started = time.monotonic()
         try:
             result = subprocess.run(
                 args,
@@ -73,16 +76,43 @@ class CLIProviderAdapter:
                 capture_output=True,
                 text=True,
                 timeout=timeout_seconds,
+                shell=False,
+                check=False,
             )
-            elapsed_ms = (time.time() - start) * 1000
-            return result.returncode, result.stdout, result.stderr, elapsed_ms
-        except subprocess.TimeoutExpired:
-            elapsed_ms = (time.time() - start) * 1000
-            return -1, "", "Command timed out", elapsed_ms
-        except FileNotFoundError:
-            return -1, "", f"Executable not found: {self.executable_name}", 0
+            elapsed_ms = (time.monotonic() - started) * 1000
+            return (
+                result.returncode,
+                self._bounded_text(result.stdout or "", _MAX_STDOUT_BYTES),
+                self._bounded_text(result.stderr or "", _MAX_STDERR_BYTES),
+                elapsed_ms,
+            )
+        except subprocess.TimeoutExpired as exc:
+            elapsed_ms = (time.monotonic() - started) * 1000
+            logger.warning(
+                "cli_provider_timeout",
+                extra={
+                    "structured": {
+                        "adapter": self.name,
+                        "timeout_seconds": timeout_seconds,
+                        "error_class": type(exc).__name__,
+                    }
+                },
+            )
+            return -1, "", "command_timeout", elapsed_ms
+        except FileNotFoundError as exc:
+            logger.warning(
+                "cli_provider_executable_unavailable",
+                extra={"structured": {"adapter": self.name, "error_class": type(exc).__name__}},
+            )
+            return -1, "", "executable_unavailable", 0.0
         except Exception as exc:
-            return -1, "", str(exc), 0
+            # Never return str(exc): subprocess/OSError diagnostics can include
+            # private filesystem paths, environment details, or argv values.
+            logger.error(
+                "cli_provider_execution_failed",
+                extra={"structured": {"adapter": self.name, "error_class": type(exc).__name__}},
+            )
+            return -1, "", "execution_failed", (time.monotonic() - started) * 1000
 
     def execute(
         self,
@@ -91,36 +121,29 @@ class CLIProviderAdapter:
         simulation: dict[str, Any] | None = None,
         attempt_number: int = 1,
     ) -> ProviderResponse:
-        """Execute provider request through CLI.
+        """Execute a request and return bounded canonical provider evidence."""
+        del simulation
+        if attempt_number < 1:
+            raise ValueError("attempt_number must be >= 1")
 
-        Args:
-            request: Canonical provider request
-            simulation: Optional simulation config (ignored for CLI providers)
-            attempt_number: 1-based attempt number for retry tracking
-
-        Returns:
-            ProviderResponse with canonical fields
-        """
-        # Extract prompt from messages
         prompt = self._extract_prompt(request)
-
-        # Build and execute command
         if not self._executable_path and not self._find_executable():
             raise ProviderFailure(
                 FailureMode.AUTH_FAILURE,
-                f"{self.executable_name} not found in PATH",
+                f"{self.executable_name} is not available",
                 retryable=False,
             )
 
         args = self.build_command(request, prompt)
         returncode, stdout, stderr, elapsed_ms = self._execute_cli(
-            args, input_data=prompt, timeout_seconds=request.timeout_seconds
+            args,
+            input_data=prompt,
+            timeout_seconds=request.timeout_seconds,
         )
-
-        # Parse output
         response_data = self.parse_output(stdout, stderr, returncode)
 
-        # Build canonical response
+        stderr_hash = sha256_hex(stderr) if stderr else None
+        executable_name = Path(self._executable_path or self.executable_name).name
         return ProviderResponse(
             run_id=request.run_id,
             attempt_id=new_id("att"),
@@ -135,18 +158,18 @@ class CLIProviderAdapter:
             retryable=response_data.get("retryable", False),
             metadata={
                 "adapter": self.name,
-                "executable": self._executable_path,
+                "executable": executable_name,
                 "attempt_number": attempt_number,
                 "provider_metadata": {
                     "returncode": returncode,
-                    "cli_stderr": stderr[:500] if stderr else None,
+                    "stderr_present": bool(stderr),
+                    "stderr_sha256": stderr_hash,
                 },
             },
             raw_response_hash=sha256_hex(stdout or ""),
         )
 
     def _extract_prompt(self, request: ProviderRequest) -> str:
-        """Extract user prompt from request messages."""
         for turn in request.messages:
             if turn.role == "user":
                 for block in turn.content:
@@ -155,61 +178,57 @@ class CLIProviderAdapter:
         return ""
 
     def build_command(self, request: ProviderRequest, prompt: str) -> list[str]:
-        """Build CLI command arguments. Override in subclass."""
         raise NotImplementedError("Subclasses must implement build_command")
 
     def parse_output(self, stdout: str, stderr: str, returncode: int) -> dict[str, Any]:
-        """Parse CLI output into response fields. Override in subclass."""
         raise NotImplementedError("Subclasses must implement parse_output")
 
 
 class ClaudeCLIAdapter(CLIProviderAdapter):
-    """Adapter for Claude CLI (claw)."""
+    """Adapter for the configured Claude CLI contract."""
 
     name = "claude_cli"
     executable_name = "claude"
 
     def detect_available(self) -> bool:
-        """Check if Claude CLI is installed and authenticated."""
         path = self._find_executable()
         if not path:
             return False
-        # Verify authentication with a quick version check
         try:
             result = subprocess.run(
                 [path, "--version"],
                 capture_output=True,
                 text=True,
                 timeout=5,
+                shell=False,
+                check=False,
             )
             return result.returncode == 0
         except Exception:
             return False
 
     def get_supported_models(self) -> list[str]:
-        return ["claude-3-5-sonnet-20241022", "claude-3-7-sonnet-20250219", "claude-sonnet-4"]
+        return [
+            "claude-3-5-sonnet-20241022",
+            "claude-3-7-sonnet-20250219",
+            "claude-sonnet-4",
+        ]
 
     def build_command(self, request: ProviderRequest, prompt: str) -> list[str]:
-        """Build claude CLI command."""
+        if not self._executable_path:
+            raise ProviderFailure(FailureMode.AUTH_FAILURE, "claude is not available", retryable=False)
         args = [self._executable_path, "--model", request.model]
-
-        # Add system prompt if present
         if request.messages and request.messages[0].role == "system":
             for block in request.messages[0].content:
                 if block.type == "text":
                     args.extend(["--system-prompt", block.text])
-
-        # Use prompt flag for input
-        args.extend(["--prompt", prompt])
-
-        # Output as JSON for structured parsing
-        args.append("--output-format")
-        args.append("json")
-
+        # The repository's current CLI contract carries prompt text in argv.
+        # Operators must therefore include same-user process inspection in the
+        # local host trust model until the upstream interface supports stdin-only.
+        args.extend(["--prompt", prompt, "--output-format", "json"])
         return args
 
     def parse_output(self, stdout: str, stderr: str, returncode: int) -> dict[str, Any]:
-        """Parse Claude CLI JSON output."""
         if returncode != 0:
             return {
                 "text": "",
@@ -218,30 +237,36 @@ class ClaudeCLIAdapter(CLIProviderAdapter):
                 "retryable": False,
                 "protocol_valid": False,
             }
-
         try:
             data = json.loads(stdout)
-            return {
-                "text": data.get("response", data.get("content", "")),
-                "finish_reason": "stop",
-                "usage": {
-                    "input_tokens": data.get("usage", {}).get("input_tokens", 0),
-                    "output_tokens": data.get("usage", {}).get("output_tokens", 0),
-                },
-            }
         except json.JSONDecodeError:
-            # Fallback: treat stdout as text response
             return {"text": stdout.strip(), "finish_reason": "stop", "usage": {}}
+        if not isinstance(data, dict):
+            return {
+                "text": "",
+                "finish_reason": "error",
+                "error_class": FailureMode.PROVIDER_ERROR,
+                "retryable": False,
+                "protocol_valid": False,
+            }
+        usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+        return {
+            "text": str(data.get("response", data.get("content", ""))),
+            "finish_reason": "stop",
+            "usage": {
+                "input_tokens": usage.get("input_tokens", 0),
+                "output_tokens": usage.get("output_tokens", 0),
+            },
+        }
 
 
 class KiloCLIAdapter(CLIProviderAdapter):
-    """Adapter for Kilo CLI."""
+    """Adapter for the configured Kilo CLI contract."""
 
     name = "kilo_cli"
     executable_name = "kilo"
 
     def detect_available(self) -> bool:
-        """Check if Kilo CLI is installed and configured."""
         path = self._find_executable()
         if not path:
             return False
@@ -251,40 +276,41 @@ class KiloCLIAdapter(CLIProviderAdapter):
                 capture_output=True,
                 text=True,
                 timeout=5,
+                shell=False,
+                check=False,
             )
             return result.returncode == 0
         except Exception:
             return False
 
     def get_supported_models(self) -> list[str]:
-        return ["gpt-4", "gpt-4-turbo", "gpt-4o", "o1-preview", "o1-mini", "o3-mini", "claude-sonnet-4", "claude-opus-4", "gemini-2.5-flash", "step-3.7-flash"]
+        return [
+            "gpt-4", "gpt-4-turbo", "gpt-4o", "o1-preview", "o1-mini", "o3-mini",
+            "claude-sonnet-4", "claude-opus-4", "gemini-2.5-flash", "step-3.7-flash",
+        ]
 
     def build_command(self, request: ProviderRequest, prompt: str) -> list[str]:
-        """Build kilo CLI command."""
+        if not self._executable_path:
+            raise ProviderFailure(FailureMode.AUTH_FAILURE, "kilo is not available", retryable=False)
         model = request.model
-        # Ensure model has provider prefix for kilo CLI
         if "/" not in model:
-            if model.startswith("gpt") or model.startswith("o1") or model.startswith("o3") or model.startswith("o4"):
-                model = f"openai/{model}"
-            elif model.startswith("claude"):
-                model = f"anthropic/{model}"
-            elif model.startswith("gemini"):
-                model = f"google/{model}"
-            elif model.startswith("llama"):
-                model = f"meta-llama/{model}"
-            elif model.startswith("qwen"):
-                model = f"qwen/{model}"
-            elif model.startswith("deepseek"):
-                model = f"deepseek/{model}"
-            elif model.startswith("mistral"):
-                model = f"mistralai/{model}"
-            elif model.startswith("step"):
-                model = f"stepfun/{model}"
-        args = [self._executable_path, "run", prompt, "-m", model, "--format", "json", "--pure"]
-        return args
+            prefixes = (
+                (("gpt", "o1", "o3", "o4"), "openai"),
+                (("claude",), "anthropic"),
+                (("gemini",), "google"),
+                (("llama",), "meta-llama"),
+                (("qwen",), "qwen"),
+                (("deepseek",), "deepseek"),
+                (("mistral",), "mistralai"),
+                (("step",), "stepfun"),
+            )
+            for starts, provider in prefixes:
+                if model.startswith(starts):
+                    model = f"{provider}/{model}"
+                    break
+        return [self._executable_path, "run", prompt, "-m", model, "--format", "json", "--pure"]
 
     def parse_output(self, stdout: str, stderr: str, returncode: int) -> dict[str, Any]:
-        """Parse Kilo CLI output (JSON format)."""
         if returncode != 0:
             return {
                 "text": "",
@@ -293,26 +319,44 @@ class KiloCLIAdapter(CLIProviderAdapter):
                 "retryable": False,
                 "protocol_valid": False,
             }
-
         try:
             data = json.loads(stdout)
+            if not isinstance(data, dict):
+                raise ValueError("provider output must be an object")
             return {
-                "text": data.get("content", data.get("text", "")),
+                "text": str(data.get("content", data.get("text", ""))),
                 "finish_reason": "stop",
-                "usage": data.get("usage", {}),
+                "usage": data.get("usage", {}) if isinstance(data.get("usage", {}), dict) else {},
             }
-        except json.JSONDecodeError:
-            return {"text": stdout.strip(), "finish_reason": "stop", "usage": {}}
+        except (json.JSONDecodeError, ValueError):
+            content: list[str] = []
+            for line in stdout.splitlines():
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(record, dict) and record.get("type") == "content":
+                    value = record.get("content")
+                    if isinstance(value, str):
+                        content.append(value)
+            if content:
+                return {"text": "".join(content), "finish_reason": "stop", "usage": {}}
+            return {
+                "text": "",
+                "finish_reason": "error",
+                "error_class": FailureMode.PROVIDER_ERROR,
+                "retryable": False,
+                "protocol_valid": False,
+            }
 
 
 class CodexCLIAdapter(CLIProviderAdapter):
-    """Adapter for OpenAI Codex CLI."""
+    """Adapter for the configured Codex CLI contract."""
 
     name = "codex_cli"
     executable_name = "codex"
 
     def detect_available(self) -> bool:
-        """Check if Codex CLI is installed and authenticated."""
         path = self._find_executable()
         if not path:
             return False
@@ -322,6 +366,8 @@ class CodexCLIAdapter(CLIProviderAdapter):
                 capture_output=True,
                 text=True,
                 timeout=5,
+                shell=False,
+                check=False,
             )
             return result.returncode == 0
         except Exception:
@@ -331,14 +377,12 @@ class CodexCLIAdapter(CLIProviderAdapter):
         return ["codex-mini-latest", "o1-mini", "o1-preview", "o3-mini", "o3-preview"]
 
     def build_command(self, request: ProviderRequest, prompt: str) -> list[str]:
-        """Build codex CLI command."""
-        args = [self._executable_path, "completions", "--model", request.model]
-
-        # Write prompt to stdin since codex expects it
-        return args
+        del prompt
+        if not self._executable_path:
+            raise ProviderFailure(FailureMode.AUTH_FAILURE, "codex is not available", retryable=False)
+        return [self._executable_path, "completions", "--model", request.model]
 
     def parse_output(self, stdout: str, stderr: str, returncode: int) -> dict[str, Any]:
-        """Parse Codex CLI output (JSON format)."""
         if returncode != 0:
             return {
                 "text": "",
@@ -347,23 +391,33 @@ class CodexCLIAdapter(CLIProviderAdapter):
                 "retryable": False,
                 "protocol_valid": False,
             }
-
         try:
             data = json.loads(stdout)
-            # Handle both single response and array formats
-            choices = data.get("choices", [data] if "choices" not in data else [])
-            if choices:
-                content = choices[0].get("text", choices[0].get("message", {}).get("content", ""))
-            else:
-                content = data.get("text", "")
-
-            return {
-                "text": content,
-                "finish_reason": choices[0].get("finish_reason", "stop") if choices else "stop",
-                "usage": {
-                    "input_tokens": data.get("usage", {}).get("prompt_tokens", 0),
-                    "output_tokens": data.get("usage", {}).get("completion_tokens", 0),
-                },
-            }
         except json.JSONDecodeError:
             return {"text": stdout.strip(), "finish_reason": "stop", "usage": {}}
+        if not isinstance(data, dict):
+            return {
+                "text": "",
+                "finish_reason": "error",
+                "error_class": FailureMode.PROVIDER_ERROR,
+                "retryable": False,
+                "protocol_valid": False,
+            }
+        choices = data.get("choices", [data] if "choices" not in data else [])
+        if not isinstance(choices, list):
+            choices = []
+        first = choices[0] if choices and isinstance(choices[0], dict) else {}
+        message = first.get("message") if isinstance(first.get("message"), dict) else {}
+        content = first.get("text", message.get("content", data.get("text", "")))
+        usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+        return {
+            "text": str(content),
+            "finish_reason": first.get("finish_reason", "stop") if first else "stop",
+            "usage": {
+                "input_tokens": usage.get("prompt_tokens", 0),
+                "output_tokens": usage.get("completion_tokens", 0),
+            },
+        }
+
+
+__all__ = ["CLIProviderAdapter", "ClaudeCLIAdapter", "KiloCLIAdapter", "CodexCLIAdapter"]
