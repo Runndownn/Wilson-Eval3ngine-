@@ -1,9 +1,9 @@
 """Central redaction for structured log records.
 
-The filter removes credential-bearing URL userinfo, authorization values,
-secret-like fields, control characters, and oversized free-form diagnostics.
-It intentionally mutates only logging metadata; application values are not
-modified.
+The filter removes credential-bearing URL userinfo, secret-bearing query values,
+authorization values, secret-like fields, control characters, and oversized
+free-form diagnostics. It intentionally mutates only logging metadata;
+application values are not modified.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import logging
 import re
 from collections.abc import Mapping
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 _SENSITIVE_KEY = re.compile(
     r"(?i)(authorization|cookie|password|passwd|secret|token|api[_-]?key|"
@@ -28,16 +28,39 @@ _MAX_DEPTH = 6
 
 
 def _redact_url(value: str) -> str:
+    """Redact credential-bearing URL components without exposing secret values."""
     try:
         parsed = urlsplit(value)
     except ValueError:
         return value
-    if not parsed.scheme or not parsed.netloc or "@" not in parsed.netloc:
+    if not parsed.scheme or not parsed.netloc:
         return value
-    host = parsed.hostname or ""
+
+    hostname = parsed.hostname or ""
+    host = f"[{hostname}]" if ":" in hostname and not hostname.startswith("[") else hostname
     if parsed.port:
         host = f"{host}:{parsed.port}"
-    return urlunsplit((parsed.scheme, f"[redacted]@{host}", parsed.path, parsed.query, ""))
+    netloc = f"[redacted]@{host}" if parsed.username is not None or parsed.password is not None else parsed.netloc
+
+    query = parsed.query
+    if query:
+        try:
+            pairs = parse_qsl(query, keep_blank_values=True, strict_parsing=False)
+            query = urlencode(
+                [
+                    (key, "[redacted]" if _SENSITIVE_KEY.search(key) else item_value)
+                    for key, item_value in pairs
+                ],
+                doseq=True,
+            )
+        except (TypeError, ValueError):
+            # If query parsing itself is malformed, avoid reflecting it from the
+            # logger rather than risking disclosure in an error path.
+            query = "[redacted]"
+
+    # URL fragments are client-side data and have no operational value in server
+    # logs. Removing them also avoids leaking tokens embedded after '#'.
+    return urlunsplit((parsed.scheme, netloc, parsed.path, query, ""))
 
 
 def redact_log_value(value: Any, *, key: str = "", depth: int = 0) -> Any:
@@ -86,7 +109,6 @@ class SensitiveLogFilter(logging.Filter):
 
 def install_sensitive_log_filter(logger: logging.Logger | None = None) -> SensitiveLogFilter:
     """Install one filter on the selected logger and all existing handlers."""
-
     selected = logger or logging.getLogger()
     for existing in selected.filters:
         if isinstance(existing, SensitiveLogFilter):

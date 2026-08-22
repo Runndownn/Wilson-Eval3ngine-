@@ -11,7 +11,6 @@ No alternate production implementations or import-time monkey patches are kept.
 from __future__ import annotations
 
 import logging
-import os
 import re
 from typing import Any, Awaitable, Callable, Iterable
 
@@ -40,6 +39,7 @@ from ..security.rate_limit import (
     build_rate_limit_key,
 )
 from ..telemetry import get_correlation_context
+from .auth import extract_single_bearer_token
 from .body_limit import StreamingBodyLimitMiddleware
 from . import middleware as shared
 
@@ -72,13 +72,29 @@ def _error(status_code: int, code: str, detail: str) -> JSONResponse:
 
 
 class RequestMetadataValidationMiddleware(BaseHTTPMiddleware):
-    """Reject malformed security metadata before route-side effects."""
+    """Reject unsafe request modes and malformed metadata before route side effects."""
 
     async def dispatch(
         self,
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
+        runtime = getattr(request.app.state, "settings", None)
+        if (
+            request.url.path == "/v1/experiments:run"
+            and bool(getattr(runtime, "is_assurance_environment", False))
+        ):
+            # The synchronous foundation lane accepts filesystem paths by design
+            # and is retained for local development, deterministic CI, and
+            # recovery diagnostics. Production execution belongs to the durable
+            # scheduler; exposing this lane remotely would turn authenticated
+            # request data into host filesystem read/write/key-path authority.
+            return _error(
+                403,
+                "synchronous_execution_disabled",
+                "the synchronous filesystem execution lane is disabled in staging/production",
+            )
+
         correlation_id = request.headers.get("X-Correlation-ID")
         if correlation_id is not None and not _CORRELATION_ID.fullmatch(correlation_id):
             return _error(400, "invalid_correlation_id", "correlation identifier is invalid")
@@ -131,8 +147,7 @@ class BoundCSRFProtectionMiddleware(BaseHTTPMiddleware):
         if request.method not in _STATE_CHANGING_METHODS:
             return await call_next(request)
 
-        authorization = request.headers.get("Authorization", "")
-        if self._auth_mode == "oidc" and authorization.startswith("Bearer "):
+        if self._auth_mode == "oidc" and extract_single_bearer_token(request) is not None:
             return await call_next(request)
         if self._auth_mode == "dev":
             return await call_next(request)
@@ -343,12 +358,13 @@ def _install_oidc_authority(app: FastAPI, redis_client: Any | None) -> None:
 
     @app.post("/v1/auth/revoke", status_code=204, include_in_schema=True)
     def revoke_current_bearer(request: Request) -> Response:
-        authorization = request.headers.get("Authorization", "")
-        if not authorization.startswith("Bearer "):
-            return _error(401, "missing_bearer_token", "authorization header required")
-        token = authorization[7:]
-        if not token or len(token) > 16_384:
-            return _error(401, "invalid_token", "token validation failed")
+        token = extract_single_bearer_token(request)
+        if token is None:
+            return _error(
+                401,
+                "missing_or_ambiguous_bearer_token",
+                "exactly one valid authorization bearer header is required",
+            )
 
         try:
             project_id, role, actor_id = authenticator.authenticate_context(token)

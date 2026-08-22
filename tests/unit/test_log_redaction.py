@@ -44,6 +44,16 @@ def test_filter_redacts_nonstandard_record_attributes() -> None:
     assert record.structured == {"api_key": "[redacted]", "result": "ok"}
 
 
+def test_url_query_credentials_and_fragment_are_redacted() -> None:
+    redacted = redact_log_value(
+        "https://provider.invalid/v1/models?access_token=private&model=demo#session-secret"
+    )
+    assert "private" not in redacted
+    assert "session-secret" not in redacted
+    assert "access_token=%5Bredacted%5D" in redacted
+    assert "model=demo" in redacted
+
+
 def test_control_characters_and_excess_length_are_bounded() -> None:
     result = redact_log_value("ok\x00\x1f" + "x" * 5000)
     assert "\x00" not in result

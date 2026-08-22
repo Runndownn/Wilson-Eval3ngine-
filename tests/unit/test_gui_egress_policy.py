@@ -44,9 +44,13 @@ def test_local_destination_requires_explicit_opt_in(
         runtime._validate_outbound_url("http://local-provider.test:11434/api/tags")
 
 
-def test_explicit_local_mode_allows_private_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("address", ["192.168.50.10", "::1"])
+def test_explicit_local_mode_allows_private_and_loopback_provider(
+    monkeypatch: pytest.MonkeyPatch,
+    address: str,
+) -> None:
     monkeypatch.setenv("WE3_GUI_ALLOW_LOCAL_PROVIDERS", "1")
-    monkeypatch.setattr(socket, "getaddrinfo", lambda *args, **kwargs: _records("192.168.50.10"))
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *args, **kwargs: _records(address))
     runtime._validate_outbound_url("http://local-provider.test:11434/api/tags")
 
 

@@ -7,6 +7,7 @@ import pytest
 
 from wilson_eval3ngine.gui import access_control
 from wilson_eval3ngine.gui.access_control import GUIAccessSettings, GUIIdentityMiddleware
+from wilson_eval3ngine.security.oidc import OIDCConfigurationError
 
 
 def _run(
@@ -77,18 +78,17 @@ def test_remote_mode_rejects_missing_http_and_websocket_identity(monkeypatch: py
     ]
 
 
-def test_remote_mode_accepts_verified_allowed_role(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_remote_mode_accepts_verified_allowed_role_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
     class FakeAuthenticator:
         def __init__(self, _settings):
             pass
 
-        def authenticate(self, token: str) -> tuple[str, str]:
+        def authenticate_context(self, token: str) -> tuple[str, str, str]:
+            calls.append(token)
             assert token == "signed-token"
-            return "project-a", "reviewer"
-
-        def get_token_subject(self, token: str) -> str:
-            assert token == "signed-token"
-            return "actor-123"
+            return "project-a", "reviewer", "actor-123"
 
     monkeypatch.setattr(access_control, "OIDCAuthenticator", FakeAuthenticator)
     middleware = GUIIdentityMiddleware(
@@ -108,6 +108,7 @@ def test_remote_mode_accepts_verified_allowed_role(monkeypatch: pytest.MonkeyPat
     )
 
     assert sent[0]["status"] == 204
+    assert calls == ["signed-token"]
     assert captured["we3_actor"] == {
         "subject": "actor-123",
         "project_id": "project-a",
@@ -121,11 +122,8 @@ def test_remote_mode_denies_verified_but_unapproved_role(monkeypatch: pytest.Mon
         def __init__(self, _settings):
             pass
 
-        def authenticate(self, _token: str) -> tuple[str, str]:
-            return "project-a", "viewer"
-
-        def get_token_subject(self, _token: str) -> str:
-            return "actor-123"
+        def authenticate_context(self, _token: str) -> tuple[str, str, str]:
+            return "project-a", "viewer", "actor-123"
 
     monkeypatch.setattr(access_control, "OIDCAuthenticator", FakeAuthenticator)
     middleware = GUIIdentityMiddleware(
@@ -141,6 +139,57 @@ def test_remote_mode_denies_verified_but_unapproved_role(monkeypatch: pytest.Mon
 
     sent, _ = _run(middleware, headers=[(b"authorization", b"Bearer signed-token")])
     assert sent[0]["status"] == 403
+
+
+def test_remote_mode_rejects_duplicate_authorization_headers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeAuthenticator:
+        def __init__(self, _settings):
+            pass
+
+    monkeypatch.setattr(access_control, "OIDCAuthenticator", FakeAuthenticator)
+    middleware = GUIIdentityMiddleware(
+        lambda *_args: None,
+        GUIAccessSettings(
+            mode="oidc",
+            issuer="https://issuer.invalid",
+            jwks_uri="https://issuer.invalid/jwks",
+            audience="gui",
+        ),
+    )
+    sent, _ = _run(
+        middleware,
+        headers=[
+            (b"authorization", b"Bearer first"),
+            (b"authorization", b"Bearer second"),
+        ],
+    )
+    assert sent[0]["status"] == 401
+
+
+def test_remote_mode_maps_identity_authority_outage_to_safe_503(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeAuthenticator:
+        def __init__(self, _settings):
+            pass
+
+        def authenticate_context(self, _token: str) -> tuple[str, str, str]:
+            raise OIDCConfigurationError("private backend detail")
+
+    monkeypatch.setattr(access_control, "OIDCAuthenticator", FakeAuthenticator)
+    middleware = GUIIdentityMiddleware(
+        lambda *_args: None,
+        GUIAccessSettings(
+            mode="oidc",
+            issuer="https://issuer.invalid",
+            jwks_uri="https://issuer.invalid/jwks",
+            audience="gui",
+        ),
+    )
+    sent, _ = _run(middleware, headers=[(b"authorization", b"Bearer signed-token")])
+    assert sent[0]["status"] == 503
 
 
 def test_remote_settings_fail_closed_when_incomplete() -> None:
