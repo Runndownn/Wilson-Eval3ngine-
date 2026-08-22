@@ -95,7 +95,6 @@ def build_executive_summary(
 
     Implements TODO 48 requirement: Executives see only aggregates.
     """
-    # Determine release status from gate statuses
     if not report.gate_statuses:
         status = "indeterminate"
     elif any(s == "block" for s in report.gate_statuses.values()):
@@ -107,7 +106,6 @@ def build_executive_summary(
     else:
         status = "pass"
 
-    # Collect critical blocks
     blocks = []
     for model_id, status in report.gate_statuses.items():
         if status == "block":
@@ -118,8 +116,8 @@ def build_executive_summary(
         project_id=report.project_id,
         release_status=status,
         critical_blocks=blocks,
-        support_percentage=100.0,  # Would be computed from metrics in production
-        uncertainty_percentage=0.0,
+        support_percentage=100.0,  # Provisional: canonical report lacks an aggregate support contract.
+        uncertainty_percentage=0.0,  # Provisional: canonical report lacks an aggregate uncertainty contract.
         cost_usd=cost_usd,
         freshness_hours=freshness_hours,
         last_refresh_at=report.generated_at,
@@ -131,11 +129,19 @@ def build_analyst_view(
     report: CanonicalReport,
     project_id: str,
 ) -> AnalystView:
-    """Build analyst drill-down view from canonical report.
+    """Build an analyst drill-down view within one authorized project.
 
-    Implements TODO 48 requirement: Analysts can trace lineage.
+    The caller-supplied project ID is treated as the authorization scope. A
+    canonical report carrying a different project ID is rejected before any
+    metrics, artifact hashes, or other lineage is copied into the view. Reports
+    without a project ID are also rejected because an unscoped report cannot be
+    safely exposed through a project-scoped analyst view.
     """
-    # Build slices from metric values
+    if not report.project_id:
+        raise ValueError("Canonical report is missing project scope")
+    if report.project_id != project_id:
+        raise PermissionError("Canonical report is outside the authorized project scope")
+
     slices = []
     for model_id, metrics in report.metric_values.items():
         slice_data = {
@@ -147,9 +153,9 @@ def build_analyst_view(
 
     return AnalystView(
         experiment_id=report.experiment_id,
-        project_id=project_id,
+        project_id=report.project_id,
         slices=slices,
-        cases=[],  # Would be populated from evidence store
+        cases=[],  # Populated only when authorized evidence-store integration supplies them.
         attempts=[],
         grades=[],
         reviews=[],
@@ -164,16 +170,13 @@ def build_analyst_view(
 def render_redacted_evidence(content: str) -> str:
     """Render evidence in redacted form for reviewer queue.
 
-    Security: PII/restricted content is masked.
+    Security: PII/restricted content is masked. This helper is a baseline
+    pattern redactor, not a complete production DLP policy.
     """
-    # Basic redaction - in production would use more sophisticated rules
-    # Remove any potentially identifying patterns
     import re
-    # Email addresses
+
     content = re.sub(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", "[EMAIL REDACTED]", content)
-    # Long numeric sequences (potential IDs)
     content = re.sub(r"\b\d{8,}\b", "[ID REDACTED]", content)
-    # Phone numbers
     content = re.sub(r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b", "[PHONE REDACTED]", content)
     return content
 
