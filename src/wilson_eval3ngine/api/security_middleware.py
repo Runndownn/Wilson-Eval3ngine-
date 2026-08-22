@@ -11,7 +11,6 @@ No alternate production implementations or import-time monkey patches are kept.
 from __future__ import annotations
 
 import logging
-import os
 import re
 from typing import Any, Awaitable, Callable, Iterable
 
@@ -40,6 +39,7 @@ from ..security.rate_limit import (
     build_rate_limit_key,
 )
 from ..telemetry import get_correlation_context
+from .auth import extract_single_bearer_token
 from .body_limit import StreamingBodyLimitMiddleware
 from . import middleware as shared
 
@@ -131,8 +131,7 @@ class BoundCSRFProtectionMiddleware(BaseHTTPMiddleware):
         if request.method not in _STATE_CHANGING_METHODS:
             return await call_next(request)
 
-        authorization = request.headers.get("Authorization", "")
-        if self._auth_mode == "oidc" and authorization.startswith("Bearer "):
+        if self._auth_mode == "oidc" and extract_single_bearer_token(request) is not None:
             return await call_next(request)
         if self._auth_mode == "dev":
             return await call_next(request)
@@ -343,12 +342,13 @@ def _install_oidc_authority(app: FastAPI, redis_client: Any | None) -> None:
 
     @app.post("/v1/auth/revoke", status_code=204, include_in_schema=True)
     def revoke_current_bearer(request: Request) -> Response:
-        authorization = request.headers.get("Authorization", "")
-        if not authorization.startswith("Bearer "):
-            return _error(401, "missing_bearer_token", "authorization header required")
-        token = authorization[7:]
-        if not token or len(token) > 16_384:
-            return _error(401, "invalid_token", "token validation failed")
+        token = extract_single_bearer_token(request)
+        if token is None:
+            return _error(
+                401,
+                "missing_or_ambiguous_bearer_token",
+                "exactly one valid authorization bearer header is required",
+            )
 
         try:
             project_id, role, actor_id = authenticator.authenticate_context(token)
