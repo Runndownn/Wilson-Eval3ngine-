@@ -70,9 +70,9 @@ def _audit_decision(
         ) from exc
 
 
-# Role × Resource × Action matrix. Role names are canonical identities; in
-# particular, workload prefixes are security-significant and must not be
-# stripped before lookup.
+# Role × Resource × Action matrix. Exact role names are part of the security
+# identity. API route action names must also exist here; otherwise a protected
+# route can become permanently unreachable or grow an unsafe fallback path.
 AUTHORIZATION_MATRIX: dict[str, dict[str, set[str]]] = {
     "viewer": {
         "projects": {"read"},
@@ -85,7 +85,7 @@ AUTHORIZATION_MATRIX: dict[str, dict[str, set[str]]] = {
     },
     "evaluation_engineer": {
         "projects": {"read"},
-        "experiments": {"read", "create", "update:own"},
+        "experiments": {"read", "create", "start", "update:own", "regrade"},
         "runs": {"read", "create", "update:own"},
         "evidence": {"read", "create:processed"},
         "reviews": {"read", "create:flags"},
@@ -112,7 +112,7 @@ AUTHORIZATION_MATRIX: dict[str, dict[str, set[str]]] = {
     },
     "project_admin": {
         "projects": {"read", "update"},
-        "experiments": {"read", "create", "update:own"},
+        "experiments": {"read", "create", "start", "update:own", "regrade"},
         "runs": {"read", "create", "update:own", "delete:own"},
         "evidence": {"read", "create"},
         "reviews": {"read", "update:assignments"},
