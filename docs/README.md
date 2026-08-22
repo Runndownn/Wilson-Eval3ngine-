@@ -17,7 +17,7 @@ This directory contains current product/operator documentation **and** historica
 | [Master Security Assessment](security/MASTER_SECURITY_ASSESSMENT.md) | Review the detailed 2026-08-01 point-in-time assessment and the branch/head it evaluated; do not use it as a substitute for the current reassessment. |
 | [Documentation Audit](DOCUMENTATION_AUDIT.md) | See how documentation was reconciled against code and what stale claims/assets were corrected. |
 
-The root [README](../README.md) is the public entry point and authoritative high-level narrative. It explains the project identity, current implementation, architecture, operator flow, agentic-engineering origin, version progression, and evidence-based development timeline; the documents above add operational and assurance detail.
+The root [README](../README.md) is the public entry point and authoritative high-level narrative. It explains the project identity, current implementation, architecture, operator flow, current GUI/analytics visuals, agentic-engineering origin, version progression, and evidence-based development timeline; the documents above add operational and assurance detail.
 
 ## Source-of-truth rules
 
@@ -59,27 +59,42 @@ docs/assets/
 │   ├── system-architecture.svg
 │   └── trust-boundaries.svg
 ├── gui/
-│   ├── current/
-│   │   ├── 01-endpoints.webp
-│   │   ├── 02-models.webp
-│   │   ├── 03-generate.webp
-│   │   ├── 04-charts.webp
-│   │   └── 05-reports.webp
-│   ├── 01-endpoints.png
-│   ├── 02-models.png
-│   ├── 03-generate.png
-│   ├── 04-reports.png
 │   ├── 05-pdf-viewer.png
-│   └── 06-prompt-package.png
+│   ├── README-current-captures.md
+│   └── current/
+│       ├── endpoints.png
+│       ├── models.png
+│       ├── generate.png
+│       ├── charts.png
+│       ├── reports.png
+│       ├── cross-run-comp.png
+│       ├── csa.png
+│       ├── csp.png
+│       ├── mch.png
+│       ├── mpce.png
+│       ├── mpr.png
+│       ├── odm.png
+│       ├── pprth.png
+│       ├── ppsh.png
+│       ├── pptch.png
+│       ├── psr.png
+│       ├── ret.png
+│       ├── rld.png
+│       ├── rtd.png
+│       ├── rtmp.png
+│       ├── rttap.png
+│       ├── rttc.png
+│       ├── success-rate-with-confidene-confidance-in.png
+│       └── tum.png
 └── charts/
     └── *.png
 ```
 
-`diagrams/generation-workflow.svg` explains the current Generate-to-evidence control path. `diagrams/development-gantt.svg` is an evidence-based July 14–August 22 history view derived from Git milestones rather than arbitrary file timestamps.
+`diagrams/generation-workflow.svg` explains the current Generate-to-evidence control path. `diagrams/development-gantt.svg` is an evidence-based July 14–August 22 history view derived from Git milestones rather than arbitrary file timestamps; its README-oriented layout uses large labels and a separate outcome column so the timeline remains readable when GitHub scales the SVG.
 
-`gui/current/` is the canonical five-workspace walkthrough matching the current UI: **Endpoints → Models → Generate → Charts → Reports**. The six PNGs in the parent `gui/` directory are retained historical point-in-time screenshots. Prompt-package controls are now explained as part of **Generate**, while PDF viewing is part of **Reports**.
+`gui/current/` now holds the high-resolution canonical five-workspace walkthrough **Endpoints → Models → Generate → Charts → Reports** plus the detailed analytics capture set rendered in the root README. `Generate.png` and `generate.png` are byte-identical aliases; documentation uses the lowercase path once. The older `01-endpoints.webp`, `02-models.webp`, `04-charts.webp`, and `05-reports.webp` files remain compatibility/history captures, while the deleted `03-generate.webp` must not be referenced by current docs. `gui/05-pdf-viewer.png` remains a useful report-reading image even though PDF viewing is conceptually part of Reports.
 
-Current screenshots use WebP to keep documentation assets practical at repository scale; the documentation validator checks their `RIFF/WEBP` signature in addition to PNG and SVG validation. Sample/generated chart PNGs remain examples of visualization capability and must not be presented as current benchmark evidence unless tied to the specific run that produced them.
+Current PNG screenshots are intentionally displayed at consistent landscape widths, while analytics captures use a common rendered height so differing native aspect ratios remain undistorted without one chart visually dominating the README. Sample/generated chart PNGs remain examples of visualization capability and must not be presented as current benchmark evidence unless tied to the specific run that produced them.
 
 ## Understanding the GUI source
 
